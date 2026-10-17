@@ -85,6 +85,12 @@ public partial class App : Application
             var target = System.IO.Path.GetFullPath(e.Args[showcaseAt + 1]);
             window.ContentRendered += async (_, _) => await Services.Showcase.RunAsync(window, target);
         }
+        var skillsAt = Array.IndexOf(e.Args, "--showcase-skills");
+        if (demo && skillsAt >= 0 && skillsAt + 1 < e.Args.Length)
+        {
+            var target = System.IO.Path.GetFullPath(e.Args[skillsAt + 1]);
+            window.ContentRendered += async (_, _) => await Services.ShowcaseVideo.RunSkillsAsync(window, target);
+        }
         var videoAt = Array.IndexOf(e.Args, "--showcase-video");
         if (demo && videoAt >= 0 && videoAt + 1 < e.Args.Length)
         {

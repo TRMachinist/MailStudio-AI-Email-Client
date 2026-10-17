@@ -381,6 +381,105 @@ public static class ShowcaseVideo
         Finish();
     }
 
+    /// <summary>`--showcase-skills &lt;folder&gt;`: the 1.6 film – skills on mail + attachments, Excel preview, writing a
+    /// skill with AI, one-click agent connection (agent config files are redirected to the output folder).</summary>
+    public static async Task RunSkillsAsync(MainWindow main, string outDir)
+    {
+        _out = outDir; Directory.CreateDirectory(_out);
+        AgentConnector.TestRoot = Path.Combine(_out, "agent-configs");
+        try
+        {
+            Place(main); await Task.Delay(2500);
+            var list = (ListBox)main.FindName("MessageList");
+            await Until(() => list.Items.Count >= 8);
+            MailHeader Msg(uint uid) => list.Items.OfType<MailHeader>().First(m => m.Uid == uid);
+            var send = (ButtonBase)main.FindName("AiSendButton");
+            ButtonBase? SkillBtn(string id) => FindEl<ButtonBase>(main, b => TextOf(b).StartsWith("⚡") && TextOf(b).Contains(new Services.Skills.SkillStore().All().First(k => k.Id == id).Title));
+            async Task Select(uint uid, int pause)
+            {
+                if (list.ItemContainerGenerator.ContainerFromItem(Msg(uid)) is ListBoxItem row) await Move(Center(main, row, 0.45, 0.5), 600);
+                var fx = ClickFx(); await Task.Delay(90); list.SelectedItem = Msg(uid); await fx; await Idle(pause);
+            }
+            list.SelectedItem = Msg(7); await Idle(1500);
+
+            // 1) quotation request: the skill reads the mail, the PDF (OCR) and the DXF
+            Rec.Start(main, "c21-skill");
+            await Task.Delay(500);
+            await Select(1, 1400);
+            await Click(SkillBtn("quote-request-analysis"), 800);
+            await Task.Delay(1500);
+            await Until(() => send.IsEnabled, 90);
+            await Move(new Point(W * 0.86, H * 0.62), 900);
+            await Task.Delay(2600);
+            Rec.Stop();
+
+            // 2) Excel skill: plan -> preview window (nothing written)
+            Rec.Start(main, "c22-excel-a");
+            await Select(3, 1200);
+            var before = Application.Current.Windows.OfType<Window>().ToHashSet();
+            await Click(SkillBtn("delivery-schedule-update"), 800);
+            var plan = await WaitNew<Views.ExcelPlanWindow>(before, null, 90);
+            Rec.Stop();
+            plan.Left = 40; plan.Top = 40; plan.Width = 1180; plan.Height = 664; await Idle(1200);
+            Rec.Start(plan, "c22-excel"); Rec.Cursor = new Point(600, 420);
+            var grid = FindEl<DataGrid>(plan, _ => true);
+            if (grid != null && grid.ItemContainerGenerator.ContainerFromIndex(0) is FrameworkElement r0) { await Move(Center(plan, r0, 0.75, 0.5), 800); await Task.Delay(900); }
+            if (grid != null && grid.ItemContainerGenerator.ContainerFromIndex(2) is FrameworkElement r2) { await Move(Center(plan, r2, 0.75, 0.5), 700); await Task.Delay(700); }
+            var save = FindEl<ButtonBase>(plan, b => b.IsDefault);
+            if (save != null) { await Move(save, 800); await Task.Delay(1400); }
+            Rec.Stop(); plan.Close(); await Idle(1200);
+
+            // 3) Skills window: built-in skills, describe a new one, the AI writes it, save
+            before = Application.Current.Windows.OfType<Window>().ToHashSet();
+            _ = main.Dispatcher.BeginInvoke(() => Call(main, "OnSkills", main, new RoutedEventArgs()));
+            var sw = await WaitNew<Views.SkillsWindow>(before); Place(sw); await Idle(1500);
+            Rec.Start(sw, "c23-skills"); Rec.Cursor = new Point(W * 0.5, H * 0.5);
+            var lb = Field<ListBox>(sw, "_list");
+            foreach (var i in new[] { 1, 4 })
+            {
+                if (i < lb.Items.Count && lb.ItemContainerGenerator.ContainerFromIndex(i) is FrameworkElement it) await Move(it, 650);
+                var cf = ClickFx(); await Task.Delay(90); if (i < lb.Items.Count) lb.SelectedIndex = i; await cf; await Task.Delay(1100);
+            }
+            var box = Field<TextBox>(sw, "_aiBox");
+            await Move(box, 700); var bf = ClickFx(); await Task.Delay(90); box.Focus(); await bf;
+            var want = L.IsEnglish ? "When a supplier reports a delay, list the affected orders with old and new dates and the questions to ask."
+                                   : "Tedarikçi gecikme bildirince etkilenen siparişleri eski ve yeni tarihleriyle listele, sorulacak soruları yaz.";
+            for (int i = 1; i <= want.Length; i += 2) { box.Text = want[..Math.Min(i, want.Length)]; box.CaretIndex = box.Text.Length; await Task.Delay(28); }
+            box.Text = want; await Task.Delay(500);
+            await Click(Field<Button>(sw, "_aiButton"), 700);
+            await Until(() => Field<Button>(sw, "_aiButton").IsEnabled, 60);
+            await Task.Delay(800);
+            await Move(Field<TextBox>(sw, "_editor"), 900); await Task.Delay(1200);
+            await Click(Field<Button>(sw, "_save"), 800);
+            await Task.Delay(1800);
+            Rec.Stop(); sw.Close(); await Idle(1000);
+
+            // 4) Connect agents: one click, choose the permission, test the server
+            before = Application.Current.Windows.OfType<Window>().ToHashSet();
+            _ = main.Dispatcher.BeginInvoke(() => Call(main, "OnAgents", main, new RoutedEventArgs()));
+            var ag = await WaitNew<Views.AgentsWindow>(before); Place(ag); await Idle(1500);
+            Rec.Start(ag, "c24-agents"); Rec.Cursor = new Point(W * 0.5, H * 0.45);
+            var rows = Field<StackPanel>(ag, "_rows");
+            FrameworkElement? Card(string name) => rows.Children.OfType<FrameworkElement>().FirstOrDefault(c => Visuals(c).OfType<TextBlock>().Any(t => t.Text.Contains(name)));
+            ButtonBase? CardBtn(string name, string text) => Card(name) is { } c ? Visuals(c).OfType<ButtonBase>().FirstOrDefault(b => TextOf(b) == text) : null;
+            await Task.Delay(700);
+            await Click(CardBtn("Claude Desktop", L.T("Bağla")), 900); await Task.Delay(1500);
+            await Click(CardBtn("Claude Code", L.T("Bağla")), 800); await Task.Delay(1300);
+            var combo = Card("OpenAI Codex") is { } cc ? Visuals(cc).OfType<ComboBox>().FirstOrDefault() : null;
+            if (combo != null) { await Move(combo, 800); var c2 = ClickFx(); await Task.Delay(90); combo.SelectedIndex = 0; await c2; await Task.Delay(700); }
+            await Click(CardBtn("OpenAI Codex", L.T("Bağla")), 700); await Task.Delay(1300);
+            await Click(CardBtn("Claude Code", L.T("Test et")), 800);
+            var status = Field<TextBlock>(ag, "_status");
+            try { await Until(() => status.Text.StartsWith("✓") || status.Text.StartsWith("✗"), 40); } catch { }
+            await Move(status, 900);
+            await Task.Delay(2600);
+            Rec.Stop(); ag.Close(); await Idle(800);
+            Log.Add("OK");
+        }
+        catch (Exception ex) { Log.Add("FAIL S " + ex); }
+        Finish();
+    }
+
     static void Finish()
     {
         try { Rec.Stop(); } catch { }

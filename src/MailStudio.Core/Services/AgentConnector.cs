@@ -22,6 +22,8 @@ public sealed class AgentInfo
     public bool PathOutdated { get; set; }
     public AgentPermission Permission { get; set; } = AgentPermission.Draft;
     public string Hint { get; init; } = "";
+    /// <summary>Config path for display, with %APPDATA% / %USERPROFILE% instead of the user's folder.</summary>
+    public string DisplayPath { get; init; } = "";
 }
 
 /// <summary>
@@ -78,7 +80,19 @@ public static class AgentConnector
 
     static AgentInfo Make(string id, string name, string path, AgentConfigKind kind, bool installed, string hint) =>
         new() { Id = id, Name = name, ConfigPath = TestRoot == null ? path : Path.Combine(TestRoot, id, Path.GetFileName(path)), Kind = kind,
-                Installed = TestRoot != null || installed, Hint = hint };
+                Installed = TestRoot != null || installed, Hint = hint, DisplayPath = Shorten(path) };
+
+    /// <summary>Replaces the user's own folders with environment variables (no user name on screen or in screenshots).</summary>
+    public static string Shorten(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return text ?? "";
+        var map = new List<(string, string)>();
+        if (TestRoot != null) map.Add((TestRoot, "%TEST%"));
+        map.Add((Roaming, "%APPDATA%")); map.Add((Local, "%LOCALAPPDATA%")); map.Add((Home, "%USERPROFILE%"));
+        foreach (var (from, to) in map.Where(m => m.Item1.Length > 3).OrderByDescending(m => m.Item1.Length))
+            text = text.Replace(from, to, StringComparison.OrdinalIgnoreCase);
+        return text;
+    }
 
     static string? ClaudeDesktopMsix()
     {

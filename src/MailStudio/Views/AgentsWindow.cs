@@ -69,7 +69,7 @@ public sealed class AgentsWindow : Window
             title.Inlines.Add(new System.Windows.Documents.Run((a.Connected && !a.PathOutdated ? "● " : "○ ") + a.Name) { Foreground = a.Connected && !a.PathOutdated ? new SolidColorBrush(Color.FromRgb(16, 124, 16)) : ThemeManager.Brush("TextPrimaryBrush") });
             title.Inlines.Add(new System.Windows.Documents.Run("  " + state) { FontWeight = FontWeights.Normal, FontSize = 12, Foreground = ThemeManager.Brush("TextSecondaryBrush") });
             left.Children.Add(title);
-            left.Children.Add(new TextBlock { Text = a.ConfigPath, FontSize = 11, Foreground = ThemeManager.Brush("TextSecondaryBrush"), TextTrimming = TextTrimming.CharacterEllipsis });
+            left.Children.Add(new TextBlock { Text = a.DisplayPath, ToolTip = a.ConfigPath, FontSize = 11, Foreground = ThemeManager.Brush("TextSecondaryBrush"), TextTrimming = TextTrimming.CharacterEllipsis });
             left.Children.Add(new TextBlock { Text = a.Hint, FontSize = 11.5, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) });
 
             var right = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
@@ -94,7 +94,7 @@ public sealed class AgentsWindow : Window
         try
         {
             var backup = AgentConnector.Connect(a, _mcp, p);
-            _status.Text = L.F("{0} bağlandı ({1}). {2}", a.Name, PermText(p), a.Hint) + (backup != null ? "\n" + L.F("Önceki ayar dosyası yedeklendi: {0}", backup) : "");
+            _status.Text = L.F("{0} bağlandı ({1}). {2}", a.Name, PermText(p), a.Hint) + (backup != null ? "\n" + L.F("Önceki ayar dosyası yedeklendi: {0}", AgentConnector.Shorten(backup)) : "");
         }
         catch (Exception ex) { _status.Text = L.F("{0} bağlanamadı: {1}", a.Name, ex.Message); }
         Fill();
@@ -105,7 +105,7 @@ public sealed class AgentsWindow : Window
         if (_mcp == null) return;
         _status.Text = L.T("MCP sunucusu test ediliyor...");
         var (ok, msg) = await AgentConnector.TestAsync(_mcp, p);
-        _status.Text = (ok ? "✓ " : "✗ ") + msg;
+        _status.Text = (ok ? "✓ " : "✗ ") + AgentConnector.Shorten(msg);
     }
 
     void CopySnippet()
