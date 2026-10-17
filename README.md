@@ -72,6 +72,10 @@ never send mail on its own.
 
 ### 🧩 Skills and one-click agent connection
 
+<img src="docs/media/skill-run.png" alt="Quotation request analysis skill" width="100%">
+
+<img src="docs/media/excel-skill.png" alt="Excel edit preview" width="70%">
+
 - **Skills**: your own rules for recurring work – *quotation request analysis*, *drawing check*,
   *STEP raw stock & weight*, *update the Excel delivery schedule*, *flag urgent mails*… They read the mail **and its
   attachments** (PDF with OCR, STEP, DXF/DWG, Excel, Word) and give a note, a reply draft, an Excel copy (with preview)

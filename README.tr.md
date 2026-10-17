@@ -67,6 +67,10 @@ zeka asla kendi başına mail gönderemez.
 
 ### 🧩 Skill'ler ve tek tıkla ajan bağlantısı
 
+<img src="docs/media/tr/skill-run.png" alt="Teklif isteği analizi skill'i" width="100%">
+
+<img src="docs/media/tr/excel-skill.png" alt="Excel değişiklik önizlemesi" width="70%">
+
 - **Skill'ler**: tekrar eden işler için kendi kurallarınız – *teklif isteği analizi*, *teknik resim kontrolü*,
   *STEP hammadde ve ağırlık*, *Excel teslim planını güncelle*, *acil mailleri işaretle*… Maili **ve eklerini**
   (OCR'lı PDF, STEP, DXF/DWG, Excel, Word) okur; sonuç not, cevap taslağı, önizlemeli Excel kopyası ya da bayrak/taşıma
