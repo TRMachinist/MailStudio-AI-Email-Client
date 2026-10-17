@@ -7,6 +7,8 @@ using System.Text.Json;
 
 var root = Path.Combine(Path.GetTempPath(), "MailStudio-regression-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
+// Never touch the real %AppData%\MailStudio while testing.
+if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MAILSTUDIO_DATA_DIR"))) Environment.SetEnvironmentVariable("MAILSTUDIO_DATA_DIR", Path.Combine(root, "data"));
 int passed = 0;
 void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
 async Task Test(string name, Func<Task> run) { await run().WaitAsync(TimeSpan.FromSeconds(25)); Console.WriteLine("PASS " + name); passed++; }
