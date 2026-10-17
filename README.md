@@ -14,6 +14,7 @@ Open STEP, DXF/DWG, PDF drawings, Office files and CNC programs right from your 
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20T%C3%BCrk%C3%A7e-orange)
 [![Stars](https://img.shields.io/github/stars/yasinisiktek-cloud/MailStudio-AI-Email-Client?style=social)](https://github.com/yasinisiktek-cloud/MailStudio-AI-Email-Client/stargazers)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-TRMachinist-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/trmachinist/)
+[![Instagram](https://img.shields.io/badge/Instagram-trmachinist-E4405F?logo=instagram&logoColor=white)](https://www.instagram.com/trmachinist/)
 
 **English** · [Türkçe](README.tr.md)
 
@@ -169,7 +170,7 @@ If MailStudio helps you, **please give it a ⭐ — it really helps the project 
 ## Author
 
 Built by **TRMachinist** — software for machining and manufacturing.
-Questions, ideas or collaboration: **[connect on LinkedIn](https://www.linkedin.com/in/trmachinist/)**.
+Questions, ideas or collaboration: **[LinkedIn](https://www.linkedin.com/in/trmachinist/)** · **[Instagram](https://www.instagram.com/trmachinist/)**
 
 ## License
 

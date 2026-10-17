@@ -12,6 +12,7 @@ STEP, DXF/DWG, PDF teknik resim, Office dosyaları ve CNC programlarını doğru
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows)
 ![.NET 8](https://img.shields.io/badge/.NET-8-512BD4?logo=dotnet)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-TRMachinist-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/trmachinist/)
+[![Instagram](https://img.shields.io/badge/Instagram-trmachinist-E4405F?logo=instagram&logoColor=white)](https://www.instagram.com/trmachinist/)
 
 [English](README.md) · **Türkçe**
 
@@ -140,7 +141,7 @@ MailStudio işinize yaradıysa **bir ⭐ verin — projenin büyümesine gerçek
 ## Geliştirici
 
 **TRMachinist** — talaşlı imalat ve üretim için yazılımlar.
-Soru, fikir veya iş birliği için: **[LinkedIn'den bağlantı kurun](https://www.linkedin.com/in/trmachinist/)**.
+Soru, fikir veya iş birliği için: **[LinkedIn](https://www.linkedin.com/in/trmachinist/)** · **[Instagram](https://www.instagram.com/trmachinist/)**
 
 ## Lisans
 
