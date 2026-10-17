@@ -525,6 +525,27 @@ internal static class Program
             }
             Console.WriteLine("PREVIEW_READY"); await Task.Delay(TimeSpan.FromSeconds(55)); Close(preview);
         }
+        {
+            // 1.6: skills, Excel preview and agent connection windows (agent configs redirected to a temp folder).
+            var skillsWin = new MailStudio.Views.SkillsWindow((_, _) => Task.FromResult("")); skillsWin.Show(); await Task.Delay(400);
+            var skills = Field<List<MailStudio.Services.Skills.Skill>>(skillsWin, "_skills");
+            Check(skills.Count >= 5 && skills.All(k => k.Error == null), "skills window lists the built-in skills without errors");
+            Audit(skillsWin, "SkillsWindow"); Capture(skillsWin, "skills-window.png"); skillsWin.Close();
+            var xlsx = Path.Combine(AppContext.BaseDirectory, "Demo", "delivery-schedule-wk43.xlsx");
+            if (!File.Exists(xlsx)) xlsx = Directory.GetFiles(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "src", "MailStudio", "Demo")), "delivery-schedule-wk43.xlsx").First();
+            var plan = MailStudio.Services.Skills.SkillRunner.ParseExcel("{\"file\":\"delivery-schedule-wk43.xlsx\",\"summary\":\"Demo\",\"operations\":[{\"op\":\"set\",\"sheet\":\"Week 43\",\"cell\":\"G4\",\"value\":\"2026-10-30\"},{\"op\":\"fill\",\"sheet\":\"Week 43\",\"cell\":\"A4:H4\",\"color\":\"#FFF2CC\"}]}");
+            var excelWin = new MailStudio.Views.ExcelPlanWindow(xlsx, plan); excelWin.Show(); await Task.Delay(400);
+            Audit(excelWin, "ExcelPlanWindow"); Capture(excelWin, "excel-plan-window.png"); excelWin.Close();
+            AgentConnector.TestRoot = Path.Combine(AppPaths.Root, "agent-test");
+            try
+            {
+                var agentsWin = new MailStudio.Views.AgentsWindow(); agentsWin.Show(); await Task.Delay(400);
+                Check(Field<StackPanel>(agentsWin, "_rows").Children.Count >= 9, "agents window shows a card per supported agent");
+                Audit(agentsWin, "AgentsWindow"); Capture(agentsWin, "agents-window.png"); agentsWin.Close();
+            }
+            finally { AgentConnector.TestRoot = null; }
+            Console.WriteLine("PASS skills, Excel preview and agents windows"); _passed++;
+        }
         if (L.IsEnglish)
         {
             foreach (var w in Application.Current.Windows.OfType<Window>().Where(w => w.IsVisible).ToList()) Audit(w, w.GetType().Name);
