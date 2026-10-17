@@ -63,7 +63,13 @@ public sealed class DemoAiProvider : IAiProvider
         const string tail = "\n\n(Demo AI – connect Ollama, Claude, Codex or Gemini for real answers.)";
         const string tailTr = "\n\n(Demo AI – gerçek yanıtlar için Ollama, Claude, Codex veya Gemini bağlayın.)";
         if (p.Contains("\"operations\""))
-            return """
+            return !en ? """
+                {"file":"delivery-schedule-wk43.xlsx","summary":"Braket rev C (CA-2201) malzeme gecikmesi nedeniyle 2026-10-30'a kayıyor.","operations":[
+                 {"op":"set","sheet":"Week 43","cell":"G4","value":"2026-10-30"},
+                 {"op":"set","sheet":"Week 43","cell":"H4","value":"Delayed - material"},
+                 {"op":"fill","sheet":"Week 43","cell":"A4:H4","color":"#FFF2CC"},
+                 {"op":"comment","sheet":"Week 43","cell":"G4","text":"2026-10-27'den kaydırıldı (planlama maili, demo)"}]}
+                """ : """
                 {"file":"delivery-schedule-wk43.xlsx","summary":"Bracket rev C (CA-2201) moves to 2026-10-30 because of a material delay.","operations":[
                  {"op":"set","sheet":"Week 43","cell":"G4","value":"2026-10-30"},
                  {"op":"set","sheet":"Week 43","cell":"H4","value":"Delayed - material"},
