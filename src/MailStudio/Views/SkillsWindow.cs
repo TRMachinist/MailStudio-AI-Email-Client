@@ -22,7 +22,7 @@ public sealed class SkillsWindow : Window
     readonly TextBlock _desc = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
     readonly CheckBox _enabled = new() { Content = L.T("Açık (yapay zeka panelinde düğme olarak görünür)"), Margin = new Thickness(0, 10, 0, 0) };
     readonly CheckBox _auto = new() { Content = L.T("Yeni mail gelince otomatik çalıştır"), Margin = new Thickness(0, 6, 0, 0) };
-    readonly TextBox _editor = new() { AcceptsReturn = true, AcceptsTab = true, TextWrapping = TextWrapping.NoWrap, FontFamily = new FontFamily("Cascadia Mono, Consolas"), FontSize = 12.5,
+    readonly TextBox _editor = new() { VerticalContentAlignment = VerticalAlignment.Top, AcceptsReturn = true, AcceptsTab = true, TextWrapping = TextWrapping.NoWrap, FontFamily = new FontFamily("Cascadia Mono, Consolas"), FontSize = 12.5,
         VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto };
     readonly TextBlock _status = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 0) };
     readonly Button _save, _copy, _delete, _export;
