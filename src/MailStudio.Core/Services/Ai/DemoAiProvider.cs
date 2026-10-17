@@ -31,7 +31,7 @@ public sealed class DemoAiProvider : IAiProvider
         var p = prompt.ToLowerInvariant();
         bool Has(params string[] k) => k.Any(x => p.Contains(x));
         if (Has("<skill-instructions>")) return SkillAnswer(p, en);
-        if (Has("you are an expert at writing mailstudio skills")) return GeneratedSkill;
+        if (Has("you are an expert at writing mailstudio skills")) return en ? GeneratedSkill : GeneratedSkillTr;
         if (Has("3-5 bullet", "3-5 madde"))
             return en
                 ? $"**Summary – {subject}**\n\n• Customer asks for a quotation of **120 pcs** flange NW-1042 rev B (S235JR, galvanized).\n• Delivery requested for **week 46**.\n• Tolerances per drawing, general ISO 2768-mK.\n• A **3.1 material certificate** is required.\n\n**Action for you:** send the quotation including price, lead time and certificate cost.\n\n_(Demo AI – connect Ollama, Claude, Codex or Gemini for real answers.)_"
@@ -56,6 +56,8 @@ public sealed class DemoAiProvider : IAiProvider
     }
 
     const string GeneratedSkill = "---\nname: supplier-delay-check\ndescription: \"Finds delivery delays in supplier mails and lists the affected orders.\"\nmailstudio:\n  title: \"Supplier delay check\"\n  title_tr: \"Tedarikçi gecikme kontrolü\"\n  inputs: [mail, xlsx]\n  run: [button, new-mail]\n  when:\n    text: \"delay;late;postpone;gecikme\"\n  output: note\n---\n\n# Supplier delay check\n\n1. List every order or part number with its new date and the old date if mentioned.\n2. Explain the impact on our own deliveries.\n3. End with the questions to ask the supplier. Never invent dates.\n";
+
+    const string GeneratedSkillTr = "---\nname: supplier-delay-check\ndescription: \"Tedarikçi maillerindeki termin gecikmelerini bulur ve etkilenen siparişleri listeler.\"\nmailstudio:\n  title: \"Supplier delay check\"\n  title_tr: \"Tedarikçi gecikme kontrolü\"\n  inputs: [mail, xlsx]\n  run: [button, new-mail]\n  when:\n    text: \"gecikme;ertele;delay;late\"\n  output: note\n---\n\n# Tedarikçi gecikme kontrolü\n\n1. Yeni tarihi verilen her sipariş veya parça numarasını, varsa eski tarihiyle listele.\n2. Kendi teslimatlarımıza etkisini açıkla.\n3. Tedarikçiye sorulacak sorularla bitir. Tarih uydurma.\n";
 
     /// <summary>Canned skill results. Numbers come from the demo files (flange NW-1042, bracket rev C, week-43 schedule).</summary>
     static string SkillAnswer(string p, bool en)

@@ -135,6 +135,7 @@ public sealed class SkillsWindow : Window
         _auto.Visibility = s?.RunsOnNewMail == true ? Visibility.Visible : Visibility.Collapsed;
         _auto.IsChecked = s != null && _store.IsAuto(s);
         try { _editor.Text = s == null ? "" : File.ReadAllText(s.FilePath); } catch (Exception ex) { _editor.Text = ex.Message; }
+        _editor.ScrollToHome();
         _editor.IsReadOnly = s?.BuiltIn == true;
         _save.IsEnabled = s is { BuiltIn: false };
         _copy.Visibility = s?.BuiltIn == true ? Visibility.Visible : Visibility.Collapsed;
@@ -162,7 +163,7 @@ public sealed class SkillsWindow : Window
         _cur = null; _unsavedId = "new";
         _title.Text = L.T("Yeni skill (kaydedilmedi)"); _meta.Text = ""; _desc.Text = L.T("Düzenleyip Kaydet'e basın. Kaydetmeden önce dosya kontrol edilir.");
         _enabled.IsEnabled = false; _auto.Visibility = Visibility.Collapsed;
-        _editor.IsReadOnly = false; _editor.Text = md;
+        _editor.IsReadOnly = false; _editor.Text = md; _editor.ScrollToHome();
         _save.IsEnabled = true; _copy.Visibility = Visibility.Collapsed; _delete.IsEnabled = false; _export.IsEnabled = false;
         _status.Text = "";
         _loading = false;
@@ -183,7 +184,7 @@ public sealed class SkillsWindow : Window
             {
                 var s = _store.Save(_editor.Text);
                 Reload(s.Id);
-                _status.Text = L.F("Kaydedildi: {0}", s.Folder);
+                _status.Text = L.F("Kaydedildi: {0}", s.Id); _status.ToolTip = s.Folder;
             }
         }
         catch (Exception ex) { _status.Text = L.T("Kaydedilemedi: ") + ex.Message; _status.Foreground = Brushes.IndianRed; return; }

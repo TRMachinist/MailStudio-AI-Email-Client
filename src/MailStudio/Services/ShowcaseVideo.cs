@@ -460,15 +460,16 @@ public static class ShowcaseVideo
             var ag = await WaitNew<Views.AgentsWindow>(before); Place(ag); await Idle(1500);
             Rec.Start(ag, "c24-agents"); Rec.Cursor = new Point(W * 0.5, H * 0.45);
             var rows = Field<StackPanel>(ag, "_rows");
-            FrameworkElement? Card(string name) => rows.Children.OfType<FrameworkElement>().FirstOrDefault(c => Visuals(c).OfType<TextBlock>().Any(t => t.Text.Contains(name)));
+            // cards are found by their config file (shown as plain text): .claude.json, claude_desktop_config.json, config.toml
+            FrameworkElement? Card(string file) => rows.Children.OfType<FrameworkElement>().FirstOrDefault(c => Visuals(c).OfType<TextBlock>().Any(t => t.Text.EndsWith(file, StringComparison.OrdinalIgnoreCase)));
             ButtonBase? CardBtn(string name, string text) => Card(name) is { } c ? Visuals(c).OfType<ButtonBase>().FirstOrDefault(b => TextOf(b) == text) : null;
             await Task.Delay(700);
-            await Click(CardBtn("Claude Desktop", L.T("Bağla")), 900); await Task.Delay(1500);
-            await Click(CardBtn("Claude Code", L.T("Bağla")), 800); await Task.Delay(1300);
-            var combo = Card("OpenAI Codex") is { } cc ? Visuals(cc).OfType<ComboBox>().FirstOrDefault() : null;
+            await Click(CardBtn("claude_desktop_config.json", L.T("Bağla")), 900); await Task.Delay(1500);
+            await Click(CardBtn("\\.claude.json", L.T("Bağla")), 800); await Task.Delay(1300);
+            var combo = Card("config.toml") is { } cc ? Visuals(cc).OfType<ComboBox>().FirstOrDefault() : null;
             if (combo != null) { await Move(combo, 800); var c2 = ClickFx(); await Task.Delay(90); combo.SelectedIndex = 0; await c2; await Task.Delay(700); }
-            await Click(CardBtn("OpenAI Codex", L.T("Bağla")), 700); await Task.Delay(1300);
-            await Click(CardBtn("Claude Code", L.T("Test et")), 800);
+            await Click(CardBtn("config.toml", L.T("Bağla")), 700); await Task.Delay(1300);
+            await Click(CardBtn("\\.claude.json", L.T("Test et")), 800);
             var status = Field<TextBlock>(ag, "_status");
             try { await Until(() => status.Text.StartsWith("✓") || status.Text.StartsWith("✗"), 40); } catch { }
             await Move(status, 900);
