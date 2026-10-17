@@ -337,6 +337,8 @@ await Test("skills: built-in SKILL.md files parse, YAML subset, conditions and a
     Check(k.When.Count == 2 && k.Accepts("Resim.PDF") && k.Accepts("model.stp") && !k.Accepts("plan.xlsx"), "conditions / accepted files");
     var rfq = new MailHeader { Subject = "RFQ flange", HasAttachments = true }; var other = new MailHeader { Subject = "Newsletter", HasAttachments = true };
     Check(k.AppliesTo(rfq, new[] { "a.pdf" }) && !k.AppliesTo(other, new[] { "a.pdf" }), "when-conditions decide");
+    var step = MailStudio.Services.Skills.Skill.Load(Path.Combine(RepoRoot(), "skills", "step-cost-estimate"), true);
+    Check(!step.AppliesTo(rfq, new[] { "a.pdf" }) && step.AppliesTo(rfq, new[] { "part.STEP" }), "attachment skills need a matching file");
     foreach (var bad in new[] { "no front matter", "---\ndescription: x\n---\nbody", "---\nname: a\nmailstudio:\n  output: email\n---\n", "---\nname: a\nmailstudio:\n  inputs: [exe]\n---\n", "---\nname: a\nmailstudio:\n  when:\n    bogus: 1\n---\n" })
     { var threw = false; try { MailStudio.Services.Skills.Skill.Parse(bad, "b"); } catch (FormatException) { threw = true; } Check(threw, "invalid skill accepted: " + bad[..Math.Min(30, bad.Length)]); }
     Check(MailStudio.Services.Skills.Skill.Slug("Teklif İsteği Analizi!") == "teklif-i-stegi-analizi" || MailStudio.Services.Skills.Skill.Slug("Teklif isteği analizi") == "teklif-istegi-analizi", "slug");

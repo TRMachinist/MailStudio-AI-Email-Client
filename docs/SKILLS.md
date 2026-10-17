@@ -49,6 +49,11 @@ mailstudio:
 3. End with the questions to ask the supplier. Never invent dates.
 ```
 
+### When the button appears
+
+A skill that reads attachments (`inputs` other than `mail`) is offered only when a matching file is attached.
+If it also has `when` conditions and `mail` in `inputs`, the conditions decide and it works from the mail text too.
+
 ### What the AI receives
 
 * The mail (headers, text, attachment names).

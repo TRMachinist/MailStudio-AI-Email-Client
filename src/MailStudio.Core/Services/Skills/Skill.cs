@@ -81,7 +81,10 @@ public sealed class Skill
     public bool AppliesTo(MailHeader h, IEnumerable<string>? attachmentNames)
     {
         if (When.Count > 0 && !FormatRuleEngine.Matches(new FormatRule { Conditions = When.ToList() }, h)) return false;
-        if (!WantsAttachments || Inputs.Contains("mail")) return true;
+        if (!WantsAttachments) return true;
+        // A skill that reads attachments shows up only when a matching file is attached – unless its own 'when'
+        // conditions already chose the mail and it can also work from the mail text.
+        if (When.Count > 0 && Inputs.Contains("mail")) return true;
         return attachmentNames?.Any(Accepts) ?? h.HasAttachments;
     }
 
