@@ -351,6 +351,7 @@ await Test("skills: prompt fences data, Excel plan previews and applies to a cop
     var xlsx = Path.Combine(RepoRoot(), "src", "MailStudio", "Demo", "delivery-schedule-wk43.xlsx");
     var text = AttachmentExtractor.Excel(xlsx);
     Check(text.Contains("# Sheet \"Week 43\"") && text.Contains("A4=CA-2201") && text.Contains("(=SUM("), "Excel extraction with addresses and formulas");
+    Check(text.Contains("E2=38.5 ") && text.Contains("F2=4620 (=D2*E2)") && text.Contains("G4=2026-10-27"), "Excel values are culture independent");
     var plan = MailStudio.Services.Skills.SkillRunner.ParseExcel("Sure:\n```json\n{\"file\":\"delivery-schedule-wk43.xlsx\",\"summary\":\"s\",\"operations\":[{\"op\":\"set\",\"sheet\":\"Week 43\",\"cell\":\"G4\",\"value\":\"2026-10-30\"},{\"op\":\"set\",\"sheet\":\"Week 43\",\"cell\":\"D4\",\"value\":45},{\"op\":\"fill\",\"sheet\":\"Week 43\",\"cell\":\"A4:H4\",\"color\":\"#FFF2CC\"},{\"op\":\"comment\",\"cell\":\"G4\",\"text\":\"moved\"},{\"op\":\"delete_sheet\",\"cell\":\"A1\"},{\"op\":\"set\",\"cell\":\"ZZZ0\",\"value\":\"x\"}]}\n```");
     var before = File.ReadAllBytes(xlsx);
     var preview = MailStudio.Services.Skills.ExcelEditApplier.Preview(xlsx, plan, out var warnings);

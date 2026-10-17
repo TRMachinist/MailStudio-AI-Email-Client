@@ -66,7 +66,16 @@ public static class AttachmentExtractor
                     var cell = ws.Cell(r, c);
                     if (cell.IsEmpty()) continue;
                     string v;
-                    try { v = cell.GetFormattedString(); } catch { v = cell.CachedValue.ToString() ?? ""; }
+                    // Culture-independent values: the AI must not confuse "4.620,00" with 4.62.
+                    try
+                    {
+                        var value = cell.Value;
+                        v = value.IsNumber ? value.GetNumber().ToString("0.##########", System.Globalization.CultureInfo.InvariantCulture)
+                          : value.IsDateTime ? (value.GetDateTime().TimeOfDay == TimeSpan.Zero ? value.GetDateTime().ToString("yyyy-MM-dd") : value.GetDateTime().ToString("yyyy-MM-dd HH:mm"))
+                          : value.IsBoolean ? (value.GetBoolean() ? "TRUE" : "FALSE")
+                          : cell.GetFormattedString();
+                    }
+                    catch { v = cell.CachedValue.ToString() ?? ""; }
                     if (cell.HasFormula) v += $" (={cell.FormulaA1})";
                     cells.Add($"{cell.Address.ToStringRelative()}={v.Replace('\n', ' ')}");
                 }
