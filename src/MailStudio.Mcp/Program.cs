@@ -19,6 +19,7 @@ using ModelContextProtocol.Server;
 
 Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 Console.OutputEncoding = Encoding.UTF8;
+L.Init("en");   // the agent reads these messages; it translates for the user itself
 var permission = AgentPermission.Draft;
 var pi = Array.IndexOf(args, "--permission");
 if (pi >= 0 && pi + 1 < args.Length && Enum.TryParse<AgentPermission>(args[pi + 1], true, out var parsed)) permission = parsed;
