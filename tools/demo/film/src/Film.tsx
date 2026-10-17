@@ -2,7 +2,15 @@ import React from 'react';
 import {AbsoluteFill, Audio, Img, OffthreadVideo, Sequence, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig, Easing} from 'remotion';
 import en from './timeline-en.json';
 import tr from './timeline-tr.json';
-import {TEXT} from './text';
+import en16 from './timeline16-en.json';
+import tr16 from './timeline16-tr.json';
+import {TEXT, TEXT16} from './text';
+
+export type FilmSet = 'main' | 'v16';
+const SetCtx = React.createContext<FilmSet>('main');
+const useTexts = (lang: 'en' | 'tr') => (React.useContext(SetCtx) === 'v16' ? TEXT16 : TEXT)[lang] as any;
+const isIntro = (id: string) => id.endsWith('01');
+const isOutro = (id: string) => id.endsWith('10');
 
 const C = {bg0: '#060A13', bg1: '#0C1628', ink: '#EAF2FF', dim: '#9FB3CF', blue: '#2F8CFF', cyan: '#33C8FF', orange: '#FF8A3D', line: 'rgba(120,170,255,0.10)'};
 const FONT = "Inter, 'Inter Display', 'DejaVu Sans', sans-serif";
@@ -113,7 +121,7 @@ const Words: React.FC<{text: string; size: number; delay: number; color?: string
 const Side: React.FC<{lang: 'en' | 'tr'; id: string; dur: number}> = ({lang, id, dur}) => {
   const f = useCurrentFrame();
   const {V, fps} = useL();
-  const t = (TEXT[lang] as any)[id];
+  const t = useTexts(lang)[id];
   if (!t) return null;
   const out = interpolate(f, [dur - 6, dur], [1, 0], clamp);
   const p = spring({frame: f - 2, fps, config: {damping: 20}});
@@ -141,13 +149,15 @@ const Intro: React.FC<{lang: 'en' | 'tr'; dur: number}> = ({lang, dur}) => {
   const {V, fps} = useL();
   const p = spring({frame: f, fps, config: {damping: 14, stiffness: 110}});
   const out = interpolate(f, [dur - 6, dur], [1, 0], clamp);
-  const tag = lang === 'en' ? 'The open-source AI email client for engineers & machinists' : 'İmalatçılar için yapay zekâlı, açık kaynak mail programı';
+  const set = React.useContext(SetCtx);
+  const it = useTexts(lang).intro ?? {title: 'MailStudio', sub: 'for TRMachinist', tag: lang === 'en' ? 'The open-source AI email client for engineers & machinists' : 'İmalatçılar için yapay zekâlı, açık kaynak mail programı'};
+  const tag = it.tag;
   const pos: React.CSSProperties = V ? {left: 60, right: 60, top: 150} : {left: 70, width: 410, top: 250};
   return (
     <div style={{position: 'absolute', ...pos, opacity: out}}>
       <div style={{transform: `scale(${0.6 + 0.4 * p})`, transformOrigin: 'left center', opacity: p}}><Logo size={V ? 130 : 96} /></div>
-      <div style={{marginTop: 26}}><Words text="MailStudio" size={V ? 110 : 76} delay={6} /></div>
-      <div style={{marginTop: 2}}><Words text="for TRMachinist" size={V ? 56 : 38} delay={12} color={C.cyan} weight={700} /></div>
+      <div style={{marginTop: 26}}><Words text={it.title} size={V ? 110 : set === 'v16' ? 66 : 76} delay={6} /></div>
+      <div style={{marginTop: 2}}><Words text={it.sub} size={V ? 56 : 38} delay={12} color={C.cyan} weight={700} /></div>
       <div style={{marginTop: 22, color: C.dim, fontFamily: FONT, fontSize: V ? 36 : 25, fontWeight: 500, lineHeight: 1.3, opacity: interpolate(f, [22, 34], [0, 1], clamp)}}>{tag}</div>
     </div>
   );
@@ -156,7 +166,7 @@ const Intro: React.FC<{lang: 'en' | 'tr'; dur: number}> = ({lang, dur}) => {
 const Outro: React.FC<{lang: 'en' | 'tr'}> = ({lang}) => {
   const f = useCurrentFrame();
   const {V, fps} = useL();
-  const o = (TEXT[lang] as any).outro;
+  const o = useTexts(lang).outro;
   const p = spring({frame: f, fps, config: {damping: 14}});
   const pulse = 1 + 0.03 * Math.sin(f / 5);
   return (
@@ -182,7 +192,7 @@ const Captions: React.FC<{tl: TL}> = ({tl}) => {
   const {V} = useL();
   let line: string | null = null, local = 0, outro = false;
   for (const s of tl.scenes) {
-    if (f >= s.voiceFrom && f < s.voiceFrom + s.voiceFrames && s.id === 's10') outro = true;
+    if (f >= s.voiceFrom && f < s.voiceFrom + s.voiceFrames && isOutro(s.id)) outro = true;
     if (f < s.voiceFrom || f >= s.voiceFrom + s.voiceFrames) continue;
     const tot = s.parts.reduce((a, p) => a + p.length, 0);
     let cur = s.voiceFrom;
@@ -202,8 +212,13 @@ const Captions: React.FC<{tl: TL}> = ({tl}) => {
   );
 };
 
-export const Film: React.FC<{lang: 'en' | 'tr'}> = ({lang}) => {
-  const tl = (lang === 'en' ? en : tr) as unknown as TL;
+export const Film: React.FC<{lang: 'en' | 'tr'; set?: FilmSet}> = ({lang, set = 'main'}) => (
+  <SetCtx.Provider value={set}><FilmBody lang={lang} set={set} /></SetCtx.Provider>
+);
+
+const FilmBody: React.FC<{lang: 'en' | 'tr'; set: FilmSet}> = ({lang, set}) => {
+  const tl = (set === 'v16' ? (lang === 'en' ? en16 : tr16) : (lang === 'en' ? en : tr)) as unknown as TL;
+  const texts = (set === 'v16' ? TEXT16 : TEXT)[lang] as any;
   const f = useCurrentFrame();
   const {width, V} = useL();
   const last = tl.scenes[tl.scenes.length - 1];
@@ -212,15 +227,15 @@ export const Film: React.FC<{lang: 'en' | 'tr'}> = ({lang}) => {
       <Background />
       {tl.scenes.map((s) => (
         <Sequence key={s.id} from={s.from} durationInFrames={s.dur} name={s.id}>
-          {s.id === 's10' ? <Outro lang={lang} /> : (
+          {isOutro(s.id) ? <Outro lang={lang} /> : (
             <>
               <AppWindow sc={s} />
-              {s.id === 's01' ? <Intro lang={lang} dur={s.dur} /> : <Side lang={lang} id={s.id} dur={s.dur} />}
+              {isIntro(s.id) ? <Intro lang={lang} dur={s.dur} /> : <Side lang={lang} id={s.id} dur={s.dur} />}
             </>
           )}
         </Sequence>
       ))}
-      {f < last.from ? <div style={{position: 'absolute', right: V ? 40 : 36, top: V ? 60 : 34, fontFamily: FONT, fontSize: V ? 20 : 15, color: 'rgba(200,215,235,0.75)', letterSpacing: 1}}>{TEXT[lang].badge}</div> : null}
+      {f < last.from ? <div style={{position: 'absolute', right: V ? 40 : 36, top: V ? 60 : 34, fontFamily: FONT, fontSize: V ? 20 : 15, color: 'rgba(200,215,235,0.75)', letterSpacing: 1}}>{texts.badge}</div> : null}
       <Captions tl={tl} />
       <div style={{position: 'absolute', left: 0, bottom: 0, height: V ? 8 : 5, width: (width * f) / tl.totalFrames, background: `linear-gradient(90deg, ${C.cyan}, ${C.orange})`}} />
       <Audio src={staticFile(tl.audio)} />

@@ -11,3 +11,10 @@ Everything in the film is the real app running on the demo mailbox — no real m
 4. Timeline + soundtrack: `python film/tools/build.py` (music is synthesized in code; loudness -14 LUFS).
 5. Render: `npm install` then `npx remotion render src/index.ts FilmEN out/MailStudio_Demo_EN_1920x1080.mp4`
    (also `FilmTR`, `VertEN`, `VertTR`).
+
+## 1.6 film (skills + agents)
+
+1. Record: `MailStudio.exe --demo --showcase-skills <rec-dir>` (agent config files go to `<rec-dir>\agent-configs`).
+2. Clips into `film/public/clips16/<lang>`, narration with `python tools/demo/voice16.py` into `film/public/voice16/<lang>`,
+   the last `c21-skill` frame as `film/public/stills/intro16-<lang>.jpg`.
+3. `python film/tools/build16.py`, then render `New16EN`, `New16TR`, `New16VertEN`, `New16VertTR`.

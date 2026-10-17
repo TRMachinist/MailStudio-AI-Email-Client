@@ -33,3 +33,33 @@ export const TEXT: Record<'en' | 'tr', Record<string, SceneText> & {badge: strin
     },
   },
 };
+
+/** The 1.6 film: skills and agent connection. */
+export const TEXT16: Record<'en' | 'tr', any> = {
+  en: {
+    badge: 'REAL APP · DEMO DATA',
+    intro: {title: 'MailStudio 1.6', sub: 'Skills & AI agents', tag: 'Your own AI rules for mail and attachments — and one-click connection to your agent'},
+    k02: {chip: 'Skills', title: 'Skills read mail + attachments', sub: 'PDF with OCR, DXF/DWG, STEP, Excel, Word', pills: ['Quotation', 'Drawing check', 'STEP stock']},
+    k03: {chip: 'Excel skill', title: 'Every changed cell, checked', sub: 'Preview first — saved as a new copy', pills: ['Preview', 'New copy', 'Attachment untouched']},
+    k04: {chip: 'Write your own', title: 'Describe it — AI writes the skill', sub: 'Plain SKILL.md, same format as Claude & Codex skills', pills: ['SKILL.md', 'Import', 'Export']},
+    k05: {chip: 'Agents · MCP', title: 'One-click agent connection', sub: 'Read · Draft · Organize — never send', pills: ['Claude', 'Codex', 'Gemini', 'Cursor', 'VS Code']},
+    outro: {
+      line1: 'Free & open source', line2: 'Windows 10 / 11 · portable · no telemetry',
+      url: 'github.com/TRMachinist/MailStudio-AI-Email-Client', star: '⭐  Star it on GitHub',
+      tiles: ['Skills', 'PDF · DXF · STEP', 'Excel', 'Claude', 'Codex', 'Gemini', 'Cursor', 'Never sends'],
+    },
+  },
+  tr: {
+    badge: 'GERÇEK UYGULAMA · DEMO VERİ',
+    intro: {title: 'MailStudio 1.6', sub: "Skill'ler ve YZ ajanları", tag: "Mail ve ekler için kendi yapay zekâ kurallarınız — ve ajanınıza tek tıkla bağlantı"},
+    k02: {chip: "Skill'ler", title: 'Maili ve ekleri okur', sub: "OCR'lı PDF, DXF/DWG, STEP, Excel, Word", pills: ['Teklif', 'Resim kontrolü', 'STEP hammadde']},
+    k03: {chip: "Excel skill'i", title: 'Her hücre sizin onayınızla', sub: 'Önce önizleme — yeni kopya olarak kaydedilir', pills: ['Önizleme', 'Yeni kopya', 'Ek değişmez']},
+    k04: {chip: 'Kendiniz yazın', title: "Anlatın, skill'i YZ yazsın", sub: "Düz SKILL.md — Claude ve Codex skill'leriyle aynı biçim", pills: ['SKILL.md', 'İçe aktar', 'Dışa aktar']},
+    k05: {chip: 'Ajanlar · MCP', title: 'Tek tıkla ajan bağlantısı', sub: 'Okuma · Taslak · Düzenleme — asla gönderme', pills: ['Claude', 'Codex', 'Gemini', 'Cursor', 'VS Code']},
+    outro: {
+      line1: 'Ücretsiz ve açık kaynak', line2: 'Windows 10 / 11 · taşınabilir · telemetri yok',
+      url: 'github.com/TRMachinist/MailStudio-AI-Email-Client', star: '⭐  GitHub’da yıldız verin',
+      tiles: ["Skill'ler", 'PDF · DXF · STEP', 'Excel', 'Claude', 'Codex', 'Gemini', 'Cursor', 'Asla göndermez'],
+    },
+  },
+};
