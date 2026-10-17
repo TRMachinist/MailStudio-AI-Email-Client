@@ -219,7 +219,7 @@ public sealed class SkillTools
      Description("Lists the user's MailStudio skills: reusable instructions for recurring mail work (quotation analysis, drawing checks, STEP cost estimates, Excel updates...). " +
                  "Use get_skill to load one and follow it.")]
     public static string ListSkills() =>
-        Out.J(new SkillStore().Enabled().Select(s => new { name = s.Id, title = s.Title, description = s.Description, inputs = s.Inputs, output = s.Output.ToString().ToLowerInvariant() }));
+        Out.J(new SkillStore().Enabled().Select(s => new { name = s.Id, title = s.TitleEn.Length > 0 ? s.TitleEn : s.Name, title_tr = s.TitleTr, description = s.Description, inputs = s.Inputs, output = s.Output.ToString().ToLowerInvariant() }));
 
     [McpServerTool(Name = "get_skill", ReadOnly = true),
      Description("Returns the instructions of a MailStudio skill. Follow them with the other tools (read_message, read_attachment, create_draft...).")]
