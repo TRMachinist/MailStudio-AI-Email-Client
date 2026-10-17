@@ -425,7 +425,7 @@ public static class ShowcaseVideo
             var grid = FindEl<DataGrid>(plan, _ => true);
             if (grid != null && grid.ItemContainerGenerator.ContainerFromIndex(0) is FrameworkElement r0) { await Move(Center(plan, r0, 0.75, 0.5), 800); await Task.Delay(900); }
             if (grid != null && grid.ItemContainerGenerator.ContainerFromIndex(2) is FrameworkElement r2) { await Move(Center(plan, r2, 0.75, 0.5), 700); await Task.Delay(700); }
-            var save = FindEl<ButtonBase>(plan, b => b.IsDefault);
+            var save = FindEl<Button>(plan, b => b.IsDefault);
             if (save != null) { await Move(save, 800); await Task.Delay(1400); }
             Rec.Stop(); plan.Close(); await Idle(1200);
 
