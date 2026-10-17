@@ -288,7 +288,7 @@ public sealed class OrganizeTools
         var folders = await ctx.Mail.GetFoldersAsync(acc);
         var target = folders.FirstOrDefault(f => f.FullName.Equals(targetFolder, StringComparison.OrdinalIgnoreCase) || f.DisplayName.Equals(targetFolder, StringComparison.OrdinalIgnoreCase))
                      ?? throw new ModelContextProtocol.McpException($"Folder not found: {targetFolder}");
-        if (target.SortOrder == 3) throw new ModelContextProtocol.McpException("Moving to Deleted Items is not allowed for agents.");
+        if (target.Sort == 3) throw new ModelContextProtocol.McpException("Moving to Deleted Items is not allowed for agents.");
         await ctx.Mail.MoveAsync(acc, h, target.FullName);
         return $"Moved to {target.FullName}.";
     });

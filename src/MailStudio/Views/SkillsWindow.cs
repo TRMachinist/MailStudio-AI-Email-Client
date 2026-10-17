@@ -61,9 +61,9 @@ public sealed class SkillsWindow : Window
 
         // left: list + AI creator
         var left = new DockPanel(); body.Children.Add(left);
-        var ai = new StackPanel { Margin = new Thickness(0, 12, 0, 0) }; DockPanel.SetDock(ai, Dock.Bottom);
+        var aiPanel = new StackPanel { Margin = new Thickness(0, 12, 0, 0) }; DockPanel.SetDock(aiPanel, Dock.Bottom);
         var bar = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) }; DockPanel.SetDock(bar, Dock.Bottom);
-        left.Children.Add(ai); left.Children.Add(bar);
+        left.Children.Add(aiPanel); left.Children.Add(bar);
         var lh = new TextBlock { Text = L.T("Skill listesi"), FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 6) }; DockPanel.SetDock(lh, Dock.Top);
         left.Children.Add(lh); left.Children.Add(_list);
         bar.Children.Add(Btn(L.T("Yeni"), (_, _) => NewSkill()));
@@ -71,12 +71,12 @@ public sealed class SkillsWindow : Window
         bar.Children.Add(Btn(L.T("Klasörü aç"), (_, _) => Process.Start(new ProcessStartInfo(SkillStore.UserFolder) { UseShellExecute = true })));
         _list.SelectionChanged += (_, _) => { if (_list.SelectedItem is ListBoxItem { Tag: Skill s }) Show(s); };
 
-        ai.Children.Add(new TextBlock { Text = L.T("Doğal dille anlat, yapay zeka skill'i yazsın"), FontWeight = FontWeights.SemiBold });
-        ai.Children.Add(new TextBlock { Text = L.T("Örn: \"Tedarikçi gecikme bildirince ekteki Excel planında ilgili satırı sarı yap, yeni tarihi yaz\""), TextWrapping = TextWrapping.Wrap, Foreground = ThemeManager.Brush("TextSecondaryBrush"), Margin = new Thickness(0, 2, 0, 6) });
-        ai.Children.Add(_aiBox);
+        aiPanel.Children.Add(new TextBlock { Text = L.T("Doğal dille anlat, yapay zeka skill'i yazsın"), FontWeight = FontWeights.SemiBold });
+        aiPanel.Children.Add(new TextBlock { Text = L.T("Örn: \"Tedarikçi gecikme bildirince ekteki Excel planında ilgili satırı sarı yap, yeni tarihi yaz\""), TextWrapping = TextWrapping.Wrap, Foreground = ThemeManager.Brush("TextSecondaryBrush"), Margin = new Thickness(0, 2, 0, 6) });
+        aiPanel.Children.Add(_aiBox);
         _aiButton = Btn(L.T("Skill oluştur"), async (_, _) => await AiCreateAsync());
         _aiButton.HorizontalAlignment = HorizontalAlignment.Left; _aiButton.Margin = new Thickness(0, 6, 0, 0);
-        ai.Children.Add(_aiButton); ai.Children.Add(_aiStatus);
+        aiPanel.Children.Add(_aiButton); aiPanel.Children.Add(_aiStatus);
 
         // right: details + editor
         var right = new DockPanel(); Grid.SetColumn(right, 2); body.Children.Add(right);

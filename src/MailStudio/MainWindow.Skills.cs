@@ -163,10 +163,10 @@ public partial class MainWindow
         if (!string.IsNullOrWhiteSpace(plan.MoveTo))
         {
             var target = _roots.FirstOrDefault(x => x.AccountId == acc.Id)?.Children
-                .FirstOrDefault(n => n.FullName.Equals(plan.MoveTo, StringComparison.OrdinalIgnoreCase) || n.DisplayName.Equals(plan.MoveTo, StringComparison.OrdinalIgnoreCase));
+                .FirstOrDefault(n => n.FullName.Equals(plan.MoveTo, StringComparison.OrdinalIgnoreCase) || n.Name.Equals(plan.MoveTo, StringComparison.OrdinalIgnoreCase));
             if (target == null) done.Add(L.F("klasör bulunamadı: {0}", plan.MoveTo));
             else if (target.SortOrder == 3) done.Add(L.T("Silinmiş Öğeler'e taşıma yapılmadı"));
-            else { await _mail.MoveAsync(acc, h, target.FullName); done.Add(L.F("{0} klasörüne taşındı", target.DisplayName)); }
+            else { await _mail.MoveAsync(acc, h, target.FullName); done.Add(L.F("{0} klasörüne taşındı", target.Name)); }
         }
         return (done.Count > 0 ? "✓ " + string.Join(", ", done) : L.T("Değişiklik gerekmedi.")) + (plan.Reason.Length > 0 ? "\n" + plan.Reason : "");
     }
