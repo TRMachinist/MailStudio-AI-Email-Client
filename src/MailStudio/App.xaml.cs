@@ -85,6 +85,12 @@ public partial class App : Application
             var target = System.IO.Path.GetFullPath(e.Args[showcaseAt + 1]);
             window.ContentRendered += async (_, _) => await Services.Showcase.RunAsync(window, target);
         }
+        var videoAt = Array.IndexOf(e.Args, "--showcase-video");
+        if (demo && videoAt >= 0 && videoAt + 1 < e.Args.Length)
+        {
+            var target = System.IO.Path.GetFullPath(e.Args[videoAt + 1]);
+            window.ContentRendered += async (_, _) => await Services.ShowcaseVideo.RunAsync(window, target);
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -138,7 +144,7 @@ public partial class App : Application
                 $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {e.Exception}\n\n");
         }
         catch { }
-        MessageBox.Show(e.Exception.Message, "MailStudio - Hata", MessageBoxButton.OK, MessageBoxImage.Error);
+        MessageBox.Show(e.Exception.Message, "MailStudio - " + L.T("Hata"), MessageBoxButton.OK, MessageBoxImage.Error);
         e.Handled = true;
     }
 }

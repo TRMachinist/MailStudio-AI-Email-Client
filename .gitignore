@@ -10,6 +10,12 @@ out/
 .idea/
 *.log
 
+# Demo film (generated)
+node_modules/
+tools/demo/film/public/
+tools/demo/film/src/timeline-*.json
+tools/demo/voice-*/
+
 # Python
 __pycache__/
 *.pyc

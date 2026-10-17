@@ -1,0 +1,20 @@
+{
+  "name": "film",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@remotion/bundler": "^4.0.534",
+    "@remotion/cli": "^4.0.534",
+    "@remotion/renderer": "^4.0.534",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "remotion": "^4.0.534"
+  }
+}

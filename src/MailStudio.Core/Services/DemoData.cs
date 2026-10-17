@@ -92,6 +92,16 @@ public static class DemoData
             store.Save();
         }
         if (AppSettings.Shared.AiProvider != "Demo AI") { AppSettings.Shared.AiProvider = "Demo AI"; AppSettings.Shared.Save(); }
+        if (AppSettings.Shared.FormatRules.Count == 0)
+        {
+            AppSettings.Shared.FormatRules.Add(new FormatRule { Name = en ? "Customer quotations" : "Müşteri teklifleri", TextColor = "#0F6CBD", Bold = true,
+                Conditions = { new FormatCondition { Field = "subject", Value = en ? "Quotation" : "Teklif" } } });
+            AppSettings.Shared.FormatRules.Add(new FormatRule { Name = en ? "CAD and CNC attachments" : "CAD ve CNC ekleri", TextColor = "#B4009E",
+                Conditions = { new FormatCondition { Field = "text", Value = "STEP;OP20;DXF" } } });
+            AppSettings.Shared.FormatRules.Add(new FormatRule { Name = en ? "Newsletters" : "Bültenler", TextColor = "#8A8886", Italic = true,
+                Conditions = { new FormatCondition { Field = "from", Value = "news@" } } });
+            AppSettings.Shared.Save();
+        }
         var files = Path.Combine(AppPaths.Root, "demo-files");
         Directory.CreateDirectory(files);
         var source = Path.Combine(AppContext.BaseDirectory, "Demo");

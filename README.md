@@ -16,7 +16,9 @@ Open STEP, DXF/DWG, PDF drawings, Office files and CNC programs right from your 
 
 **English** · [Türkçe](README.tr.md)
 
-<img src="docs/media/main-window.png" alt="MailStudio main window" width="100%">
+<a href="https://github.com/yasinisiktek-cloud/MailStudio-AI-Email-Client/releases/download/v1.5.0/MailStudio_Demo_EN_1920x1080.mp4"><img src="docs/media/demo-video.jpg" alt="Watch the 60-second demo" width="100%"></a>
+
+**▶ [Watch the 60-second demo](https://github.com/yasinisiktek-cloud/MailStudio-AI-Email-Client/releases/download/v1.5.0/MailStudio_Demo_EN_1920x1080.mp4)** · [vertical](https://github.com/yasinisiktek-cloud/MailStudio-AI-Email-Client/releases/download/v1.5.0/MailStudio_Demo_EN_1080x1920.mp4) · [Türkçe](https://github.com/yasinisiktek-cloud/MailStudio-AI-Email-Client/releases/download/v1.5.0/MailStudio_Demo_TR_1920x1080.mp4)
 
 </div>
 

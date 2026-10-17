@@ -1,4 +1,5 @@
 {
+ "Hata": "Error",
  "\n\nKlasörde gösterilsin mi?": "\n\nShow it in its folder?",
  "\n\nÇözüm: Bir terminalde `claude` yazıp /login ile tekrar giriş yap.": "\n\nFix: open a terminal, type `claude` and sign in again with /login.",
  "\n\nÇözüm: Model kutusundan ChatGPT hesabının desteklediği bir model seç (ör. gpt-6-sol).": "\n\nFix: pick a model your ChatGPT account supports in the Model box (e.g. gpt-6-sol).",
