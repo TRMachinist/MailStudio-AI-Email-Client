@@ -15,7 +15,7 @@ public sealed class TechnicalWorker : IDisposable
     void Start()
     {
         if(_process is {HasExited:false})return;
-        var exe=_executable??new[]{Path.Combine(AppContext.BaseDirectory,"technical","MailStudio.Technical.exe"),Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"..","technical","MailStudio.Technical.exe"))}.FirstOrDefault(File.Exists)??"";
+        var exe=_executable??new[]{Environment.GetEnvironmentVariable("MAILSTUDIO_TECHNICAL_EXE")??"",Path.Combine(AppContext.BaseDirectory,"technical","MailStudio.Technical.exe"),Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"..","technical","MailStudio.Technical.exe"))}.FirstOrDefault(File.Exists)??"";
         ProcessStartInfo info;
         if(File.Exists(exe))info=new(exe);
         else
