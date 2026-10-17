@@ -39,7 +39,7 @@ public sealed class ExcelPlanWindow : Window
         bar.Children.Add(save); bar.Children.Add(cancel);
 
         var grid = new DataGrid { AutoGenerateColumns = false, IsReadOnly = true, HeadersVisibility = DataGridHeadersVisibility.Column, ItemsSource = changes, CanUserAddRows = false };
-        grid.Columns.Add(new DataGridTextColumn { Header = L.T("Sayfa"), Binding = new System.Windows.Data.Binding("Sheet") });
+        grid.Columns.Add(new DataGridTextColumn { Header = L.T("Çalışma sayfası"), Binding = new System.Windows.Data.Binding("Sheet") });
         grid.Columns.Add(new DataGridTextColumn { Header = L.T("Hücre"), Binding = new System.Windows.Data.Binding("Cell") });
         grid.Columns.Add(new DataGridTextColumn { Header = L.T("İşlem"), Binding = new System.Windows.Data.Binding("Operation") });
         grid.Columns.Add(new DataGridTextColumn { Header = L.T("Önce"), Binding = new System.Windows.Data.Binding("Before"), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
