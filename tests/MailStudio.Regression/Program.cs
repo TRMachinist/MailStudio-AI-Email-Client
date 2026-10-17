@@ -323,4 +323,98 @@ await Test("Conditional formatting matches Outlook-style conditions, first rule 
     var back = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(json)!;
     Check(back.FormatRules.Count == 3 && back.FormatRules[0].Conditions.Count == 3 && back.FormatRules[1].BackColor == "#EDEBE9", "rules round-trip through settings JSON");
 }));
+string RepoRoot() { var d = new DirectoryInfo(AppContext.BaseDirectory); while (d != null && !Directory.Exists(Path.Combine(d.FullName, "skills"))) d = d.Parent; return d?.FullName ?? throw new Exception("repo root not found"); }
+await Test("skills: built-in SKILL.md files parse, YAML subset, conditions and attachment filters", () => Sync(() =>
+{
+    var dirs = Directory.GetDirectories(Path.Combine(RepoRoot(), "skills"));
+    Check(dirs.Length >= 5, "built-in skills missing");
+    foreach (var d in dirs) { var s = MailStudio.Services.Skills.Skill.Load(d, true); Check(s.Error == null, $"{Path.GetFileName(d)}: {s.Error}"); Check(s.TitleEn.Length > 0 && s.TitleTr.Length > 0 && s.Description.Length > 20, $"{s.Id} titles/description"); }
+    var md = "---\nname: test-skill\ndescription: \"Says \\\"hi\\\"\" # comment\nmailstudio:\n  title: Test\n  inputs: [mail, pdf, step]\n  run:\n    - button\n    - new-mail\n  when:   # only quotations\n    subject: \"teklif;RFQ\"\n    attachment: true\n  output: reply\n---\n\nDo it.\n";
+    var k = MailStudio.Services.Skills.Skill.Parse(md, "x");
+    Check(k.Description == "Says \"hi\"" && k.RunsOnButton && k.RunsOnNewMail && k.Output == MailStudio.Services.Skills.SkillOutput.Reply && k.Instructions == "Do it.", "parsed fields");
+    Check(k.When.Count == 2 && k.Accepts("Resim.PDF") && k.Accepts("model.stp") && !k.Accepts("plan.xlsx"), "conditions / accepted files");
+    var rfq = new MailHeader { Subject = "RFQ flange", HasAttachments = true }; var other = new MailHeader { Subject = "Newsletter", HasAttachments = true };
+    Check(k.AppliesTo(rfq, new[] { "a.pdf" }) && !k.AppliesTo(other, new[] { "a.pdf" }), "when-conditions decide");
+    foreach (var bad in new[] { "no front matter", "---\ndescription: x\n---\nbody", "---\nname: a\nmailstudio:\n  output: email\n---\n", "---\nname: a\nmailstudio:\n  inputs: [exe]\n---\n", "---\nname: a\nmailstudio:\n  when:\n    bogus: 1\n---\n" })
+    { var threw = false; try { MailStudio.Services.Skills.Skill.Parse(bad, "b"); } catch (FormatException) { threw = true; } Check(threw, "invalid skill accepted: " + bad[..Math.Min(30, bad.Length)]); }
+    Check(MailStudio.Services.Skills.Skill.Slug("Teklif İsteği Analizi!") == "teklif-i-stegi-analizi" || MailStudio.Services.Skills.Skill.Slug("Teklif isteği analizi") == "teklif-istegi-analizi", "slug");
+}));
+await Test("skills: prompt fences data, Excel plan previews and applies to a copy only, organize JSON", () => Sync(() =>
+{
+    var skill = MailStudio.Services.Skills.Skill.Load(Path.Combine(RepoRoot(), "skills", "delivery-schedule-update"), true);
+    var prompt = MailStudio.Services.Skills.SkillRunner.BuildPrompt(skill, "<email>Subject: x</email>", new[] { new MailStudio.Services.Skills.SkillAttachment("plan.xlsx", "Week 43!A1=Part no.") });
+    Check(prompt.Contains("<skill-instructions>") && prompt.Contains("<attachment name=\"plan.xlsx\">") && prompt.Contains("\"operations\""), "prompt structure");
+    var xlsx = Path.Combine(RepoRoot(), "src", "MailStudio", "Demo", "delivery-schedule-wk43.xlsx");
+    var text = AttachmentExtractor.Excel(xlsx);
+    Check(text.Contains("# Sheet \"Week 43\"") && text.Contains("A4=CA-2201") && text.Contains("(=SUM("), "Excel extraction with addresses and formulas");
+    var plan = MailStudio.Services.Skills.SkillRunner.ParseExcel("Sure:\n```json\n{\"file\":\"delivery-schedule-wk43.xlsx\",\"summary\":\"s\",\"operations\":[{\"op\":\"set\",\"sheet\":\"Week 43\",\"cell\":\"G4\",\"value\":\"2026-10-30\"},{\"op\":\"set\",\"sheet\":\"Week 43\",\"cell\":\"D4\",\"value\":45},{\"op\":\"fill\",\"sheet\":\"Week 43\",\"cell\":\"A4:H4\",\"color\":\"#FFF2CC\"},{\"op\":\"comment\",\"cell\":\"G4\",\"text\":\"moved\"},{\"op\":\"delete_sheet\",\"cell\":\"A1\"},{\"op\":\"set\",\"cell\":\"ZZZ0\",\"value\":\"x\"}]}\n```");
+    var before = File.ReadAllBytes(xlsx);
+    var preview = MailStudio.Services.Skills.ExcelEditApplier.Preview(xlsx, plan, out var warnings);
+    Check(preview.Count == 4 && warnings.Count == 2 && preview.Any(c => c.Cell == "D4" && c.NumberChanged && c.After == "45"), "preview rows / warnings");
+    var target = Path.Combine(root, "plan-copy.xlsx");
+    MailStudio.Services.Skills.ExcelEditApplier.Apply(xlsx, plan, target, out _);
+    Check(before.SequenceEqual(File.ReadAllBytes(xlsx)), "attachment changed");
+    using (var wb = new ClosedXML.Excel.XLWorkbook(target))
+    {
+        var ws = wb.Worksheet("Week 43");
+        Check(ws.Cell("G4").GetString() == "2026-10-30" && ws.Cell("D4").GetDouble() == 45 && ws.Cell("G4").HasComment, "edits written to the copy");
+        Check(ws.Cell("F8").HasFormula, "existing formula kept");
+    }
+    var same = false; try { MailStudio.Services.Skills.ExcelEditApplier.Apply(xlsx, plan, xlsx, out _); } catch (InvalidOperationException) { same = true; }
+    Check(same, "overwriting the attachment is refused");
+    var org = MailStudio.Services.Skills.SkillRunner.ParseOrganize("{\"flag\":true,\"read\":null,\"move_to\":\"null\",\"reason\":\"urgent\"}");
+    Check(org.Flag == true && org.Read == null && org.MoveTo == null && org.Reason == "urgent" && !org.IsEmpty, "organize plan");
+}));
+await Test("skills: user store import/export, disable and auto-run flags", () => Sync(() =>
+{
+    var settings = new AppSettings();
+    var store = new MailStudio.Services.Skills.SkillStore(settings);
+    var saved = store.Save(MailStudio.Services.Skills.Skill.Template("my-check", "My check", "Checks things.", "1. Check.", "mail", "button, new-mail", "note"));
+    try
+    {
+        Check(store.All().Any(s => s.Id == saved.Id && !s.BuiltIn), "saved skill listed");
+        store.SetEnabled(saved, false); Check(store.All().First(s => s.Id == saved.Id).Enabled == false && settings.DisabledSkills.Contains(saved.Id), "disable");
+        store.SetEnabled(saved, true); store.SetAuto(saved, true); Check(store.IsAuto(store.All().First(s => s.Id == saved.Id)), "auto");
+        var zip = Path.Combine(root, "skill.zip"); MailStudio.Services.Skills.SkillStore.ExportZip(saved, zip);
+        var imported = store.Import(zip);
+        Check(imported.Count == 1 && imported[0].Id != saved.Id && imported[0].Name == "my-check", "import makes a unique copy");
+        store.Delete(imported[0]);
+    }
+    finally { store.Delete(saved); }
+}));
+await Test("agents: MCP entry added and removed without touching other settings (JSON, VS Code, TOML, YAML)", () => Sync(() =>
+{
+    AgentConnector.TestRoot = Path.Combine(root, "agents");
+    try
+    {
+        var exe = Path.Combine(root, "MailStudio.Mcp.exe"); File.WriteAllText(exe, "");
+        var agents = AgentConnector.Detect(exe);
+        var claude = agents.First(a => a.Id == "claude-desktop"); Directory.CreateDirectory(Path.GetDirectoryName(claude.ConfigPath)!);
+        File.WriteAllText(claude.ConfigPath, "{\n  // comment\n  \"theme\": \"dark\",\n  \"mcpServers\": { \"other\": { \"command\": \"x.exe\" } },\n}");
+        var backup = AgentConnector.Connect(claude, exe, AgentPermission.Read);
+        Check(backup != null && File.Exists(backup), "backup written");
+        var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(claude.ConfigPath))!;
+        Check(json["theme"]!.GetValue<string>() == "dark" && json["mcpServers"]!["other"] != null && json["mcpServers"]!["mailstudio"]!["args"]![1]!.GetValue<string>() == "read", "JSON entry");
+        var vs = agents.First(a => a.Id == "vscode"); AgentConnector.Connect(vs, exe, AgentPermission.Draft);
+        Check(System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(vs.ConfigPath))!["servers"]!["mailstudio"]!["type"]!.GetValue<string>() == "stdio", "VS Code format");
+        var codex = agents.First(a => a.Id == "codex"); Directory.CreateDirectory(Path.GetDirectoryName(codex.ConfigPath)!);
+        File.WriteAllText(codex.ConfigPath, "model = \"gpt-6\"\n\n[mcp_servers.other]\ncommand = \"o.exe\"\n");
+        AgentConnector.Connect(codex, exe, AgentPermission.Organize); AgentConnector.Connect(codex, exe, AgentPermission.Organize);
+        var toml = File.ReadAllText(codex.ConfigPath);
+        Check(toml.Split("[mcp_servers.mailstudio]").Length == 2 && toml.Contains("[mcp_servers.other]") && toml.Contains("model = \"gpt-6\"") && toml.Contains("\"organize\""), "TOML entry once, others kept");
+        var goose = agents.First(a => a.Id == "goose"); Directory.CreateDirectory(Path.GetDirectoryName(goose.ConfigPath)!);
+        File.WriteAllText(goose.ConfigPath, "GOOSE_PROVIDER: ollama\nextensions:\n  developer:\n    enabled: true\n    type: builtin\n");
+        AgentConnector.Connect(goose, exe, AgentPermission.Draft);
+        Check(File.ReadAllText(goose.ConfigPath).Contains("  mailstudio:\n    enabled: true") && File.ReadAllText(goose.ConfigPath).Contains("  developer:"), "YAML entry");
+        var again = AgentConnector.Detect(exe);
+        Check(again.Where(a => a.Id is "claude-desktop" or "vscode" or "codex" or "goose").All(a => a.Connected && !a.PathOutdated), "detected as connected");
+        Check(again.First(a => a.Id == "codex").Permission == AgentPermission.Organize && again.First(a => a.Id == "claude-desktop").Permission == AgentPermission.Read, "permission read back");
+        foreach (var a in again.Where(a => a.Connected)) AgentConnector.Disconnect(a);
+        Check(!File.ReadAllText(codex.ConfigPath).Contains("mailstudio") && File.ReadAllText(codex.ConfigPath).Contains("[mcp_servers.other]"), "TOML removed, other kept");
+        Check(!File.ReadAllText(goose.ConfigPath).Contains("mailstudio") && File.ReadAllText(goose.ConfigPath).Contains("developer"), "YAML removed, other kept");
+        Check(System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(claude.ConfigPath))!["mcpServers"]!["other"] != null, "JSON other kept");
+        Check(AgentConnector.Detect(exe).All(a => !a.Connected), "all disconnected");
+    }
+    finally { AgentConnector.TestRoot = null; }
+}));
 Console.WriteLine($"RESULT {passed} passed. Synthetic evidence: {root}");

@@ -70,6 +70,18 @@ never send mail on its own.
 - AI rewrites of your drafts are shown side by side and **blocked if numbers, dimensions or quantities change**
 - Built-in [MCP server](docs/MCP.md) for Claude Desktop / Claude Code / Codex / Gemini / Goose
 
+### 🧩 Skills and one-click agent connection
+
+- **Skills**: your own rules for recurring work – *quotation request analysis*, *drawing check*,
+  *STEP raw stock & weight*, *update the Excel delivery schedule*, *flag urgent mails*… They read the mail **and its
+  attachments** (PDF with OCR, STEP, DXF/DWG, Excel, Word) and give a note, a reply draft, an Excel copy (with preview)
+  or flag/move the mail. Run them from the AI pane or **automatically on new mail**.
+- Describe a skill in plain language and the AI writes it. Skills are plain `SKILL.md` files – the same format as
+  Claude / Codex skills – so you can share them ([how](docs/SKILLS.md)).
+- **Connect agents in one click**: Claude Desktop, Claude Code, Codex, Gemini CLI, Cursor, VS Code, Windsurf,
+  LM Studio and Goose get MailStudio as an MCP server – search mail, read attachments, use your skills. You choose
+  read / draft / organize per agent; **no agent can send mail** ([details](docs/MCP.md)).
+
 ### 📐 STEP / 3D CAD viewer with native measuring
 
 <img src="docs/media/step-orbit.gif" alt="STEP viewer" width="100%">
@@ -158,6 +170,7 @@ Tests: **[tests/README.md](tests/README.md)**
 
 - [x] STEP, DXF/DWG, PDF studio, Office editors, CNC viewer
 - [x] English / Turkish UI, demo mode
+- [x] Skills and one-click agent (MCP) connection
 - [ ] **CATPart, NX PRT and SolidWorks SLDPRT viewers** (in progress)
 - [ ] Calendar and tasks
 - [ ] More UI languages — translations are a single JSON file ([how to](CONTRIBUTING.md#translations))

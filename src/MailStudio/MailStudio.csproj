@@ -17,6 +17,7 @@
     <Resource Include="Resources\MailStudio.ico" />
     <Resource Include="Resources\MailStudio.png" />
     <None Include="Demo\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\skills\**\*" Link="skills\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

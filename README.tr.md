@@ -65,6 +65,18 @@ zeka asla kendi başına mail gönderemez.
 - Taslak yeniden yazımları yan yana gösterilir; **sayı, ölçü veya adet değişirse uygulanamaz**
 - Claude Desktop / Claude Code / Codex / Gemini / Goose için yerleşik [MCP sunucusu](docs/MCP.md)
 
+### 🧩 Skill'ler ve tek tıkla ajan bağlantısı
+
+- **Skill'ler**: tekrar eden işler için kendi kurallarınız – *teklif isteği analizi*, *teknik resim kontrolü*,
+  *STEP hammadde ve ağırlık*, *Excel teslim planını güncelle*, *acil mailleri işaretle*… Maili **ve eklerini**
+  (OCR'lı PDF, STEP, DXF/DWG, Excel, Word) okur; sonuç not, cevap taslağı, önizlemeli Excel kopyası ya da bayrak/taşıma
+  olur. Yapay zeka panelinden ya da **yeni mail gelince otomatik** çalışır.
+- Skill'i düz cümleyle anlatın, yapay zeka yazsın. Skill'ler Claude / Codex skill'leriyle aynı biçimde düz `SKILL.md`
+  dosyalarıdır; paylaşılabilir ([nasıl](docs/SKILLS.md)).
+- **Ajanlara tek tıkla bağlanın**: Claude Desktop, Claude Code, Codex, Gemini CLI, Cursor, VS Code, Windsurf, LM Studio ve
+  Goose, MailStudio'yu MCP sunucusu olarak kullanır – mail arar, ekleri okur, skill'lerinizi kullanır. Her ajan için okuma /
+  taslak / düzenleme yetkisini siz seçersiniz; **hiçbir ajan mail gönderemez** ([ayrıntı](docs/MCP.md)).
+
 ### 📐 STEP / 3B CAD görüntüleyici, native ölçüm
 
 - STEP (AP203/AP214/AP242) montajları, NX fare düzeni (orta = döndür, orta+sağ = kaydır)
@@ -129,6 +141,7 @@ Ayrıntılar: [docs/BUILDING.md](docs/BUILDING.md) · Testler: [tests/README.md]
 
 - [x] STEP, DXF/DWG, PDF stüdyosu, Office düzenleyiciler, CNC görüntüleyici
 - [x] Türkçe / İngilizce arayüz, demo modu
+- [x] Skill'ler ve tek tıkla ajan (MCP) bağlantısı
 - [ ] **CATPart, NX PRT ve SolidWorks SLDPRT görüntüleyiciler** (geliştiriliyor)
 - [ ] Takvim ve görevler
 - [ ] Daha fazla arayüz dili

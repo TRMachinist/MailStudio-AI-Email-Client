@@ -116,6 +116,7 @@
                             <Button Style="{StaticResource RibbonCmd}" Tag="&#xE8BD;" Click="OnAiSummarize" Content="Özetle"/>
                             <Button Style="{StaticResource RibbonCmd}" Tag="&#xE70F;" Click="OnAiDraftReply" Content="Cevap Yazdır"/>
                             <Button Style="{StaticResource RibbonCmd}" Tag="&#xE99A;" Click="OnToggleAiPane" Content="AI Paneli"/>
+                            <Button Style="{StaticResource RibbonCmd}" Tag="&#xE945;" Click="OnSkills" Content="Skill'ler"/>
                         </StackPanel>
                     </HeaderedContentControl>
                 </WrapPanel>
@@ -183,6 +184,12 @@
                             <Button Style="{StaticResource RibbonCmd}" Tag="&#xE70F;" Click="OnAiDraftReply" Content="Cevap Yazdır"/>
                             <Button Style="{StaticResource RibbonCmd}" Tag="&#xE762;" Click="OnAiTasks" Content="Görevleri Çıkar"/>
                             <Button Style="{StaticResource RibbonCmd}" Tag="&#xE775;" Click="OnAiTranslate" Content="Türkçeye Çevir"/>
+                        </StackPanel>
+                    </HeaderedContentControl>
+                    <HeaderedContentControl Header="Skill'ler ve ajanlar" Style="{StaticResource RibbonGroup}">
+                        <StackPanel Orientation="Horizontal">
+                            <Button Style="{StaticResource RibbonCmd}" Tag="&#xE945;" Click="OnSkills" Content="Skill'ler" ToolTip="Teklif analizi, resim kontrolü, STEP hammadde, Excel güncelleme gibi kendi kurallarınız. Yeni mailde otomatik de çalışabilir."/>
+                            <Button Style="{StaticResource RibbonCmd}" Tag="&#xE71B;" Click="OnAgents" Content="Ajanlara bağlan" ToolTip="Claude, Codex, Gemini, Cursor, VS Code ve diğer ajanlara tek tıkla MCP bağlantısı. Ajanlar mail gönderemez."/>
                         </StackPanel>
                     </HeaderedContentControl>
                     <HeaderedContentControl Header="Model" Style="{StaticResource RibbonGroup}">
@@ -553,6 +560,7 @@
                         <TextBlock Text="Posta kutusuna erişim (MCP: ara, oku, taslak)"/>
                     </CheckBox>
                     <WrapPanel x:Name="QuickActions" Margin="0,4,0,0"/>
+                        <WrapPanel x:Name="SkillActions" Margin="0,2,0,0"/>
                 </StackPanel>
                 <!-- sohbet -->
                 <ScrollViewer Grid.Row="2" x:Name="ChatScroll" VerticalScrollBarVisibility="Auto" Padding="12,4,12,4">

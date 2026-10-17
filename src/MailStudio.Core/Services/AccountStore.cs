@@ -93,6 +93,10 @@ public class AppSettings
     /// <summary>Is the AI panel open in the PDF window (default off: the page opens larger).</summary>
     public bool PdfSidePanel { get; set; }
     public List<MailStudio.Models.FormatRule> FormatRules { get; set; } = new();
+    /// <summary>Skills the user switched off (folder names).</summary>
+    public List<string> DisabledSkills { get; set; } = new();
+    /// <summary>Skills that run by themselves when new mail arrives (opt-in).</summary>
+    public List<string> AutoRunSkills { get; set; } = new();
     /// <summary>UI language: auto (Windows language), tr or en.</summary>
     public string Language { get; set; } = "auto";
     public string MicrosoftClientId { get; set; } = "";

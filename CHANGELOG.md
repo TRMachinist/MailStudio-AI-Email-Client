@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.6.0 – Skills and agent connection
+
+- **Skills**: SKILL.md rules (Claude/Codex-compatible format) that read the mail and its attachments and produce a note,
+  a reply draft, an Excel copy (preview, attachment never changed) or flag/move the mail. Buttons in the AI pane,
+  optional automatic run on new mail, Skills window with import/export and "describe it, AI writes the skill".
+- Five built-in skills: quotation request analysis, technical drawing check, STEP raw stock & weight,
+  delivery schedule update (Excel), flag urgent mails.
+- Attachment reader for skills and agents: PDF (OCR fallback), STEP (sizes, B-Rep volumes, face types, PMI),
+  DXF/DWG (texts, dimensions), Excel cells with addresses, Word, PowerPoint, CSV, CNC.
+- **Connect agents** window: one-click MCP setup for Claude Desktop, Claude Code, Codex, Gemini CLI, Cursor, VS Code,
+  Windsurf, LM Studio and Goose (backup of each config file, test button, remove).
+- MCP server: `read_attachment`, `list_skills`, `get_skill`; permission levels read / draft / organize
+  (`flag_message`, `mark_read`, `move_message`). Still no send tool.
+
 ## 1.5.0 – MailStudio for TRMachinist (2026-10-17)
 
 First public open-source release.

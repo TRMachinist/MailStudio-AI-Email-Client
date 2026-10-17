@@ -444,7 +444,7 @@ public partial class MainWindow : Window
                 if (_alertReady.Contains(acc.Id) && _settings.DesktopAlerts && added > 0)
                 {
                     var fresh = _cache.GetHeaders(acc.Id, node.FullName, 50).Where(m => !m.IsRead && !before.Contains(m.Uid)).ToList();
-                    if (fresh.Count > 0) ShowDesktopAlert(node, fresh);
+                    if (fresh.Count > 0) { ShowDesktopAlert(node, fresh); _ = AutoRunSkillsAsync(fresh); }
                 }
                 _alertReady.Add(acc.Id);
             }
@@ -734,6 +734,7 @@ public partial class MainWindow : Window
     {
         RemoteImagesBar.Visibility=_settings.BlockRemoteImages&&!_remoteImageMails.Contains(ImageKey(h))&&InlineImages.HasRemote(c.Html)?Visibility.Visible:Visibility.Collapsed;
         _currentContent = c;
+        try { OnSkillContext(h, c); } catch { }
         CcText.Text = string.IsNullOrWhiteSpace(c.Cc) ? "" : L.T("Bilgi: ") + c.Cc;
         if (c.Attachments.Count > 0) AttachmentList.ItemsSource = c.Attachments;
         if (!_webReady) return;

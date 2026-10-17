@@ -304,6 +304,10 @@ def dispatch(operation,args):
         import cad2d
         result=cad2d.dispatch(operation,args)
         if result is not None:return result
+    if operation.startswith('extract_'):
+        import extract
+        result=extract.dispatch(operation,args,pmi_items)
+        if result is not None:return result
     if operation.startswith('pdfs_'):
         import pdf_studio
         result=pdf_studio.dispatch(operation,args)
