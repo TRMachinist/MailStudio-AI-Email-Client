@@ -209,8 +209,8 @@ public static class MiniYaml
                 }
                 else map[key] = "";
             }
-            else if (rest.StartsWith('[') && rest.EndsWith(']'))
-                map[key] = rest[1..^1].Split(',', StringSplitOptions.RemoveEmptyEntries).Select(x => (object)Scalar(x.Trim())).ToList();
+            else if (rest.StartsWith('[') && rest.IndexOf(']') is var close && close > 0 && (close == rest.Length - 1 || rest[(close + 1)..].TrimStart().StartsWith('#')))
+                map[key] = rest[1..close].Split(',', StringSplitOptions.RemoveEmptyEntries).Select(x => (object)Scalar(x.Trim())).ToList();
             else if (rest is "|" or ">" or "|-" or ">-")
             {
                 var sb = new StringBuilder();
@@ -232,8 +232,24 @@ public static class MiniYaml
 
     static string Scalar(string s)
     {
-        if (s.Length >= 2 && (s[0] == '"' && s[^1] == '"' || s[0] == '\'' && s[^1] == '\''))
-            return s[0] == '"' ? s[1..^1].Replace("\\\"", "\"").Replace("\\n", "\n").Replace("\\\\", "\\") : s[1..^1].Replace("''", "'");
+        s = s.Trim();
+        if (s.Length >= 2 && (s[0] == '"' || s[0] == '\''))
+        {
+            // Quoted value, possibly followed by a "# comment".
+            char q = s[0]; int end = -1;
+            for (int k = 1; k < s.Length; k++)
+            {
+                if (q == '"' && s[k] == '\\') { k++; continue; }
+                if (s[k] != q) continue;
+                if (q == '\'' && k + 1 < s.Length && s[k + 1] == '\'') { k++; continue; }
+                end = k; break;
+            }
+            if (end > 0 && (end == s.Length - 1 || s[(end + 1)..].TrimStart().StartsWith('#')))
+            {
+                var inner = s[1..end];
+                return q == '"' ? inner.Replace("\\\"", "\"").Replace("\\n", "\n").Replace("\\\\", "\\") : inner.Replace("''", "'");
+            }
+        }
         var hash = s.IndexOf(" #", StringComparison.Ordinal);
         return hash > 0 ? s[..hash].Trim() : s;
     }
