@@ -72,6 +72,8 @@ never send mail on its own.
 
 ### 🧩 Skills and one-click agent connection
 
+<a href="https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.6.0/MailStudio_1.6_EN_1920x1080.mp4"><img src="docs/media/skills-video.jpg" alt="40-second video: skills and agent connection" width="100%"></a>
+
 <img src="docs/media/skill-run.png" alt="Quotation request analysis skill" width="100%">
 
 <img src="docs/media/excel-skill.png" alt="Excel edit preview" width="70%">

@@ -67,6 +67,8 @@ zeka asla kendi başına mail gönderemez.
 
 ### 🧩 Skill'ler ve tek tıkla ajan bağlantısı
 
+<a href="https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.6.0/MailStudio_1.6_TR_1920x1080.mp4"><img src="docs/media/tr/skills-video.jpg" alt="40 saniyelik video: skill'ler ve ajan bağlantısı" width="100%"></a>
+
 <img src="docs/media/tr/skill-run.png" alt="Teklif isteği analizi skill'i" width="100%">
 
 <img src="docs/media/tr/excel-skill.png" alt="Excel değişiklik önizlemesi" width="70%">
