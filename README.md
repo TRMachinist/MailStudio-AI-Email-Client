@@ -7,20 +7,20 @@
 **Open-source AI email client for Windows — a classic Outlook alternative for engineers and machinists.<br>
 Open STEP, DXF/DWG, PDF drawings, Office files and CNC programs right from your inbox, with local AI (Ollama) and MCP.**
 
-[![Release](https://img.shields.io/github/v/release/yasinisiktek-cloud/MailStudio-AI-Email-Client?label=download&color=0F6CBD)](https://github.com/yasinisiktek-cloud/MailStudio-AI-Email-Client/releases/latest)
+[![Release](https://img.shields.io/github/v/release/TRMachinist/MailStudio-AI-Email-Client?label=download&color=0F6CBD)](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows)
 ![.NET 8](https://img.shields.io/badge/.NET-8-512BD4?logo=dotnet)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20T%C3%BCrk%C3%A7e-orange)
-[![Stars](https://img.shields.io/github/stars/yasinisiktek-cloud/MailStudio-AI-Email-Client?style=social)](https://github.com/yasinisiktek-cloud/MailStudio-AI-Email-Client/stargazers)
+[![Stars](https://img.shields.io/github/stars/TRMachinist/MailStudio-AI-Email-Client?style=social)](https://github.com/TRMachinist/MailStudio-AI-Email-Client/stargazers)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-TRMachinist-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/trmachinist/)
 [![Instagram](https://img.shields.io/badge/Instagram-trmachinist-E4405F?logo=instagram&logoColor=white)](https://www.instagram.com/trmachinist/)
 
 **English** · [Türkçe](README.tr.md)
 
-<a href="https://github.com/yasinisiktek-cloud/MailStudio-AI-Email-Client/releases/download/v1.5.0/MailStudio_Demo_EN_1920x1080.mp4"><img src="docs/media/demo-video.jpg" alt="Watch the 60-second demo" width="100%"></a>
+<a href="https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.5.0/MailStudio_Demo_EN_1920x1080.mp4"><img src="docs/media/demo-video.jpg" alt="Watch the 60-second demo" width="100%"></a>
 
-**▶ [Watch the 60-second demo](https://github.com/yasinisiktek-cloud/MailStudio-AI-Email-Client/releases/download/v1.5.0/MailStudio_Demo_EN_1920x1080.mp4)** · [vertical](https://github.com/yasinisiktek-cloud/MailStudio-AI-Email-Client/releases/download/v1.5.0/MailStudio_Demo_EN_1080x1920.mp4) · [Türkçe](https://github.com/yasinisiktek-cloud/MailStudio-AI-Email-Client/releases/download/v1.5.0/MailStudio_Demo_TR_1920x1080.mp4)
+**▶ [Watch the 60-second demo](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.5.0/MailStudio_Demo_EN_1920x1080.mp4)** · [vertical](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.5.0/MailStudio_Demo_EN_1080x1920.mp4) · [Türkçe](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.5.0/MailStudio_Demo_TR_1920x1080.mp4)
 
 </div>
 
@@ -43,7 +43,7 @@ never send mail on its own.
 
 ## Try it in 30 seconds
 
-1. Download the latest **portable zip** from [Releases](https://github.com/yasinisiktek-cloud/MailStudio-AI-Email-Client/releases/latest) and unzip it.
+1. Download the latest **portable zip** from [Releases](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/latest) and unzip it.
 2. Run `MailStudio.exe --demo` — a sample mailbox with real engineering attachments opens. No account, nothing is sent.
 3. When you are ready, start `MailStudio.exe` and add your IMAP account (Gmail, Outlook.com, Microsoft 365, Yandex, any IMAP).
 
@@ -145,7 +145,7 @@ never send mail on its own.
 ## Build from source
 
 ```powershell
-git clone https://github.com/yasinisiktek-cloud/MailStudio-AI-Email-Client.git
+git clone https://github.com/TRMachinist/MailStudio-AI-Email-Client.git
 cd MailStudio-AI-Email-Client
 dotnet build MailStudio.sln
 dotnet run --project src\MailStudio -- --demo

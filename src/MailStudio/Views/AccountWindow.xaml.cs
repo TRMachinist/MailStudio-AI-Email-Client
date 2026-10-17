@@ -93,7 +93,7 @@ public partial class AccountWindow : Window
     void OnOAuthHelp(object sender, RoutedEventArgs e)
     {
         var doc = Path.Combine(AppContext.BaseDirectory, "docs", L.IsEnglish ? "OAUTH_SETUP.md" : "OAUTH_KURULUM.md");
-        try { Process.Start(new ProcessStartInfo(File.Exists(doc) ? doc : "https://github.com/yasinisiktek-cloud/MailStudio-AI-Email-Client/blob/main/docs/OAUTH_SETUP.md") { UseShellExecute = true }); }
+        try { Process.Start(new ProcessStartInfo(File.Exists(doc) ? doc : "https://github.com/TRMachinist/MailStudio-AI-Email-Client/blob/main/docs/OAUTH_SETUP.md") { UseShellExecute = true }); }
         catch { Process.Start("notepad.exe", doc); }
     }
 

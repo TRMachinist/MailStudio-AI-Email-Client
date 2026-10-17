@@ -7,7 +7,7 @@
 **Mühendisler ve talaşlı imalatçılar için klasik Outlook düzeninde masaüstü mail istemcisi —<br>
 STEP, DXF/DWG, PDF teknik resim, Office dosyaları ve CNC programlarını doğrudan gelen kutusundan açın, yerel yapay zekayla.**
 
-[![Sürüm](https://img.shields.io/github/v/release/yasinisiktek-cloud/MailStudio-AI-Email-Client?label=indir&color=0F6CBD)](https://github.com/yasinisiktek-cloud/MailStudio-AI-Email-Client/releases/latest)
+[![Sürüm](https://img.shields.io/github/v/release/TRMachinist/MailStudio-AI-Email-Client?label=indir&color=0F6CBD)](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/latest)
 [![Lisans: MIT](https://img.shields.io/badge/lisans-MIT-green)](LICENSE)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows)
 ![.NET 8](https://img.shields.io/badge/.NET-8-512BD4?logo=dotnet)
@@ -16,9 +16,9 @@ STEP, DXF/DWG, PDF teknik resim, Office dosyaları ve CNC programlarını doğru
 
 [English](README.md) · **Türkçe**
 
-<a href="https://github.com/yasinisiktek-cloud/MailStudio-AI-Email-Client/releases/download/v1.5.0/MailStudio_Demo_TR_1920x1080.mp4"><img src="docs/media/tr/demo-video.jpg" alt="60 saniyelik tanıtım videosu" width="100%"></a>
+<a href="https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.5.0/MailStudio_Demo_TR_1920x1080.mp4"><img src="docs/media/tr/demo-video.jpg" alt="60 saniyelik tanıtım videosu" width="100%"></a>
 
-**▶ [60 saniyelik tanıtım videosunu izleyin](https://github.com/yasinisiktek-cloud/MailStudio-AI-Email-Client/releases/download/v1.5.0/MailStudio_Demo_TR_1920x1080.mp4)** · [dikey](https://github.com/yasinisiktek-cloud/MailStudio-AI-Email-Client/releases/download/v1.5.0/MailStudio_Demo_TR_1080x1920.mp4) · [English](https://github.com/yasinisiktek-cloud/MailStudio-AI-Email-Client/releases/download/v1.5.0/MailStudio_Demo_EN_1920x1080.mp4)
+**▶ [60 saniyelik tanıtım videosunu izleyin](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.5.0/MailStudio_Demo_TR_1920x1080.mp4)** · [dikey](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.5.0/MailStudio_Demo_TR_1080x1920.mp4) · [English](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.5.0/MailStudio_Demo_EN_1920x1080.mp4)
 
 </div>
 
@@ -40,7 +40,7 @@ zeka asla kendi başına mail gönderemez.
 
 ## 30 saniyede deneyin
 
-1. [Sürümler](https://github.com/yasinisiktek-cloud/MailStudio-AI-Email-Client/releases/latest) sayfasından **taşınabilir zip**'i indirip açın.
+1. [Sürümler](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/latest) sayfasından **taşınabilir zip**'i indirip açın.
 2. `MailStudio.exe --demo` çalıştırın — gerçek mühendislik ekleri olan örnek bir posta kutusu açılır. Hesap gerekmez, hiçbir şey gönderilmez.
 3. Hazır olduğunuzda `MailStudio.exe`'yi açıp IMAP hesabınızı ekleyin (Gmail, Outlook.com, Microsoft 365, Yandex, her IMAP).
 
@@ -117,7 +117,7 @@ Ekran görüntüleri ve animasyonlar için [İngilizce README](README.md)'ye bak
 ## Kaynaktan derleme
 
 ```powershell
-git clone https://github.com/yasinisiktek-cloud/MailStudio-AI-Email-Client.git
+git clone https://github.com/TRMachinist/MailStudio-AI-Email-Client.git
 cd MailStudio-AI-Email-Client
 dotnet build MailStudio.sln
 dotnet run --project src\MailStudio -- --demo

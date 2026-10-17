@@ -12,7 +12,7 @@ export const TEXT: Record<'en' | 'tr', Record<string, SceneText> & {badge: strin
     s09: {chip: 'Your way', title: 'Rules, dark mode, two languages', sub: 'Conditional formatting like Outlook', pills: ['Rules', 'Dark', 'EN · TR']},
     outro: {
       line1: 'Free & open source', line2: 'Windows 10 / 11 · portable · no telemetry',
-      url: 'github.com/yasinisiktek-cloud/MailStudio-AI-Email-Client', star: '⭐  Star it on GitHub',
+      url: 'github.com/TRMachinist/MailStudio-AI-Email-Client', star: '⭐  Star it on GitHub',
       tiles: ['Mail', 'AI', 'PDF', 'DXF/DWG', 'STEP', 'Office', 'CNC', 'Offline'],
     },
   },
@@ -28,7 +28,7 @@ export const TEXT: Record<'en' | 'tr', Record<string, SceneText> & {badge: strin
     s09: {chip: 'Size göre', title: 'Kurallar, koyu tema, iki dil', sub: 'Outlook gibi koşullu biçimlendirme', pills: ['Kurallar', 'Koyu', 'TR · EN']},
     outro: {
       line1: 'Ücretsiz ve açık kaynak', line2: 'Windows 10 / 11 · taşınabilir · telemetri yok',
-      url: 'github.com/yasinisiktek-cloud/MailStudio-AI-Email-Client', star: '⭐  GitHub’da yıldız verin',
+      url: 'github.com/TRMachinist/MailStudio-AI-Email-Client', star: '⭐  GitHub’da yıldız verin',
       tiles: ['Mail', 'Yapay zekâ', 'PDF', 'DXF/DWG', 'STEP', 'Office', 'CNC', 'Çevrimdışı'],
     },
   },
