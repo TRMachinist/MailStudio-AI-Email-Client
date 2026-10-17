@@ -11,6 +11,7 @@ STEP, DXF/DWG, PDF teknik resim, Office dosyaları ve CNC programlarını doğru
 [![Lisans: MIT](https://img.shields.io/badge/lisans-MIT-green)](LICENSE)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows)
 ![.NET 8](https://img.shields.io/badge/.NET-8-512BD4?logo=dotnet)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-TRMachinist-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/trmachinist/)
 
 [English](README.md) · **Türkçe**
 
@@ -135,6 +136,11 @@ Ayrıntılar: [docs/BUILDING.md](docs/BUILDING.md) · Testler: [tests/README.md]
 
 Hata bildirimi, fikir ve pull request'ler memnuniyetle karşılanır — bkz. [CONTRIBUTING.md](CONTRIBUTING.md).
 MailStudio işinize yaradıysa **bir ⭐ verin — projenin büyümesine gerçekten yardım ediyor.**
+
+## Geliştirici
+
+**TRMachinist** — talaşlı imalat ve üretim için yazılımlar.
+Soru, fikir veya iş birliği için: **[LinkedIn'den bağlantı kurun](https://www.linkedin.com/in/trmachinist/)**.
 
 ## Lisans
 
