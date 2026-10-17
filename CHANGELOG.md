@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.6.0 – Skills and agent connection
+## 1.6.0 – Skills and agent connection (2026-10-18)
 
 - **Skills**: SKILL.md rules (Claude/Codex-compatible format) that read the mail and its attachments and produce a note,
   a reply draft, an Excel copy (preview, attachment never changed) or flag/move the mail. Buttons in the AI pane,
