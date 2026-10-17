@@ -1,0 +1,18 @@
+* text=auto
+*.cs text eol=crlf
+*.xaml text eol=crlf
+*.csproj text eol=crlf
+*.sln text eol=crlf
+*.ps1 text eol=crlf
+*.png binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.step binary
+*.stp binary
+*.dxf binary
+*.nc binary
+*.dwg binary
+*.xlsx binary
+*.docx binary
+*.pptx binary

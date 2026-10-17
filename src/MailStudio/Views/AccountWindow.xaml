@@ -1,0 +1,162 @@
+<Window x:Class="MailStudio.Views.AccountWindow" Icon="pack://application:,,,/MailStudio;component/Resources/MailStudio.ico"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:v="clr-namespace:MailStudio.Views"
+        Title="Hesap Ekle" Width="600" Height="720" MinWidth="520" MinHeight="420" ResizeMode="CanResize"
+        WindowStartupLocation="CenterOwner" FontSize="13" Background="{DynamicResource BgSurfacePrimaryBrush}">
+    <Window.Resources>
+        <DataTemplate x:Key="SecurityItem"><TextBlock Text="{Binding Converter={x:Static v:SecurityLabel.Instance}}"/></DataTemplate>
+        <Style TargetType="TextBlock" x:Key="Lbl">
+            <Setter Property="Margin" Value="0,10,0,4"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+    </Window.Resources>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <Border Grid.Row="0" Padding="20,14,20,12" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="0,0,0,1" Background="{DynamicResource BgSurfaceSecondaryBrush}">
+            <StackPanel>
+                <TextBlock x:Name="HeaderText" Text="E-posta Hesabı Ekle" FontSize="17" FontWeight="SemiBold" FontFamily="{StaticResource FontDisplay}"/>
+                <TextBlock Text="IMAP ile okuma, SMTP ile gönderme. Şifre bu bilgisayarda Windows tarafından şifreli saklanır."
+                           Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+            </StackPanel>
+        </Border>
+        <Border Grid.Row="2" Background="{DynamicResource BgSurfaceSecondaryBrush}" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="0,1,0,0" Padding="16,10">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Style="{StaticResource FlatButton}" Click="OnTest" x:Name="TestButton" Margin="0,0,8,0">Bağlantıyı Sına</Button>
+                    <Button Style="{StaticResource PrimaryButton}" Click="OnSave" x:Name="SaveButton" Margin="0,0,8,0" Padding="18,3">Kaydet</Button>
+                    <Button Style="{StaticResource FlatButton}" Click="OnCancel" Margin="0">İptal</Button>
+                </StackPanel>
+                <TextBlock x:Name="ResultText" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,10,0" FontSize="12"/>
+            </DockPanel>
+        </Border>
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="20,6,20,16">
+            <TextBlock Text="Sağlayıcı" Style="{StaticResource Lbl}"/>
+            <ComboBox x:Name="PresetBox" SelectionChanged="OnPresetChanged"/>
+            <Border Background="{DynamicResource StatusWarningBgBrush}" BorderBrush="{DynamicResource StatusWarningBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="10,7" Margin="0,10,0,0">
+                <TextBlock x:Name="PresetNote" TextWrapping="Wrap" Foreground="{DynamicResource StatusWarningBrush}"/>
+            </Border>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="12"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="Adınız (gönderen adı)" Style="{StaticResource Lbl}"/>
+                    <TextBox x:Name="NameBox"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="E-posta adresi" Style="{StaticResource Lbl}"/>
+                    <TextBox x:Name="EmailBox" LostFocus="OnEmailLostFocus"/>
+                </StackPanel>
+            </Grid>
+            <TextBlock Text="Giriş yöntemi" Style="{StaticResource Lbl}"/>
+            <ComboBox x:Name="AuthBox" SelectionChanged="OnAuthChanged">
+                <ComboBoxItem Content="Şifre / uygulama şifresi"/>
+                <ComboBoxItem Content="Microsoft ile oturum aç (Outlook.com, Microsoft 365)"/>
+                <ComboBoxItem Content="Google ile oturum aç (Gmail)"/>
+            </ComboBox>
+            <Grid x:Name="PasswordGrid">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="12"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="Kullanıcı adı (boşsa e-posta)" Style="{StaticResource Lbl}"/>
+                    <TextBox x:Name="UserBox"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                    <TextBlock x:Name="PasswordLabel" Text="Şifre / Uygulama şifresi" Style="{StaticResource Lbl}"/>
+                    <PasswordBox x:Name="PasswordBox"/>
+                </StackPanel>
+            </Grid>
+            <Expander x:Name="OAuthExpander" Header="OAuth ayarları (uygulama kimlikleri)" Margin="0,12,0,0" Visibility="Collapsed">
+                <StackPanel Margin="0,4,0,0">
+                    <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,4,0,0">
+                        Microsoft/Google, tarayıcıyla girişe izin vermek için bir "uygulama kaydı" ister. Bir kez oluşturulur, tüm hesaplar için kullanılır.
+                        <Hyperlink Click="OnOAuthHelp">Nasıl alınır?</Hyperlink>
+                    </TextBlock>
+                    <TextBlock Text="Microsoft uygulama (istemci) kimliği" Style="{StaticResource Lbl}"/>
+                    <TextBox x:Name="MsClientBox"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="12"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel><TextBlock Text="Google istemci kimliği" Style="{StaticResource Lbl}"/><TextBox x:Name="GClientBox"/></StackPanel>
+                        <StackPanel Grid.Column="2"><TextBlock Text="Google istemci gizli anahtarı" Style="{StaticResource Lbl}"/><TextBox x:Name="GSecretBox"/></StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Expander>
+
+            <Grid Margin="0,12,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="140"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="Çevrimdışı tutulacak posta:" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                <ComboBox Grid.Column="1" x:Name="OfflineBox">
+                    <ComboBoxItem Content="1 ay" Tag="1"/>
+                    <ComboBoxItem Content="3 ay" Tag="3"/>
+                    <ComboBoxItem Content="6 ay" Tag="6"/>
+                    <ComboBoxItem Content="1 yıl" Tag="12"/>
+                    <ComboBoxItem Content="2 yıl" Tag="24"/>
+                    <ComboBoxItem Content="5 yıl" Tag="60"/>
+                    <ComboBoxItem Content="Tümü" Tag="0"/>
+                </ComboBox>
+                <CheckBox Grid.Column="2" x:Name="OfflineAttCheck" Content="Ekleri de indir (30 MB'a kadar)" IsChecked="True"
+                          VerticalAlignment="Center" Margin="12,0,0,0"/>
+            </Grid>
+
+            <Expander Header="Sunucu ayarları" Margin="0,12,0,0" x:Name="ServerExpander">
+                <StackPanel Margin="0,4,0,0">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="8"/>
+                            <ColumnDefinition Width="70"/>
+                            <ColumnDefinition Width="8"/>
+                            <ColumnDefinition Width="120"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel><TextBlock Text="Gelen (IMAP) sunucusu" Style="{StaticResource Lbl}"/><TextBox x:Name="ImapHostBox"/></StackPanel>
+                        <StackPanel Grid.Column="2"><TextBlock Text="Port" Style="{StaticResource Lbl}"/><TextBox x:Name="ImapPortBox"/></StackPanel>
+                        <StackPanel Grid.Column="4"><TextBlock Text="Güvenlik" Style="{StaticResource Lbl}"/><ComboBox x:Name="ImapSecBox" ItemTemplate="{StaticResource SecurityItem}"/></StackPanel>
+                    </Grid>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="8"/>
+                            <ColumnDefinition Width="70"/>
+                            <ColumnDefinition Width="8"/>
+                            <ColumnDefinition Width="120"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel><TextBlock Text="Giden (SMTP) sunucusu" Style="{StaticResource Lbl}"/><TextBox x:Name="SmtpHostBox"/></StackPanel>
+                        <StackPanel Grid.Column="2"><TextBlock Text="Port" Style="{StaticResource Lbl}"/><TextBox x:Name="SmtpPortBox"/></StackPanel>
+                        <StackPanel Grid.Column="4"><TextBlock Text="Güvenlik" Style="{StaticResource Lbl}"/><ComboBox x:Name="SmtpSecBox" ItemTemplate="{StaticResource SecurityItem}"/></StackPanel>
+                    </Grid>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="8"/>
+                            <ColumnDefinition Width="120"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel><TextBlock Text="İmza" Style="{StaticResource Lbl}"/>
+                            <TextBox x:Name="SignatureBox" MinHeight="54" AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top" Padding="6,4"/></StackPanel>
+                        <StackPanel Grid.Column="2"><TextBlock Text="İlk senkron (mail)" Style="{StaticResource Lbl}"/><TextBox x:Name="SyncCountBox"/></StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Expander>
+        </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Window>

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/MailStudio/MailStudio.csproj" />
+    <Compile Include="../MailStudio.Regression/FakeServers.cs" Link="FakeServers.cs" />
+    <Compile Include="../MailStudio.Regression/EncodingFixtures.cs" Link="EncodingFixtures.cs" />
+    <None Include="../../src/MailStudio/App.xaml" Link="AppResources.source" CopyToOutputDirectory="Always" />
+  </ItemGroup>
+</Project>

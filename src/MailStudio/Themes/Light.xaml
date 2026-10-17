@@ -1,0 +1,78 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- MailStudio 1.0 — Light theme. Colors are taken from the Microsoft Fluent 2 / Office neutral and brand palette. -->
+    <Color x:Key="BgAppCanvasColor">#F0F0F0</Color>
+    <SolidColorBrush x:Key="BgAppCanvasBrush" Color="#F0F0F0"/>
+    <SolidColorBrush x:Key="BgSurfacePrimaryBrush" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="BgSurfaceSecondaryBrush" Color="#F5F5F5"/>
+    <SolidColorBrush x:Key="BgSurfaceSubtleBrush" Color="#E8E8E8"/>
+    <SolidColorBrush x:Key="BgPopupBrush" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="BgListHoverBrush" Color="#F0F0F0"/>
+    <SolidColorBrush x:Key="BgInputBrush" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="BgOverlayBrush" Color="#B3FFFFFF"/>
+    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#242424"/>
+    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#616161"/>
+    <SolidColorBrush x:Key="TextMutedBrush" Color="#8A8A8A"/>
+    <SolidColorBrush x:Key="TextOnAccentBrush" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="TextLinkBrush" Color="#0F6CBD"/>
+    <SolidColorBrush x:Key="AccentPrimaryBrush" Color="#0F6CBD"/>
+    <SolidColorBrush x:Key="AccentFillBrush" Color="#0F6CBD"/>
+    <SolidColorBrush x:Key="AccentHoverBrush" Color="#115EA3"/>
+    <SolidColorBrush x:Key="AccentPressedBrush" Color="#0C3B5E"/>
+    <SolidColorBrush x:Key="AccentSubtleBrush" Color="#DEECF9"/>
+    <SolidColorBrush x:Key="AccentSubtleBorderBrush" Color="#9CC5EB"/>
+    <SolidColorBrush x:Key="AccentHeaderBrush" Color="#0072C6"/>
+    <SolidColorBrush x:Key="AccentHeaderHoverBrush" Color="#2A8AD4"/>
+    <SolidColorBrush x:Key="AccentHeaderDarkBrush" Color="#005A9E"/>
+    <SolidColorBrush x:Key="AccentHeaderTextBrush" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="BorderSubtleBrush" Color="#E0E0E0"/>
+    <SolidColorBrush x:Key="BorderStrongBrush" Color="#C7C7C7"/>
+    <SolidColorBrush x:Key="BorderHoverBrush" Color="#9E9E9E"/>
+    <SolidColorBrush x:Key="StatusSuccessBrush" Color="#0E700E"/>
+    <SolidColorBrush x:Key="StatusSuccessBgBrush" Color="#F1FAF1"/>
+    <SolidColorBrush x:Key="StatusWarningBrush" Color="#835B00"/>
+    <SolidColorBrush x:Key="StatusWarningBgBrush" Color="#FFF4CE"/>
+    <SolidColorBrush x:Key="StatusWarningBorderBrush" Color="#F2D785"/>
+    <SolidColorBrush x:Key="StatusDangerBrush" Color="#C42B1C"/>
+    <SolidColorBrush x:Key="StatusDangerBgBrush" Color="#FDF3F4"/>
+    <SolidColorBrush x:Key="StatusDangerBorderBrush" Color="#EEACB2"/>
+    <SolidColorBrush x:Key="AiAccentBrush" Color="#0F6CBD"/>
+    <SolidColorBrush x:Key="AiAccentBgBrush" Color="#EBF3FC"/>
+    <SolidColorBrush x:Key="AiAccentBorderBrush" Color="#9CC5EB"/>
+    <SolidColorBrush x:Key="ChatUserBubbleBrush" Color="#EBF3FC"/>
+    <SolidColorBrush x:Key="ChatUserBorderBrush" Color="#C7DDF2"/>
+    <SolidColorBrush x:Key="UnreadBarBrush" Color="#0F6CBD"/>
+    <SolidColorBrush x:Key="FlagBrush" Color="#C42B1C"/>
+    <SolidColorBrush x:Key="FocusRingBrush" Color="#0F6CBD"/>
+    <SolidColorBrush x:Key="ScrollThumbBrush" Color="#C2C2C2"/>
+    <SolidColorBrush x:Key="ScrollThumbHoverBrush" Color="#9E9E9E"/>
+    <SolidColorBrush x:Key="IconBrush" Color="#424242"/>
+    <SolidColorBrush x:Key="CadViewportTopBrush" Color="#E6EAEE"/>
+    <SolidColorBrush x:Key="CadViewportBottomBrush" Color="#F7F8FA"/>
+    <SolidColorBrush x:Key="CadSelectionFaceBrush" Color="#2563EB"/>
+    <SolidColorBrush x:Key="CadStockBoxBrush" Color="#D9641C"/>
+    <SolidColorBrush x:Key="CadPmiBrush" Color="#6B3FB8"/>
+
+    <!-- 0.7 keys (backward compatibility) -->
+    <SolidColorBrush x:Key="Accent" Color="#0F6CBD"/>
+    <SolidColorBrush x:Key="AccentDark" Color="#0C3B5E"/>
+    <SolidColorBrush x:Key="AccentLight" Color="#DEECF9"/>
+    <SolidColorBrush x:Key="AccentHover" Color="#E8E8E8"/>
+    <SolidColorBrush x:Key="RibbonBg" Color="#F5F5F5"/>
+    <SolidColorBrush x:Key="Border" Color="#E0E0E0"/>
+    <SolidColorBrush x:Key="PaneBg" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="TextMuted" Color="#616161"/>
+    <SolidColorBrush x:Key="Selected" Color="#DEECF9"/>
+
+    <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.WindowTextBrushKey}" Color="#242424"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="#F0F0F0"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}" Color="#242424"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#DEECF9"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#242424"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#E8E8E8"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#242424"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.MenuBrushKey}" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.MenuTextBrushKey}" Color="#242424"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.GrayTextBrushKey}" Color="#8A8A8A"/>
+</ResourceDictionary>

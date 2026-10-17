@@ -1,0 +1,44 @@
+# Build output
+bin/
+obj/
+publish/
+out/
+*.user
+*.suo
+.vs/
+.vscode/
+.idea/
+*.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+build/
+dist/
+
+# Local secrets / private config (never commit)
+**/OAuthDefaults.Local.cs
+*.local.json
+settings.json
+secrets*.json
+*.pfx
+*.snk
+
+# Local work, data and release folders
+work/
+release*/
+cache*/
+*.db
+*.db-wal
+*.db-shm
+
+# Bundled third-party binaries (built by tools/packaging)
+technical/
+office/
+libredwg/
+
+# Ad-hoc screenshots (real data must never be committed)
+tools/*.png
+tools/sync-*.txt

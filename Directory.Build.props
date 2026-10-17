@@ -1,0 +1,9 @@
+<Project>
+  <PropertyGroup>
+    <Version>1.5.0</Version>
+    <Product>MailStudio for TRMachinist</Product>
+    <Company>TRMachinist</Company>
+    <Copyright>Copyright (c) 2026 TRMachinist</Copyright>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+</Project>

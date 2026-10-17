@@ -1,0 +1,241 @@
+<Window x:Class="MailStudio.Views.ComposeWindow" Icon="pack://application:,,,/MailStudio;component/Resources/MailStudio.ico"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:v="clr-namespace:MailStudio.Views"
+        xmlns:local="clr-namespace:MailStudio"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="İleti" Width="1400" Height="800" MinWidth="720" MinHeight="460"
+        WindowStartupLocation="CenterOwner" FontSize="12.5" Background="{DynamicResource BgSurfacePrimaryBrush}"
+        AllowDrop="True" PreviewDragOver="OnDragOverFiles" PreviewDrop="OnDropFiles">
+    <Window.Resources>
+        <!-- Formatting tool: icon button -->
+        <Style x:Key="Tool" TargetType="Button" BasedOn="{StaticResource SubtleButton}">
+            <Setter Property="Width" Value="28"/>
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="MinHeight" Value="26"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0,0,1,0"/>
+            <Setter Property="FontFamily" Value="{StaticResource Icons}"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Focusable" Value="False"/>
+        </Style>
+        <Style x:Key="SmallCmd" TargetType="Button" BasedOn="{StaticResource RibbonCmd}">
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="Padding" Value="6,0,8,0"/>
+            <Setter Property="Focusable" Value="False"/>
+        </Style>
+        <Style x:Key="HeaderBtn" TargetType="Button" BasedOn="{StaticResource MsButtonStyle}">
+            <Setter Property="MinHeight" Value="26"/>
+            <Setter Property="Padding" Value="6,2"/>
+            <Setter Property="Margin" Value="0,2,8,2"/>
+            <Setter Property="Width" Value="64"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+    </Window.Resources>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Border Background="{DynamicResource AccentHeaderBrush}" MinHeight="30">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Right" x:Name="AiProviderText" Foreground="{DynamicResource AccentHeaderTextBrush}" Opacity="0.85" Margin="14,0" VerticalAlignment="Center" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                <StackPanel Orientation="Horizontal" Margin="8,0">
+                    <Button Click="OnSaveDraft" Focusable="False" ToolTip="Taslağı kaydet (Ctrl+S)" Content="&#xE74E;" FontFamily="{StaticResource Icons}" FontSize="13" Foreground="{DynamicResource AccentHeaderTextBrush}" Background="Transparent" BorderThickness="0" Width="30" MinHeight="0" Padding="0" VerticalAlignment="Stretch">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="b" Background="{TemplateBinding Background}" CornerRadius="4" Margin="0,3"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+                                <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="b" Property="Background" Value="{DynamicResource AccentHeaderHoverBrush}"/></Trigger></ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                    <TextBlock Text="İleti" Foreground="{DynamicResource AccentHeaderTextBrush}" Margin="8,0" VerticalAlignment="Center" FontSize="12.5" FontWeight="SemiBold"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- ================= COMPACT RIBBON ================= -->
+        <Border x:Name="ComposeRibbon" Grid.Row="1" Background="{DynamicResource BgSurfaceSecondaryBrush}" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="0,0,0,1" Padding="4,2">
+            <WrapPanel Orientation="Horizontal">
+                <HeaderedContentControl Header="Pano" Style="{StaticResource RibbonGroup}">
+                    <StackPanel Orientation="Horizontal">
+                        <Button Style="{StaticResource RibbonCmd}" Tag="&#xE77F;" Click="OnPaste" Focusable="False" Content="Yapıştır"/>
+                        <StackPanel>
+                            <Button Style="{StaticResource SmallCmd}" Tag="&#xE8C6;" Click="OnCut" Content="Kes"/>
+                            <Button Style="{StaticResource SmallCmd}" Tag="&#xE8C8;" Click="OnCopy" Content="Kopyala"/>
+                        </StackPanel>
+                    </StackPanel>
+                </HeaderedContentControl>
+
+                <HeaderedContentControl Header="Temel Metin" Style="{StaticResource RibbonGroup}">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
+                            <ComboBox x:Name="FontBox" Width="130" MinHeight="26" Padding="6,1,22,1" Margin="0,0,3,0" IsEditable="True" SelectionChanged="OnFontChanged" Focusable="True">
+                                <ComboBoxItem Content="Calibri"/>
+                                <ComboBoxItem Content="Arial"/>
+                                <ComboBoxItem Content="Segoe UI"/>
+                                <ComboBoxItem Content="Tahoma"/>
+                                <ComboBoxItem Content="Verdana"/>
+                                <ComboBoxItem Content="Times New Roman"/>
+                                <ComboBoxItem Content="Georgia"/>
+                                <ComboBoxItem Content="Courier New"/>
+                                <ComboBoxItem Content="Cascadia Mono"/>
+                            </ComboBox>
+                            <ComboBox x:Name="SizeBox" Width="56" MinHeight="26" Padding="6,1,22,1" Margin="0,0,3,0" IsEditable="True" SelectionChanged="OnSizeChanged">
+                                <ComboBoxItem Content="8"/><ComboBoxItem Content="9"/><ComboBoxItem Content="10"/><ComboBoxItem Content="11"/>
+                                <ComboBoxItem Content="12"/><ComboBoxItem Content="14"/><ComboBoxItem Content="16"/><ComboBoxItem Content="18"/>
+                                <ComboBoxItem Content="20"/><ComboBoxItem Content="24"/><ComboBoxItem Content="28"/><ComboBoxItem Content="36"/>
+                            </ComboBox>
+                            <Button Style="{StaticResource Tool}" Content="&#xE8E8;" ToolTip="Madde işaretleri" Tag="insertUnorderedList" Click="OnExec"/>
+                            <Button Style="{StaticResource Tool}" Content="&#xE9D5;" ToolTip="Numaralandırma" Tag="insertOrderedList" Click="OnExec"/>
+                            <Button Style="{StaticResource Tool}" Content="&#xE8E4;" ToolTip="Girintiyi azalt" Tag="outdent" Click="OnExec"/>
+                            <Button Style="{StaticResource Tool}" Content="&#xE8E5;" ToolTip="Girintiyi artır" Tag="indent" Click="OnExec"/>
+                            <Button Style="{StaticResource Tool}" Content="&#xE894;" ToolTip="Biçimi temizle" Tag="removeFormat" Click="OnExec"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <Button x:Name="BoldBtn" Style="{StaticResource Tool}" Content="&#xE8DD;" ToolTip="Kalın (Ctrl+B)" Tag="bold" Click="OnExec"/>
+                            <Button x:Name="ItalicBtn" Style="{StaticResource Tool}" Content="&#xE8DB;" ToolTip="İtalik (Ctrl+I)" Tag="italic" Click="OnExec"/>
+                            <Button x:Name="UnderBtn" Style="{StaticResource Tool}" Content="&#xE8DC;" ToolTip="Altı çizili (Ctrl+U)" Tag="underline" Click="OnExec"/>
+                            <Button Style="{StaticResource Tool}" FontFamily="{StaticResource FontPrimary}" FontSize="12" ToolTip="Üstü çizili" Tag="strikeThrough" Click="OnExec"><TextBlock Text="ab" TextDecorations="Strikethrough"/></Button>
+                            <Button Style="{StaticResource Tool}" Width="34" ToolTip="Yazı rengi" Click="OnColorMenu" Tag="foreColor">
+                                <StackPanel><TextBlock Text="A" FontFamily="{StaticResource FontPrimary}" FontWeight="Bold" FontSize="12" HorizontalAlignment="Center"/><Rectangle Height="3" Width="16" Fill="#C00000" RadiusX="1" RadiusY="1"/></StackPanel>
+                            </Button>
+                            <Button Style="{StaticResource Tool}" Width="34" ToolTip="Metin vurgu rengi" Click="OnColorMenu" Tag="hiliteColor">
+                                <StackPanel><TextBlock Text="&#xE7E6;" FontSize="12" HorizontalAlignment="Center"/><Rectangle Height="3" Width="16" Fill="#FFEB3B" RadiusX="1" RadiusY="1"/></StackPanel>
+                            </Button>
+                            <Button Style="{StaticResource Tool}" Content="&#xE8E4;" ToolTip="Sola hizala" Tag="justifyLeft" Click="OnExec"/>
+                            <Button Style="{StaticResource Tool}" Content="&#xE8E3;" ToolTip="Ortala" Tag="justifyCenter" Click="OnExec"/>
+                            <Button Style="{StaticResource Tool}" Content="&#xE8E2;" ToolTip="Sağa hizala" Tag="justifyRight" Click="OnExec"/>
+                        </StackPanel>
+                    </StackPanel>
+                </HeaderedContentControl>
+
+                <HeaderedContentControl Header="Ekle" Style="{StaticResource RibbonGroup}">
+                    <StackPanel Orientation="Horizontal">
+                        <StackPanel>
+                            <Button Style="{StaticResource SmallCmd}" Tag="&#xE723;" Click="OnAttach" Content="Dosya Ekle"/>
+                            <Button Style="{StaticResource SmallCmd}" Tag="&#xE8B9;" Click="OnLoadComposeImages" Content="Uzak resimler" ToolTip="Bu taslakta internetten resim yükle (alıntıdaki uzak resimler)"/>
+                        </StackPanel>
+                        <StackPanel>
+                            <Button Style="{StaticResource SmallCmd}" Tag="&#xEB9F;" Click="OnInsertImage" Content="Resim"/>
+                            <Button Style="{StaticResource SmallCmd}" Tag="&#xE71B;" Click="OnInsertLink" Content="Bağlantı"/>
+                        </StackPanel>
+                        <StackPanel>
+                            <Button Style="{StaticResource SmallCmd}" Tag="&#xE80A;" Click="OnInsertTable" Content="Tablo"/>
+                            <Button Style="{StaticResource SmallCmd}" Tag="&#xE8AC;" Click="OnSignature" Content="İmza"/>
+                        </StackPanel>
+                    </StackPanel>
+                </HeaderedContentControl>
+
+                <HeaderedContentControl Header="Yapay Zeka" Style="{StaticResource RibbonGroup}">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
+                            <ComboBox x:Name="RibbonProviderBox" Width="100" MinHeight="26" Padding="6,1,22,1" Margin="0,0,3,0" ToolTip="Bu ileti için yapay zeka sağlayıcısı"
+                                      ItemsSource="{Binding ItemsSource, ElementName=ComposeProviderBox}" SelectedItem="{Binding SelectedItem, ElementName=ComposeProviderBox, Mode=TwoWay}"/>
+                            <ComboBox x:Name="RibbonModelBox" Width="130" MinHeight="26" Padding="6,1,22,1" Margin="0,0,3,0" IsEditable="True" ToolTip="Bu ileti için model"
+                                      ItemsSource="{Binding ItemsSource, ElementName=ComposeModelBox}" Text="{Binding Text, ElementName=ComposeModelBox, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                            <TextBox x:Name="AiInstruction" Width="190" MinHeight="26" Padding="6,2" Margin="0,0,3,0" KeyDown="OnInstructionKey"
+                                     ToolTip="Ne yazılsın? Örn: 'Teklifi kabul ettiğimizi, teslimatın 2 hafta süreceğini yaz' (Enter)"/>
+                            <Button Style="{StaticResource RibbonPrimaryCmd}" Height="26" MinHeight="26" Tag="&#xE70F;" Click="OnAiWrite" Focusable="False" Content="Yaz" ToolTip="Talimata göre e-postayı yaz"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <Button Style="{StaticResource SmallCmd}" Tag="&#xE8AC;" Click="OnAiFix" Content="Düzelt" ToolTip="Yazım ve dilbilgisi; sayı ve ölçüler korunur"/>
+                            <Button Style="{StaticResource SmallCmd}" Tag="&#xE8C6;" Click="OnAiShorten" Content="Kısalt"/>
+                            <Button Style="{StaticResource SmallCmd}" Tag="&#xE77B;" Click="OnAiFormal" Content="Resmi yap"/>
+                            <Button Style="{StaticResource SmallCmd}" Tag="&#xE775;" Click="OnAiEnglish" Content="İngilizceye çevir"/>
+                        </StackPanel>
+                    </StackPanel>
+                </HeaderedContentControl>
+
+            </WrapPanel>
+        </Border>
+
+        <!-- Inline reply toolbar (visible only for a reply opened in the reading pane) -->
+        <Border Grid.Row="2" x:Name="ComposeTools" Visibility="Collapsed" Background="{DynamicResource BgSurfaceSecondaryBrush}" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="0,0,0,1" Padding="10,5">
+            <WrapPanel>
+                <TextBlock Text="&#xE99A;" FontFamily="{StaticResource Icons}" Foreground="{DynamicResource IconBrush}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <ComboBox x:Name="ComposeProviderBox" Width="104" MinHeight="26" Padding="6,1,22,1" Margin="0,0,4,0" SelectionChanged="OnComposeProviderChanged" ToolTip="Yapay zeka sağlayıcısı"/>
+                <ComboBox x:Name="ComposeModelBox" Width="150" MinHeight="26" Padding="6,1,22,1" IsEditable="True" Margin="0,0,8,0" ToolTip="Bu ileti için model"/>
+                <TextBox x:Name="InlineAiInstruction" Visibility="Collapsed" Width="200" MinHeight="26" Padding="6,2" Margin="0,0,4,0" ToolTip="Yanıt için AI talimatı"/>
+                <Button x:Name="InlineAiWriteButton" Visibility="Collapsed" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0" Content="AI yaz" Click="OnInlineAiWrite" MinHeight="26" Padding="10,2"/>
+                <Button Style="{StaticResource FlatButton}" Margin="0,0,4,0" MinHeight="26" Content="Düzelt" Click="OnAiFix" ToolTip="Yazım/dilbilgisi; sayılar korunur"/>
+                <Button Style="{StaticResource FlatButton}" Margin="0,0,4,0" MinHeight="26" Content="Dosya ekle" Click="OnAttach"/>
+                <Button Style="{StaticResource FlatButton}" Margin="0,0,4,0" MinHeight="26" Content="İmza" Click="OnSignature"/>
+                <Button Style="{StaticResource FlatButton}" Margin="0,0,4,0" MinHeight="26" Content="Resimleri yükle" Click="OnLoadComposeImages" ToolTip="Bu taslakta internetten resim yükle"/>
+                <Button Style="{StaticResource FlatButton}" Margin="0,0,4,0" MinHeight="26" Content="Kaydet" Click="OnSaveDraft"/>
+                <Button x:Name="PopOutButton" Style="{StaticResource FlatButton}" Visibility="Collapsed" Margin="8,0,4,0" MinHeight="26" Click="OnPopOut" ToolTip="Taslağı tam boy pencerede düzenle">
+                    <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE8A7;" FontFamily="{StaticResource Icons}" Margin="0,1,6,0" Foreground="{DynamicResource IconBrush}"/><TextBlock Text="Ayrı pencerede aç"/></StackPanel>
+                </Button>
+                <Button x:Name="InlineCloseButton" Style="{StaticResource FlatButton}" Visibility="Collapsed" MinHeight="26" Content="Taslağı kapat" Click="OnInlineClose"/>
+            </WrapPanel>
+        </Border>
+
+        <!-- ================= HEADER FIELDS ================= -->
+        <Grid Grid.Row="3" Margin="12,10,12,2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="88"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="30"/>
+                <RowDefinition Height="30"/>
+                <RowDefinition Height="30"/>
+                <RowDefinition Height="30"/>
+                <RowDefinition Height="30"/>
+            </Grid.RowDefinitions>
+            <Button Grid.RowSpan="3" x:Name="SendButton" Click="OnSend" Style="{StaticResource MsPrimaryButtonStyle}" Margin="0,2,12,2" Padding="4" ToolTip="Gönder (Ctrl+Enter)">
+                <StackPanel>
+                    <TextBlock Text="&#xE724;" FontFamily="{StaticResource Icons}" FontSize="24" HorizontalAlignment="Center"/>
+                    <TextBlock Text="Gönder" HorizontalAlignment="Center" Margin="0,5,0,0"/>
+                </StackPanel>
+            </Button>
+            <TextBlock Grid.Column="1" Text="Kimden" VerticalAlignment="Center" Margin="0,0,10,0" Width="62" Foreground="{DynamicResource TextSecondaryBrush}"/>
+            <ComboBox Grid.Column="2" x:Name="FromBox" MinHeight="26" Margin="0,2" DisplayMemberPath="Email"/>
+            <Button Grid.Row="1" Grid.Column="1" Content="Kime…" Style="{StaticResource HeaderBtn}" Click="OnPickTo"/>
+            <v:RecipientBox Grid.Row="1" Grid.Column="2" x:Name="ToBox" AutomationProperties.Name="Alıcılar"/>
+            <Button Grid.Row="2" Grid.Column="1" Content="Bilgi…" Style="{StaticResource HeaderBtn}" Click="OnPickCc"/>
+            <v:RecipientBox Grid.Row="2" Grid.Column="2" x:Name="CcBox" AutomationProperties.Name="Bilgi alıcıları"/>
+            <Button Grid.Row="3" Grid.Column="1" Content="Gizli…" Style="{StaticResource HeaderBtn}" Click="OnPickBcc"/>
+            <v:RecipientBox Grid.Row="3" Grid.Column="2" x:Name="BccBox" AutomationProperties.Name="Gizli alıcılar"/>
+            <TextBlock Grid.Row="4" Grid.Column="1" Text="Konu" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
+            <TextBox Grid.Row="4" Grid.Column="2" x:Name="SubjectBox" MinHeight="26" Margin="0,2" Padding="6,1" FontWeight="SemiBold" TextChanged="OnSubjectChanged"/>
+        </Grid>
+
+        <ItemsControl Grid.Row="4" x:Name="AttachList" Margin="100,2,12,2">
+            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Border Background="{DynamicResource AccentSubtleBrush}" BorderBrush="{DynamicResource AccentSubtleBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="8,2" Margin="0,0,6,4">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE723;" FontFamily="{StaticResource Icons}" Margin="0,1,6,0" Foreground="{DynamicResource IconBrush}"/>
+                            <TextBlock Text="{Binding Converter={x:Static v:FileNameConverter.Instance}}" VerticalAlignment="Center"/>
+                            <Button Content="&#xE711;" FontFamily="{StaticResource Icons}" FontSize="9" Margin="8,0,0,0" Padding="2,0" MinHeight="0" Style="{StaticResource SubtleButton}" Click="OnRemoveAttach" Tag="{Binding}" ToolTip="{local:Tr 'Eki kaldır'}"/>
+                        </StackPanel>
+                    </Border>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <Border Grid.Row="5" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="0,1,0,0">
+            <wv2:WebView2 x:Name="Editor" DefaultBackgroundColor="White"/>
+        </Border>
+        <Border Grid.Row="5" x:Name="BusyOverlay" Background="{DynamicResource BgOverlayBrush}" Visibility="Collapsed">
+            <Border Style="{StaticResource Card}" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="24,18">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <TextBlock Text="&#xE99A;" FontFamily="{StaticResource Icons}" FontSize="16" Foreground="{DynamicResource IconBrush}" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="BusyText" Text="Yapay zeka yazıyor..." FontSize="14" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <TextBlock Text="Öneri hazır olunca yan yana karşılaştırma açılır; sayı ve ölçüler korunmazsa uygulanmaz." Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap" MaxWidth="320" TextAlignment="Center"/>
+                    <Button Style="{StaticResource FlatButton}" Content="İptal" Click="OnCancelAi" Margin="0,12,0,0" HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <Border Grid.Row="6" Background="{DynamicResource BgSurfaceSecondaryBrush}" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="0,1,0,0" MinHeight="24">
+            <TextBlock x:Name="StatusText" Margin="10,0" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" TextTrimming="CharacterEllipsis"/>
+        </Border>
+    </Grid>
+</Window>
