@@ -18,11 +18,15 @@ def cam(*ks): return [dict(t=k[0], cx=k[1], cy=k[2], z=k[3]) for k in ks]
 PLAN = {
  's02': [('c01-inbox', 1, cam((0, .5, .5, 1), (.35, .4, .45, 1.22), (1, .42, .42, 1.3)))],
  's03': [('c02-ai', 1, cam((0, .5, .5, 1), (.12, .5, .5, 1), (.22, .88, .45, 1.55), (.62, .88, .55, 1.55), (.74, .62, .45, 1.3), (1, .62, .45, 1.3)))],
- 's11': [('clips16/c21-skill@3.2', 1.45, cam((0, .5, .5, 1), (.25, .86, .4, 1.4), (1, .86, .62, 1.6))), ('clips16/c22-excel@0.8', 0.55, cam((0, .5, .5, 1), (1, .35, .3, 1.35)))],
+ 's11': [('clips16/c21-skill@3.2', 1, cam((0, .5, .5, 1), (.2, .3, .3, 1.25), (.45, .86, .45, 1.45), (1, .86, .62, 1.6)))],
+ 's12': [('clips16/c22-excel-a', 1.0, cam((0, .8, .45, 1.4), (1, .8, .45, 1.45))), ('clips16/c22-excel', 1, cam((0, .5, .5, 1), (.5, .35, .3, 1.35), (1, .6, .75, 1.25)))],
+ 's14': [('clips16/c23-skills@2', 1, cam((0, .5, .5, 1), (.18, .2, .3, 1.5), (.3, .2, .8, 1.7), (.62, .2, .8, 1.7), (.78, .5, .55, 1.15), (1, .35, .9, 1.4)))],
  's13': [('clips16/c24-agents', 1, cam((0, .5, .5, 1), (.3, .5, .3, 1.02), (.65, .5, .5, 1.02), (.82, .3, .93, 1.5), (1, .3, .93, 1.5)))],
- 's04': [('c03-pdf', 1, cam((0, .5, .5, 1), (1, .5, .5, 1.1))), ('c04-dxf', 1, cam((0, .1, .3, 1.5), (.2, .1, .3, 1.5), (.4, .5, .5, 1), (1, .5, .5, 1)))],
+ 's04': [('c03-pdf-a', 0.9, cam((0, .5, .2, 1.4), (1, .5, .2, 1.5))), ('c03-pdf', 1, cam((0, .5, .5, 1), (1, .5, .5, 1.05)))],
+ 's05': [('c04-dxf-a', 0.9, cam((0, .55, .2, 1.4), (1, .55, .2, 1.5))), ('c04-dxf', 1, cam((0, .1, .3, 1.5), (.2, .1, .3, 1.5), (.4, .5, .5, 1), (1, .5, .5, 1)))],
  's06': [('c05-step', 1, cam((0, .4, .5, 1.15), (1, .4, .5, 1.3)))],
  's07': [('c06-excel', 1, cam((0, .3, .2, 1.6), (1, .32, .22, 1.7))), ('c07-word', 1, cam((0, .5, .25, 2.0), (1, .5, .28, 2.1))), ('c08-ppt', 1, cam((0, .45, .5, 1.1), (1, .45, .5, 1.2)))],
+ 's08': [('c09-cnc', 1, cam((0, .2, .2, 1.7), (1, .2, .25, 1.8)))],
  's09': [('c10-rules', 1, cam((0, .5, .5, 1), (1, .5, .45, 1.08))), ('c11-dark', 1.1, cam((0, .5, .5, 1), (1, .5, .5, 1.1)))],
 }
 SPLIT = {  # subtitles split points
@@ -41,14 +45,14 @@ def parts(text):
     return out
 
 def build(lang):
-    man = json.loads((PUB / 'voice2' / lang / 'manifest.json').read_text(encoding='utf-8'))
+    man = json.loads((PUB / 'voice3' / lang / 'manifest.json').read_text(encoding='utf-8'))
     scenes, t = [], 0
     for m in man:
         sid = m['id']; vd = m['duration']
-        lead = 10 if sid == 's01' else 4
-        tail = 45 if sid == 's10' else 7
+        lead = 10 if sid == 's01' else 5
+        tail = 45 if sid == 's10' else 9
         dur = lead + math.ceil(vd * FPS) + tail
-        sc = dict(id=sid, **{'from': t}, dur=dur, voiceFrom=t + lead, voiceFrames=math.ceil(vd * FPS) - 6, parts=parts(m['text']), segs=[], cam=[], voice=f'voice2/{lang}/{sid}.mp3')
+        sc = dict(id=sid, **{'from': t}, dur=dur, voiceFrom=t + lead, voiceFrames=math.ceil(vd * FPS) - 6, parts=parts(m['text']), segs=[], cam=[], voice=f'voice3/{lang}/{sid}.mp3')
         if sid == 's01':
             sc['still'] = f'stills/intro-{lang}.jpg'; sc['cam'] = cam((0, .5, .5, 1), (1, .45, .45, 1.12))
         elif sid in PLAN:
