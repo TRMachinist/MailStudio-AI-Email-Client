@@ -4,7 +4,9 @@ export const TEXT: Record<'en' | 'tr', Record<string, SceneText> & {badge: strin
     badge: 'REAL APP · DEMO DATA',
     s02: {chip: 'Mail', title: 'Classic Outlook layout', sub: 'Offline copy of mail and attachments', pills: ['Gmail', 'Microsoft 365', 'IMAP']},
     s03: {chip: 'AI assistant', title: 'Summary & reply in one click', sub: 'Local with Ollama, or your own subscription', pills: ['Ollama', 'Claude', 'Codex', 'Gemini']},
-    s04: {chip: 'PDF studio', title: 'Razor-sharp technical drawings', sub: 'Mark up, correct text, OCR, ask AI', pills: ['Annotate', 'OCR', 'AI']},
+    s11: {chip: 'New · Skills', title: 'Skills read mail + attachments', sub: 'Quotation analysis, drawing check, Excel updates', pills: ['PDF', 'DXF', 'STEP', 'Excel']},
+    s13: {chip: 'AI agents · MCP', title: 'One-click agent connection', sub: 'Read · Draft · Organize — never send', pills: ['Claude', 'Codex', 'Gemini', 'Cursor']},
+    s04: {chip: 'PDF · DXF · DWG', title: 'Razor-sharp drawings', sub: 'Mark up, OCR, layers, snap measuring', pills: ['Annotate', 'OCR', 'Layers', 'Measure']},
     s05: {chip: 'DXF · DWG', title: 'CAD drawings with layers', sub: 'Unlimited zoom, snap measuring', pills: ['Layers', 'Measure', 'Search']},
     s06: {chip: 'STEP 3D', title: 'Measure the real geometry', sub: 'Native B-Rep, raw stock & weight', pills: ['AP242 PMI', 'Stock', 'Weight']},
     s07: {chip: 'Office', title: 'Word · Excel · PowerPoint', sub: 'View and edit — no Office needed', pills: ['.docx', '.xlsx', '.pptx']},
@@ -13,14 +15,16 @@ export const TEXT: Record<'en' | 'tr', Record<string, SceneText> & {badge: strin
     outro: {
       line1: 'Free & open source', line2: 'Windows 10 / 11 · portable · no telemetry',
       url: 'github.com/TRMachinist/MailStudio-AI-Email-Client', star: '⭐  Star it on GitHub',
-      tiles: ['Mail', 'AI', 'PDF', 'DXF/DWG', 'STEP', 'Office', 'CNC', 'Offline'],
+      tiles: ['Mail', 'AI', 'Skills', 'Agents', 'PDF', 'DXF/DWG', 'STEP', 'Office', 'CNC', 'Offline'],
     },
   },
   tr: {
     badge: 'GERÇEK UYGULAMA · DEMO VERİ',
     s02: {chip: 'Mail', title: 'Klasik Outlook düzeni', sub: 'Mail ve eklerin çevrimdışı kopyası', pills: ['Gmail', 'Microsoft 365', 'IMAP']},
     s03: {chip: 'Yapay zeka', title: 'Tek tıkla özet ve cevap', sub: 'Ollama ile yerel ya da kendi aboneliğinizle', pills: ['Ollama', 'Claude', 'Codex', 'Gemini']},
-    s04: {chip: 'PDF stüdyosu', title: 'Jilet gibi keskin teknik resim', sub: 'İşaretle, metni düzelt, OCR, yapay zekâya sor', pills: ['İşaretle', 'OCR', 'YZ']},
+    s11: {chip: "Yeni · Skill'ler", title: 'Maili ve ekleri okuyan skill', sub: 'Teklif analizi, resim kontrolü, Excel güncelleme', pills: ['PDF', 'DXF', 'STEP', 'Excel']},
+    s13: {chip: 'YZ ajanları · MCP', title: 'Tek tıkla ajan bağlantısı', sub: 'Okuma · Taslak · Düzenleme — asla gönderme', pills: ['Claude', 'Codex', 'Gemini', 'Cursor']},
+    s04: {chip: 'PDF · DXF · DWG', title: 'Jilet gibi keskin çizimler', sub: 'İşaretle, OCR, katman, yakalamalı ölçü', pills: ['İşaretle', 'OCR', 'Katman', 'Ölçü']},
     s05: {chip: 'DXF · DWG', title: 'Katmanlarıyla CAD çizimleri', sub: 'Sınırsız yakınlaştırma, yakalamalı ölçü', pills: ['Katman', 'Ölçü', 'Arama']},
     s06: {chip: 'STEP 3B', title: 'Gerçek geometriden ölçün', sub: 'Native B-Rep, hammadde ve ağırlık', pills: ['AP242 PMI', 'Hammadde', 'Ağırlık']},
     s07: {chip: 'Office', title: 'Word · Excel · PowerPoint', sub: 'Office kurmadan görüntüle ve düzenle', pills: ['.docx', '.xlsx', '.pptx']},
@@ -29,7 +33,7 @@ export const TEXT: Record<'en' | 'tr', Record<string, SceneText> & {badge: strin
     outro: {
       line1: 'Ücretsiz ve açık kaynak', line2: 'Windows 10 / 11 · taşınabilir · telemetri yok',
       url: 'github.com/TRMachinist/MailStudio-AI-Email-Client', star: '⭐  GitHub’da yıldız verin',
-      tiles: ['Mail', 'Yapay zekâ', 'PDF', 'DXF/DWG', 'STEP', 'Office', 'CNC', 'Çevrimdışı'],
+      tiles: ['Mail', 'Yapay zekâ', "Skill'ler", 'Ajanlar', 'PDF', 'DXF/DWG', 'STEP', 'Office', 'CNC', 'Çevrimdışı'],
     },
   },
 };
