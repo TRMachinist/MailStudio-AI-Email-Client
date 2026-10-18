@@ -16,9 +16,9 @@ STEP, DXF/DWG, PDF teknik resim, Office dosyaları ve CNC programlarını doğru
 
 [English](README.md) · **Türkçe**
 
-<a href="https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.6.0/MailStudio_Demo_TR_1920x1080.mp4"><img src="docs/media/tr/demo-video.jpg" alt="60 saniyelik tanıtım videosu" width="100%"></a>
+<a href="https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.6.0/MailStudio_Demo_TR_1920x1080.mp4"><img src="docs/media/tr/demo-video.jpg" alt="90 saniyelik tanıtım videosu" width="100%"></a>
 
-**▶ [60 saniyelik tanıtım videosunu izleyin](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.6.0/MailStudio_Demo_TR_1920x1080.mp4)** · [dikey](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.6.0/MailStudio_Demo_TR_1080x1920.mp4) · [English](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.6.0/MailStudio_Demo_EN_1920x1080.mp4)
+**▶ [90 saniyelik tanıtım videosunu izleyin](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.6.0/MailStudio_Demo_TR_1920x1080.mp4)** · [dikey](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.6.0/MailStudio_Demo_TR_1080x1920.mp4) · [English](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.6.0/MailStudio_Demo_EN_1920x1080.mp4)
 
 </div>
 

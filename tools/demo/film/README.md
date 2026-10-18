@@ -1,4 +1,4 @@
-# Demo film (≤ 60 s, English + Turkish)
+# Demo film (≤ 90 s, English + Turkish)
 
 Everything in the film is the real app running on the demo mailbox — no real mail.
 
