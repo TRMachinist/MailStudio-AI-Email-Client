@@ -18,7 +18,7 @@ def cam(*ks): return [dict(t=k[0], cx=k[1], cy=k[2], z=k[3]) for k in ks]
 PLAN = {
  's02': [('c01-inbox', 1, cam((0, .5, .5, 1), (.35, .4, .45, 1.22), (1, .42, .42, 1.3)))],
  's03': [('c02-ai', 1, cam((0, .5, .5, 1), (.12, .5, .5, 1), (.22, .88, .45, 1.55), (.62, .88, .55, 1.55), (.74, .62, .45, 1.3), (1, .62, .45, 1.3)))],
- 's11': [('clips16/c21-skill', 1.25, cam((0, .5, .5, 1), (.25, .86, .4, 1.4), (1, .86, .62, 1.6))), ('clips16/c22-excel', 0.75, cam((0, .5, .5, 1), (1, .35, .3, 1.35)))],
+ 's11': [('clips16/c21-skill@3.2', 1.45, cam((0, .5, .5, 1), (.25, .86, .4, 1.4), (1, .86, .62, 1.6))), ('clips16/c22-excel@0.8', 0.55, cam((0, .5, .5, 1), (1, .35, .3, 1.35)))],
  's13': [('clips16/c24-agents', 1, cam((0, .5, .5, 1), (.3, .5, .3, 1.02), (.65, .5, .5, 1.02), (.82, .3, .93, 1.5), (1, .3, .93, 1.5)))],
  's04': [('c03-pdf', 1, cam((0, .5, .5, 1), (1, .5, .5, 1.1))), ('c04-dxf', 1, cam((0, .1, .3, 1.5), (.2, .1, .3, 1.5), (.4, .5, .5, 1), (1, .5, .5, 1)))],
  's06': [('c05-step', 1, cam((0, .4, .5, 1.15), (1, .4, .5, 1.3)))],
@@ -57,15 +57,16 @@ def build(lang):
             rest = dur - fixed; wsum = sum(sh for c, sh, _ in plan if not c.endswith('-a'))
             pos = 0
             for i, (clip, sh, cm) in enumerate(plan):
+                clip, _, skip = clip.partition('@'); skip = float(skip or 0)   # name@seconds: drop the start of the recording
                 rel = f'clips16/{lang}/{clip[8:]}.mp4' if clip.startswith('clips16/') else f'clips/{lang}/{clip}.mp4'
                 src = PUB / rel
-                nat, w, h = probe(src)
+                nat, w, h = probe(src); nat -= skip
                 sd = int(sh * FPS) if clip.endswith('-a') else (dur - pos if i == len(plan) - 1 else int(rest * sh / wsum))
                 start = 0
                 if clip.endswith('-a'):  # just the click: last part of the clip
                     rate = 1.0; start = max(0, int((nat - sd / FPS) * FPS))
                 else:
-                    rate = max(0.35, nat / (sd / FPS) * 0.985)
+                    rate = max(0.35, nat / (sd / FPS) * 0.985); start = int(skip * FPS)
                 sc['segs'].append({'src': rel, 'from': pos, 'dur': sd, 'rate': round(rate, 4), 'start': start, 'w': w, 'h': h, 'cam': cm})
                 pos += sd
         scenes.append(sc); t += dur
