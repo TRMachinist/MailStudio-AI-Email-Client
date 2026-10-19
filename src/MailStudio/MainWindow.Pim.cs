@@ -205,7 +205,7 @@ public partial class MainWindow : ITaskHost
         if (ev == null) return;
         var source = $"{h.AccountId}|{h.Folder}|{h.Uid}";
         var existing = _calendar.FindByUid(ev.Uid);
-        var panel = new DockPanel();
+        var panel = new StackPanel();
         var info = new StackPanel();
         string head = cal.IsCancel ? L.T("Toplantı iptal edildi") : cal.IsReply ? L.T("Toplantı yanıtı") : cal.IsInvitation ? L.T("Toplantı daveti") : L.T("Takvim öğesi");
         info.Children.Add(PimUi.Text("\U0001F4C5 " + head + ": " + ev.Title, 13, bold: true));
@@ -233,7 +233,7 @@ public partial class MainWindow : ITaskHost
             var conflicts = _calendar.Conflicts(ev.Start, ev.End, existing?.Id);
             if (conflicts.Count > 0) info.Children.Add(PimUi.Text("⚠ " + L.F("Çakışıyor: {0}", string.Join(", ", conflicts.Take(2).Select(o => o.Event.Title + " " + PimUi.RangeText(o)))), 12, brush: "StatusDangerBrush"));
         }
-        var buttons = new WrapPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) };
+        var buttons = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
         Button B(string text, Action a, bool primary = false)
         {
             var b = new Button { Content = text, Margin = new Thickness(0, 2, 6, 2), Padding = new Thickness(10, 3, 10, 3) };
@@ -253,8 +253,8 @@ public partial class MainWindow : ITaskHost
         else if (!cal.IsReply)
             B(existing == null ? L.T("Takvime ekle") : L.T("Takvimde güncelle"), () => { _calendar.Import(cal.Events); Status(L.F("Takvime eklendi: {0}", ev.Title)); ShowInvitation(h, c); }, primary: true);
         if (existing != null || !cal.IsReply) B(L.T("Takvimde göster"), () => { SwitchModule(PimModule.Calendar); _calendarView?.GoTo(ev.Start.Date); });
-        DockPanel.SetDock(buttons, Dock.Right);
-        panel.Children.Add(buttons); panel.Children.Add(info);
+        foreach (var t in info.Children.OfType<TextBlock>()) { t.TextWrapping = TextWrapping.Wrap; t.TextTrimming = TextTrimming.None; }
+        panel.Children.Add(info); panel.Children.Add(buttons);
         InviteBar.Child = panel;
         InviteBar.Visibility = Visibility.Visible;
     }
