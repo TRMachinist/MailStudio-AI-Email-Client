@@ -12,7 +12,10 @@ using MailStudio.Models;
 using MailStudio.Services;
 using MailStudio.Services.Ai;
 using MailStudio.Views;
+using MailStudio.Views.Calendar;
 using MailStudio.Views.Quotes;
+using MailStudio.Views.QuickSteps;
+using MailStudio.Views.Templates;
 using Microsoft.Web.WebView2.Core;
 using MimeKit;
 
@@ -30,6 +33,10 @@ public partial class MainWindow : Window
     public FollowUpStore FollowUpStore => _followUpStore;
     readonly OutboxStore _outbox = new();
     public OutboxStore OutboxStore => _outbox;
+    readonly TemplateStore _templateStore = new();
+    public TemplateStore TemplateStore => _templateStore;
+    readonly QuickStepStore _quickStepStore = new();
+    public QuickStepStore QuickStepStore => _quickStepStore;
     readonly DispatcherTimer _queueTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     OutboxItem? _activeUndoItem;
     AccountConfig? _activeUndoAccount;
@@ -242,6 +249,7 @@ public partial class MainWindow : Window
         SetFolderPaneVisible(_settings.ShowFolderPane);
         SetAiPaneVisible(_settings.ShowAiPane);
         ApplyPaneThresholds();
+        PopulateQuickStepButtons();
 
         foreach (var p in _providers) ProviderBox.Items.Add(p.Name);
         ProviderBox.SelectedItem = _providers.Any(p => p.Name == _settings.AiProvider) ? _settings.AiProvider : "Ollama";
@@ -824,6 +832,12 @@ public partial class MainWindow : Window
         var shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
         if (ctrl && !shift && key is >= Key.D1 and <= Key.D5) { SwitchModule((PimModule)(key - Key.D1)); e.Handled = true; return; }
+        if (ctrl && shift && key is >= Key.D1 and <= Key.D9)
+        {
+            var shortcutStr = $"Ctrl+Shift+{(int)(key - Key.D0)}";
+            var step = _quickStepStore.FindByShortcut(shortcutStr);
+            if (step != null) { _ = ExecuteQuickStepAsync(step); e.Handled = true; return; }
+        }
         if (_module != PimModule.Mail) { if (key == Key.F9) { OnSyncAll(this, e); e.Handled = true; } return; } // the calendar / task view handles its own keys
         if (e.OriginalSource is TextBox && !ctrl && key != Key.F9) return; // do not interfere while typing
         bool h = true;
@@ -1638,6 +1652,193 @@ public partial class MainWindow : Window
             Status(L.F("Teklif masasına eklendi: {0}", dlg.Item.PartNumber.Length > 0 ? dlg.Item.PartNumber : dlg.Item.Customer));
             _quoteDeskView?.Refresh();
         }
+    }
+
+    void OnManageQuickSteps(object sender, RoutedEventArgs e)
+    {
+        var win = new QuickStepManagerWindow(_quickStepStore, _templateStore, this);
+        win.ShowDialog();
+        PopulateQuickStepButtons();
+    }
+
+    void OnQuickStepsSubmenuOpened(object sender, RoutedEventArgs e)
+    {
+        QuickStepsContextMenu.Items.Clear();
+        var steps = _quickStepStore.Steps;
+        foreach (var s in steps)
+        {
+            var mi = new MenuItem
+            {
+                Header = s.Name,
+                Icon = new TextBlock { Text = s.Icon, FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 13 },
+                InputGestureText = s.Shortcut
+            };
+            var curStep = s;
+            mi.Click += async (_, _) => await ExecuteQuickStepAsync(curStep);
+            QuickStepsContextMenu.Items.Add(mi);
+        }
+
+        if (steps.Count == 0)
+        {
+            QuickStepsContextMenu.Items.Add(new MenuItem { Header = L.T("(Hızlı adım yok)"), IsEnabled = false });
+        }
+
+        QuickStepsContextMenu.Items.Add(new Separator());
+        var manage = new MenuItem { Header = L.T("Hızlı Adımları Yönet…"), Icon = new TextBlock { Text = "\uE713", FontFamily = new FontFamily("Segoe MDL2 Assets") } };
+        manage.Click += OnManageQuickSteps;
+        QuickStepsContextMenu.Items.Add(manage);
+    }
+
+    public void PopulateQuickStepButtons()
+    {
+        if (QuickStepsButtonPanel == null) return;
+        QuickStepsButtonPanel.Children.Clear();
+        foreach (var step in _quickStepStore.Steps)
+        {
+            var btn = new Button
+            {
+                Style = (Style)FindResource("RibbonCmd"),
+                Tag = step.Icon,
+                Content = step.Name,
+                ToolTip = string.IsNullOrEmpty(step.Shortcut) ? step.Description : $"{step.Description} ({step.Shortcut})"
+            };
+            var curStep = step;
+            btn.Click += async (_, _) => await ExecuteQuickStepAsync(curStep);
+            QuickStepsButtonPanel.Children.Add(btn);
+        }
+    }
+
+    public async Task<bool> ExecuteQuickStepAsync(QuickStepItem step, MailHeader? targetMail = null)
+    {
+        var mail = targetMail ?? _current ?? MessageList.SelectedItems.OfType<MailHeader>().FirstOrDefault();
+        if (mail == null)
+        {
+            Status(L.T("Önce listeden bir ileti seçin."));
+            return false;
+        }
+
+        var acc = Acc(mail.AccountId);
+        if (acc == null)
+        {
+            Status(L.T("İletinin hesabı bulunamadı."));
+            return false;
+        }
+
+        Status(L.F("Hızlı Adım çalıştırılıyor: {0}", step.Name));
+
+        foreach (var act in step.Actions)
+        {
+            switch (act.Type)
+            {
+                case QuickStepActionType.MarkRead:
+                    await _mail.SetReadAsync(acc, mail, true);
+                    mail.IsRead = true;
+                    Reformat(mail);
+                    UpdateCounts();
+                    break;
+
+                case QuickStepActionType.MarkUnread:
+                    await _mail.SetReadAsync(acc, mail, false);
+                    mail.IsRead = false;
+                    Reformat(mail);
+                    UpdateCounts();
+                    break;
+
+                case QuickStepActionType.Flag:
+                    await _mail.SetFlaggedAsync(acc, mail, true);
+                    mail.IsFlagged = true;
+                    Reformat(mail);
+                    break;
+
+                case QuickStepActionType.Unflag:
+                    await _mail.SetFlaggedAsync(acc, mail, false);
+                    mail.IsFlagged = false;
+                    Reformat(mail);
+                    break;
+
+                case QuickStepActionType.MoveToArchive:
+                    var folders = _roots.SelectMany(r => r.Children).Where(f => f.AccountId == mail.AccountId).ToList();
+                    var arch = folders.FirstOrDefault(f => f.SortOrder == 5) ?? folders.FirstOrDefault(f => f.SortOrder == 60);
+                    if (arch != null)
+                    {
+                        await _mail.MoveAsync(acc, mail, arch.FullName);
+                        _messages.Remove(mail);
+                        ClearReading();
+                    }
+                    break;
+
+                case QuickStepActionType.MoveToFolder:
+                    if (!string.IsNullOrWhiteSpace(act.Parameter))
+                    {
+                        var target = _roots.SelectMany(r => r.Children)
+                            .FirstOrDefault(f => f.AccountId == mail.AccountId && (f.FullName.Equals(act.Parameter, StringComparison.OrdinalIgnoreCase) || f.Name.Equals(act.Parameter, StringComparison.OrdinalIgnoreCase)));
+                        if (target != null)
+                        {
+                            await _mail.MoveAsync(acc, mail, target.FullName);
+                            _messages.Remove(mail);
+                            ClearReading();
+                        }
+                    }
+                    break;
+
+                case QuickStepActionType.Delete:
+                    await DeleteMessagesAsync(new[] { mail });
+                    break;
+
+                case QuickStepActionType.CreateTask:
+                    var key = $"{mail.AccountId}|{mail.Folder}|{mail.Uid}";
+                    if (_tasks.FindBySource(key) is not { Completed: false })
+                    {
+                        var task = TasksView.FromMail(mail, DateTime.Today);
+                        if (!string.IsNullOrWhiteSpace(act.Parameter))
+                        {
+                            task.Category = act.Parameter;
+                        }
+                        _tasks.Save(task);
+                    }
+                    break;
+
+                case QuickStepActionType.ReplyWithTemplate:
+                    EmailTemplate? tmpl = null;
+                    if (!string.IsNullOrWhiteSpace(act.Parameter))
+                    {
+                        tmpl = _templateStore.FindById(act.Parameter) ??
+                               _templateStore.Templates.FirstOrDefault(t => t.Title.Equals(act.Parameter, StringComparison.OrdinalIgnoreCase));
+                    }
+                    if (tmpl == null && _templateStore.Templates.Count > 0)
+                    {
+                        tmpl = _templateStore.Templates[0];
+                    }
+
+                    if (tmpl != null)
+                    {
+                        var sig = _store.Accounts.FirstOrDefault(a => a.Id == mail.AccountId)?.Signature ?? "";
+                        var sigText = System.Text.RegularExpressions.Regex.Replace(sig, "<.*?>", string.Empty).Trim();
+                        var ctx = TemplateContext.Create(
+                            to: $"\"{mail.FromName}\" <{mail.FromAddress}>",
+                            subject: mail.Subject,
+                            signature: sigText,
+                            bodyForPartExtraction: _currentContent?.Text ?? mail.Preview
+                        );
+                        var rendered = TemplateEngine.Render(tmpl.Body, ctx);
+                        var content = _currentContent ?? _cache.GetBody(mail.AccountId, mail.Folder, mail.Uid) ?? new MailContent { Html = "<p>" + System.Net.WebUtility.HtmlEncode(mail.Preview) + "</p>" };
+                        Reply(mail, content, all: false, body: rendered);
+                    }
+                    break;
+
+                case QuickStepActionType.SetCategory:
+                    if (!string.IsNullOrWhiteSpace(act.Parameter))
+                    {
+                        _cache.SetCategory(mail.AccountId, mail.Folder, mail.Uid, act.Parameter);
+                        mail.Category = act.Parameter;
+                        Reformat(mail);
+                    }
+                    break;
+            }
+        }
+
+        Status(L.F("Hızlı Adım tamamlandı: {0}", step.Name));
+        return true;
     }
 
     async Task RunRuleOnFolderAsync(MailRule rule)

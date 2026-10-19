@@ -335,6 +335,16 @@ public static class DemoData
         });
     }
 
+    public static void SeedTemplates(TemplateStore store)
+    {
+        if (store.Templates.Count == 0) store.ResetToDefaults();
+    }
+
+    public static void SeedQuickSteps(QuickStepStore store)
+    {
+        if (store.Steps.Count == 0) store.ResetToDefaults();
+    }
+
     static string WrapHtml(string body) => "<div style=\"font-family:Segoe UI,Calibri,sans-serif;font-size:14px\">" + body + "</div>";
 
     public static bool IsDemo(AccountConfig a) => a.ImapHost == Host;

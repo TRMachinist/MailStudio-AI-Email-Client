@@ -373,6 +373,95 @@ public partial class ComposeWindow : Window
         menu.Items.Add(manage);menu.PlacementTarget=sender as UIElement;menu.IsOpen=true;
     }
 
+    async void OnInsertTemplateMenu(object sender, RoutedEventArgs e)
+    {
+        if (_state.IsBusy) return;
+        var store = new TemplateStore();
+        var menu = new ContextMenu { PlacementTarget = sender as UIElement, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+
+        var templates = store.Templates;
+        var currentLang = L.Culture.TwoLetterISOLanguageName.ToLowerInvariant();
+        var sorted = templates
+            .Where(t => t.Language == "all" || t.Language == currentLang || templates.Count <= 6)
+            .OrderBy(t => t.Category)
+            .ThenBy(t => t.Title)
+            .ToList();
+
+        if (sorted.Count == 0) sorted = templates.ToList();
+
+        string lastCat = "";
+        foreach (var t in sorted)
+        {
+            if (!string.IsNullOrEmpty(t.Category) && t.Category != lastCat)
+            {
+                lastCat = t.Category;
+                menu.Items.Add(new MenuItem { Header = "— " + lastCat + " —", IsEnabled = false, FontWeight = FontWeights.SemiBold });
+            }
+            var item = new MenuItem { Header = t.Title, Tag = t };
+            item.Click += async (_, _) => await ApplyTemplateAsync(t);
+            menu.Items.Add(item);
+        }
+
+        if (templates.Count == 0)
+        {
+            menu.Items.Add(new MenuItem { Header = L.T("(Henüz şablon yok)"), IsEnabled = false });
+        }
+
+        menu.Items.Add(new Separator());
+        var manage = new MenuItem { Header = L.T("Şablonları Yönet…") };
+        manage.Click += (_, _) =>
+        {
+            var win = new Templates.TemplateManagerWindow(store, DialogOwner);
+            win.ShowDialog();
+        };
+        menu.Items.Add(manage);
+
+        menu.IsOpen = true;
+    }
+
+    public async Task ApplyTemplateAsync(EmailTemplate t)
+    {
+        var sig = DefaultSignature();
+        var sigText = System.Text.RegularExpressions.Regex.Replace(sig, "<.*?>", string.Empty).Trim();
+        var ctx = TemplateContext.Create(
+            to: ToBox.Text,
+            subject: SubjectBox.Text,
+            signature: sigText,
+            bodyForPartExtraction: _req.Body
+        );
+
+        var renderedBody = TemplateEngine.Render(t.Body, ctx);
+        var html = TemplateEngine.TextToHtml(renderedBody);
+
+        if (!string.IsNullOrWhiteSpace(t.Subject))
+        {
+            var renderedSubj = TemplateEngine.Render(t.Subject, ctx);
+            if (string.IsNullOrWhiteSpace(SubjectBox.Text) || SubjectBox.Text.Trim().Equals("RE:", StringComparison.OrdinalIgnoreCase) || SubjectBox.Text.Trim().Equals("FW:", StringComparison.OrdinalIgnoreCase))
+            {
+                SubjectBox.Text = renderedSubj;
+            }
+        }
+
+        try
+        {
+            await EnsureEditorAsync();
+            var currentDraft = await Js("ms.draftText()");
+            if (string.IsNullOrWhiteSpace(currentDraft) || currentDraft.Trim() == "")
+            {
+                await Js($"ms.setDraft({JsonSerializer.Serialize(html)})");
+            }
+            else
+            {
+                await Js($"ms.insertHtml({JsonSerializer.Serialize(html + "<div><br></div>")})");
+            }
+            Changed();
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = L.T("Şablon eklenemedi: ") + ex.Message;
+        }
+    }
+
     async void OnComposeProviderChanged(object sender,SelectionChangedEventArgs e)
     {
         if(_aiOptions==null)return;

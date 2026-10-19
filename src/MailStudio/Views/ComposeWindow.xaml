@@ -125,6 +125,9 @@
                             <Button Style="{StaticResource SmallCmd}" Tag="&#xE80A;" Click="OnInsertTable" Content="Tablo"/>
                             <Button Style="{StaticResource SmallCmd}" Tag="&#xE8AC;" Click="OnSignature" Content="İmza"/>
                         </StackPanel>
+                        <StackPanel>
+                            <Button x:Name="InsertTemplateBtn" Style="{StaticResource SmallCmd}" Tag="&#xE8F1;" Click="OnInsertTemplateMenu" Content="Şablon" ToolTip="Hazır yanıt şablonu ekle"/>
+                        </StackPanel>
                     </StackPanel>
                 </HeaderedContentControl>
 
@@ -162,6 +165,7 @@
                 <Button Style="{StaticResource FlatButton}" Margin="0,0,4,0" MinHeight="26" Content="Düzelt" Click="OnAiFix" ToolTip="Yazım/dilbilgisi; sayılar korunur"/>
                 <Button Style="{StaticResource FlatButton}" Margin="0,0,4,0" MinHeight="26" Content="Dosya ekle" Click="OnAttach"/>
                 <Button Style="{StaticResource FlatButton}" Margin="0,0,4,0" MinHeight="26" Content="İmza" Click="OnSignature"/>
+                <Button x:Name="InlineTemplateBtn" Style="{StaticResource FlatButton}" Margin="0,0,4,0" MinHeight="26" Content="Şablon" Click="OnInsertTemplateMenu" ToolTip="Hazır yanıt şablonu ekle"/>
                 <Button Style="{StaticResource FlatButton}" Margin="0,0,4,0" MinHeight="26" Content="Resimleri yükle" Click="OnLoadComposeImages" ToolTip="Bu taslakta internetten resim yükle"/>
                 <Button Style="{StaticResource FlatButton}" Margin="0,0,4,0" MinHeight="26" Content="Kaydet" Click="OnSaveDraft"/>
                 <Button x:Name="PopOutButton" Style="{StaticResource FlatButton}" Visibility="Collapsed" Margin="8,0,4,0" MinHeight="26" Click="OnPopOut" ToolTip="Taslağı tam boy pencerede düzenle">

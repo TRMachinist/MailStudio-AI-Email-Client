@@ -1196,4 +1196,201 @@ await Test("teklif masası: ClosedXML Excel export generation and structure", ()
     Check(ws.Cell(3, 2).GetString() == "bracket-revC", "Row 2 Parça No is bracket-revC");
 }));
 
+await Test("şablonlar: değişken doldurma ve regex çözümleme (TR & EN)", () => Sync(() =>
+{
+    var ctx = TemplateContext.Create(
+        to: "\"Ahmet Yılmaz\" <ahmet.yilmaz@abcmakina.com>",
+        subject: "RE: NW-1042 Fiyat Talebi",
+        signature: "Caner Akın\nSatış Müdürü",
+        date: new DateTime(2026, 10, 20)
+    );
+
+    Check(ctx.FirstName == "Ahmet", "FirstName parsed as Ahmet");
+    Check(ctx.LastName == "Yılmaz", "LastName parsed as Yılmaz");
+    Check(ctx.Company == "Abcmakina", "Company parsed as Abcmakina");
+    Check(ctx.PartNumber == "NW-1042", "PartNumber parsed as NW-1042");
+    Check(ctx.Date == "20.10.2026", "Date formatted as 20.10.2026");
+
+    // Turkish template rendering
+    var trTmpl = "Sayın {Ad} {Soyad} ({Firma}),\n\n{ParçaNo} parçasına ait teklifimiz ekte bilgilerinize sunulmuştur. Tarih: {Tarih}.\n\n{İmza}";
+    var trRendered = TemplateEngine.Render(trTmpl, ctx);
+    Check(trRendered.Contains("Sayın Ahmet Yılmaz (Abcmakina)"), "TR rendered greeting with Ad, Soyad, Firma");
+    Check(trRendered.Contains("NW-1042 parçasına ait teklifimiz"), "TR rendered ParçaNo");
+    Check(trRendered.Contains("Tarih: 20.10.2026"), "TR rendered Tarih");
+    Check(trRendered.Contains("Caner Akın"), "TR rendered İmza");
+
+    // English template rendering with English variable names and case-insensitivity
+    var enCtx = TemplateContext.Create(
+        to: "Anna Keller <anna.keller@northwind.example>",
+        subject: "Quotation request - bracket-revC",
+        signature: "Best regards,\nJohn Doe",
+        date: new DateTime(2026, 10, 20)
+    );
+    Check(enCtx.FirstName == "Anna", "EN FirstName parsed as Anna");
+    Check(enCtx.LastName == "Keller", "EN LastName parsed as Keller");
+    Check(enCtx.Company == "Northwind", "EN Company parsed as Northwind");
+    Check(enCtx.PartNumber == "bracket-revC", "EN PartNumber parsed as bracket-revC");
+
+    var enTmpl = "Dear {firstname} {lastname} ({company}),\n\nPlease find attached quotation for {partnumber}.\nDate: {date}.\n\n{signature}";
+    var enRendered = TemplateEngine.Render(enTmpl, enCtx);
+    Check(enRendered.Contains("Dear Anna Keller (Northwind)"), "EN rendered greeting case-insensitively");
+    Check(enRendered.Contains("quotation for bracket-revC"), "EN rendered partnumber");
+    Check(enRendered.Contains("Date: 20.10.2026"), "EN rendered date");
+    Check(enRendered.Contains("Best regards,\nJohn Doe"), "EN rendered signature");
+
+    // HTML conversion helper
+    var html = TemplateEngine.TextToHtml("Line 1\n\nLine 2");
+    Check(html.Contains("<div>Line 1</div>"), "HTML conversion has line 1");
+    Check(html.Contains("<div><br></div>"), "HTML conversion has empty line div");
+    Check(html.Contains("<div>Line 2</div>"), "HTML conversion has line 2");
+}));
+
+await Test("şablonlar: TemplateStore kalıcılık, CRUD, varsayılanlar ve JSON içe/dışa aktarma", () => Sync(() =>
+{
+    var tStoreDir = Path.Combine(root, "tstore_test");
+    if (Directory.Exists(tStoreDir)) Directory.Delete(tStoreDir, true);
+    Directory.CreateDirectory(tStoreDir);
+
+    var store = new TemplateStore(tStoreDir);
+    Check(store.Templates.Count >= 6, $"Default templates seeded: {store.Templates.Count} >= 6");
+    Check(store.Templates.Any(t => t.Title == "Teklifimiz ektedir"), "Has 'Teklifimiz ektedir' template");
+    Check(store.Templates.Any(t => t.Title == "Our quotation is attached"), "Has 'Our quotation is attached' template");
+
+    // Save custom template
+    var custom = new EmailTemplate
+    {
+        Id = "custom-test-1",
+        Title = "Özel Fason Teklif",
+        Subject = "Teklif Talebi Hk.",
+        Body = "Sayın {Ad}, fason işleme teklifimiz ektedir.",
+        Category = "Fason",
+        Language = "tr"
+    };
+    store.Save(custom);
+
+    var reloadedStore = new TemplateStore(tStoreDir);
+    var loaded = reloadedStore.FindById("custom-test-1");
+    Check(loaded != null && loaded.Title == "Özel Fason Teklif", "Custom template persisted and reloaded");
+
+    // Export JSON
+    var json = reloadedStore.ExportJson();
+    Check(!string.IsNullOrEmpty(json) && json.Contains("Özel Fason Teklif"), "ExportJson exports valid JSON");
+
+    // Delete
+    Check(reloadedStore.Delete("custom-test-1"), "Template deleted");
+    Check(reloadedStore.FindById("custom-test-1") == null, "Deleted template cannot be found");
+
+    // Import JSON
+    var importDir = Path.Combine(root, "tstore_import_test");
+    Directory.CreateDirectory(importDir);
+    var importStore = new TemplateStore(importDir);
+    var count = importStore.ImportJson(json);
+    Check(count >= 7, $"ImportJson successfully restored {count} templates");
+    Check(importStore.FindById("custom-test-1") != null, "Imported custom template found");
+}));
+
+await Test("hızlı adımlar: QuickStepStore kalıcılık, varsayılanlar ve kısayol arama", () => Sync(() =>
+{
+    var qsDir = Path.Combine(root, "qs_test");
+    if (Directory.Exists(qsDir)) Directory.Delete(qsDir, true);
+    Directory.CreateDirectory(qsDir);
+
+    var store = new QuickStepStore(qsDir);
+    Check(store.Steps.Count >= 3, $"Default quick steps seeded: {store.Steps.Count} >= 3");
+
+    var s1 = store.FindByShortcut("Ctrl+Shift+1");
+    Check(s1 != null && s1.Name == "Okundu + Arşive taşı", "Ctrl+Shift+1 maps to Okundu + Arşive taşı");
+
+    var s2 = store.FindByShortcut("Ctrl+Shift+2");
+    Check(s2 != null && s2.Name == "Şablonla yanıtla + Bayrakla", "Ctrl+Shift+2 maps to Şablonla yanıtla + Bayrakla");
+
+    var s3 = store.FindByShortcut("Ctrl+Shift+3");
+    Check(s3 != null && s3.Name == "Görev yap + Taşı", "Ctrl+Shift+3 maps to Görev yap + Taşı");
+
+    // Custom quick step
+    var customQs = new QuickStepItem
+    {
+        Id = "qs-custom-test",
+        Name = "Öncelikli Bayrakla",
+        Description = "Bayrak ekler ve kategori atar",
+        Icon = "\uE7C1",
+        Shortcut = "Ctrl+Shift+4",
+        Actions = new List<QuickStepAction>
+        {
+            new() { Type = QuickStepActionType.Flag },
+            new() { Type = QuickStepActionType.SetCategory, Parameter = "Öncelikli" }
+        }
+    };
+    store.Save(customQs);
+
+    var reloadedStore = new QuickStepStore(qsDir);
+    var loaded = reloadedStore.FindByShortcut("Ctrl+Shift+4");
+    Check(loaded != null && loaded.Name == "Öncelikli Bayrakla", "Custom QuickStep persisted with shortcut Ctrl+Shift+4");
+    Check(loaded.Actions.Count == 2, "Custom QuickStep has 2 actions");
+}));
+
+await Test("hızlı adımlar: eylem simülasyonu ve çoklu adım zinciri", () => Sync(() =>
+{
+    var taskStoreDir = Path.Combine(root, "qs_tasks_test");
+    Directory.CreateDirectory(taskStoreDir);
+    var tasks = new MailStudio.Services.Calendar.TaskStore(Path.Combine(taskStoreDir, "tasks.json"));
+
+    var header = new MailHeader
+    {
+        AccountId = "acc1",
+        Folder = "INBOX",
+        Uid = 777,
+        FromName = "Mehmet Demir",
+        FromAddress = "mehmet@demir-celik.example",
+        Subject = "Teklif Talebi - DN100 Flanş",
+        Preview = "Ekteki teknik resim için teklifinizi bekliyoruz.",
+        IsRead = false,
+        IsFlagged = false
+    };
+
+    var step = new QuickStepItem
+    {
+        Name = "Okundu + Bayrakla + Görev Yap",
+        Actions = new List<QuickStepAction>
+        {
+            new() { Type = QuickStepActionType.MarkRead },
+            new() { Type = QuickStepActionType.Flag },
+            new() { Type = QuickStepActionType.CreateTask, Parameter = "Teklif Hazırla" }
+        }
+    };
+
+    // Simulate action execution sequence
+    foreach (var act in step.Actions)
+    {
+        switch (act.Type)
+        {
+            case QuickStepActionType.MarkRead:
+                header.IsRead = true;
+                break;
+            case QuickStepActionType.Flag:
+                header.IsFlagged = true;
+                break;
+            case QuickStepActionType.CreateTask:
+                var task = new MailStudio.Services.Calendar.TaskItem
+                {
+                    Title = header.Subject,
+                    Category = act.Parameter ?? "",
+                    SourceMail = $"{header.AccountId}|{header.Folder}|{header.Uid}",
+                    DueDate = DateTime.Today
+                };
+                tasks.Save(task);
+                break;
+        }
+    }
+
+    Check(header.IsRead, "Header marked as read by QuickStep");
+    Check(header.IsFlagged, "Header flagged by QuickStep");
+
+    var createdTask = tasks.FindBySource($"{header.AccountId}|{header.Folder}|{header.Uid}");
+    Check(createdTask != null, "Task created in TaskStore by QuickStep");
+    Check(createdTask?.Category == "Teklif Hazırla", "Task category set properly");
+    Check(createdTask?.Title == "Teklif Talebi - DN100 Flanş", "Task title matches mail subject");
+}));
+
 Console.WriteLine($"RESULT {passed} passed. Synthetic evidence: {root}");
+

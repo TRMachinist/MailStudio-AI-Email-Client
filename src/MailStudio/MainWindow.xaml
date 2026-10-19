@@ -102,6 +102,12 @@
                             <Button Style="{StaticResource RibbonCmd}" Tag="&#xE72D;" Click="OnForward" Content="İlet" ToolTip="İlet (Ctrl+F)"/>
                         </StackPanel>
                     </HeaderedContentControl>
+                    <HeaderedContentControl Header="Hızlı Adımlar" Style="{StaticResource RibbonGroup}" x:Name="QuickStepsRibbonGroup">
+                        <StackPanel Orientation="Horizontal">
+                            <StackPanel Orientation="Horizontal" x:Name="QuickStepsButtonPanel"/>
+                            <Button Style="{StaticResource RibbonCmd}" Tag="&#xE713;" Click="OnManageQuickSteps" Content="Yönet…" ToolTip="Hızlı adımları düzenle"/>
+                        </StackPanel>
+                    </HeaderedContentControl>
                     <HeaderedContentControl Header="Etiketler" Style="{StaticResource RibbonGroup}">
                         <StackPanel Orientation="Horizontal">
                             <Button Style="{StaticResource RibbonCmd}" Tag="&#xE8C3;" Click="OnToggleRead" Content="Okundu / Okunmadı" ToolTip="Okundu (Ctrl+Q) · Okunmadı (Ctrl+U)"/>
@@ -326,6 +332,7 @@
                             <MenuItem Header="Toplantı ayarla" Icon="&#xE787;" Click="OnMailToMeeting"/>
                             <MenuItem Header="Bunun gibi mailler için kural oluştur…" Icon="&#xE71E;" Click="OnCreateRuleFromMail"/>
                             <MenuItem Header="Teklif masasına ekle" Icon="&#xE8A1;" Click="OnMailAddToQuoteDesk"/>
+                            <MenuItem Header="Hızlı Adımlar" Icon="&#xE715;" x:Name="QuickStepsContextMenu" SubmenuOpened="OnQuickStepsSubmenuOpened"/>
                             <Separator/>
                             <MenuItem Header="AI ile özetle" Icon="&#xE8BD;" Click="OnAiSummarize"/>
                             <MenuItem Header="AI ile cevap yazdır" Icon="&#xE70F;" Click="OnAiDraftReply"/>

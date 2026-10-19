@@ -12,6 +12,8 @@ using MailStudio.Views;
 using MailStudio.Services.Calendar;
 using MailStudio.Views.Calendar;
 using MailStudio.Views.Quotes;
+using MailStudio.Views.Templates;
+using MailStudio.Views.QuickSteps;
 using MailStudio.Regression;
 using Microsoft.Web.WebView2.Wpf;
 
@@ -752,6 +754,37 @@ internal static class Program
             Console.WriteLine("PASS Teklif Masası (Quote Desk) UI views and interactions"); _passed++;
         }
 
+        // ---- 3.7 Hazır Yanıt Şablonları & Hızlı Adımlar UI Test
+        {
+            var testTmplStore = new TemplateStore(Path.Combine(AppPaths.Root, "ui-test-templates.json"));
+            var tmplWin = new TemplateManagerWindow(testTmplStore);
+            tmplWin.Show(); await Task.Delay(300);
+            var tmplList = Field<ListBox>(tmplWin, "_listBox");
+            Check(tmplWin.IsVisible && tmplList.Items.Count >= 6, "TemplateManagerWindow opens with seeded templates (>= 6)");
+
+            var searchBox = Field<TextBox>(tmplWin, "_searchBox");
+            searchBox.Text = "Teklif";
+            Check(tmplList.Items.Count >= 1, "TemplateManagerWindow filters templates by search query");
+            searchBox.Text = "";
+
+            Audit(tmplWin, "TemplateManagerWindow");
+            Capture(tmplWin, "template-manager-window.png");
+            tmplWin.Close();
+
+            // QuickStepManagerWindow
+            var testQsStore = new QuickStepStore(Path.Combine(AppPaths.Root, "ui-test-qs.json"));
+            var qsWin = new QuickStepManagerWindow(testQsStore, testTmplStore);
+            qsWin.Show(); await Task.Delay(300);
+            var qsList = Field<ListBox>(qsWin, "_stepListBox");
+            Check(qsWin.IsVisible && qsList.Items.Count >= 3, "QuickStepManagerWindow opens with default quick steps (>= 3)");
+
+            Audit(qsWin, "QuickStepManagerWindow");
+            Capture(qsWin, "quickstep-manager-window.png");
+            qsWin.Close();
+
+            Console.WriteLine("PASS Şablonlar ve Hızlı Adımlar UI views and interactions"); _passed++;
+        }
+
         if (L.IsEnglish)
         {
             foreach (var w in Application.Current.Windows.OfType<Window>().Where(w => w.IsVisible).ToList()) Audit(w, w.GetType().Name);
@@ -796,6 +829,14 @@ internal static class Program
 
             var auditQuoteDlg = new QuoteEditDialog(new QuoteItem { Customer = "Test Corp", PartNumber = "NW-1042" }, isNew: true);
             auditQuoteDlg.Show(); await Task.Delay(200); Audit(auditQuoteDlg, "QuoteEditDialog(en)"); auditQuoteDlg.Close();
+
+            var auditTmplStore = new TemplateStore(Path.Combine(AppPaths.Root, "audit-templates-en.json"));
+            var auditTmplWin = new TemplateManagerWindow(auditTmplStore);
+            auditTmplWin.Show(); await Task.Delay(300); Audit(auditTmplWin, "TemplateManagerWindow(en)"); auditTmplWin.Close();
+
+            var auditQsStore = new QuickStepStore(Path.Combine(AppPaths.Root, "audit-qs-en.json"));
+            var auditQsWin = new QuickStepManagerWindow(auditQsStore, auditTmplStore);
+            auditQsWin.Show(); await Task.Delay(300); Audit(auditQsWin, "QuickStepManagerWindow(en)"); auditQsWin.Close();
 
             foreach (var t in TurkishLooking) Console.WriteLine("REVIEW " + t);
             foreach (var t in Untranslated) Console.WriteLine("UNTRANSLATED " + t);

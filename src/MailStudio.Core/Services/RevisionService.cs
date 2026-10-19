@@ -74,14 +74,32 @@ public static class RevisionService
         var candidates = new List<RevisionCandidate>();
         var fileName = Path.GetFileName(targetFilePath);
         var ext = Path.GetExtension(targetFilePath).ToLowerInvariant();
-        var (targetPart, targetRev) = ParsePartAndRevision(targetSubject ?? fileName, fileName);
-
+        var (filePart, fileRev) = ParsePartAndRevision(fileName, fileName);
+        var (subjectPart, subjectRev) = !string.IsNullOrWhiteSpace(targetSubject) ? ParsePartAndRevision(targetSubject) : ("", "");
+        var targetPart = !string.IsNullOrWhiteSpace(filePart) ? filePart : subjectPart;
         if (string.IsNullOrWhiteSpace(targetPart))
             targetPart = Path.GetFileNameWithoutExtension(fileName);
+        var targetRev = !string.IsNullOrWhiteSpace(fileRev) ? fileRev : subjectRev;
 
         var searchDirs = new List<string>();
         var dir = Path.GetDirectoryName(targetFilePath);
-        if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir)) searchDirs.Add(dir);
+        if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
+        {
+            searchDirs.Add(dir);
+            // Search sibling attachment directories under Attachments/{AccountId}
+            try
+            {
+                var parent = Directory.GetParent(dir)?.FullName;
+                if (!string.IsNullOrEmpty(parent) && Directory.Exists(parent))
+                {
+                    foreach (var sub in Directory.GetDirectories(parent))
+                    {
+                        if (!searchDirs.Contains(sub, StringComparer.OrdinalIgnoreCase)) searchDirs.Add(sub);
+                    }
+                }
+            }
+            catch { }
+        }
 
         var demoDir = Path.Combine(AppContext.BaseDirectory, "Demo");
         if (Directory.Exists(demoDir) && !searchDirs.Contains(demoDir, StringComparer.OrdinalIgnoreCase)) searchDirs.Add(demoDir);
@@ -103,8 +121,11 @@ public static class RevisionService
 
                 var fn = Path.GetFileName(file);
                 var (part, rev) = ParsePartAndRevision(fn, fn);
-                if (string.Equals(part, targetPart, StringComparison.OrdinalIgnoreCase) ||
-                    fn.Contains(targetPart, StringComparison.OrdinalIgnoreCase))
+                bool match = (!string.IsNullOrWhiteSpace(filePart) && (string.Equals(part, filePart, StringComparison.OrdinalIgnoreCase) || fn.Contains(filePart, StringComparison.OrdinalIgnoreCase))) ||
+                             (!string.IsNullOrWhiteSpace(subjectPart) && (string.Equals(part, subjectPart, StringComparison.OrdinalIgnoreCase) || fn.Contains(subjectPart, StringComparison.OrdinalIgnoreCase))) ||
+                             (!string.IsNullOrWhiteSpace(targetPart) && (string.Equals(part, targetPart, StringComparison.OrdinalIgnoreCase) || fn.Contains(targetPart, StringComparison.OrdinalIgnoreCase)));
+
+                if (match)
                 {
                     candidates.Add(new RevisionCandidate
                     {

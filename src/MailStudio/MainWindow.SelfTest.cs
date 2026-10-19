@@ -15,6 +15,8 @@ using MailStudio.Services.Calendar;
 using MailStudio.Views;
 using MailStudio.Views.Calendar;
 using MailStudio.Views.Quotes;
+using MailStudio.Views.Templates;
+using MailStudio.Views.QuickSteps;
 
 namespace MailStudio;
 
@@ -62,6 +64,7 @@ public partial class MainWindow
             ("calendar: appointment form", StepEventForm),
             ("tasks: list, quick add, mail to task", StepTasks),
             ("quote desk: list, search, filters, dialog, airspace", StepQuoteDesk),
+            ("templates and quick steps: template insertion, manager dialog, macro execution", StepTemplatesAndQuickSteps),
             ("reminders window", StepReminders),
             ("other windows: accounts, signatures, rules, skills, agents", StepOtherWindows),
             ("dark theme screenshots", StepDarkTheme),
@@ -451,13 +454,12 @@ public partial class MainWindow
         {
             var before = Application.Current.Windows.OfType<Window>().ToHashSet();
             var compareTask = CompareAttachmentRevisionAsync(att);
-            if (await Until(() => Application.Current.Windows.OfType<Window>().Any(x => !before.Contains(x) && x is RevisionDiffWindow && x.IsVisible), 15000))
+            var opened = await Until(() => Application.Current.Windows.OfType<Window>().Any(x => !before.Contains(x) && x is RevisionDiffWindow && x.IsVisible), 15000);
+            var diffWin = Application.Current.Windows.OfType<Window>().FirstOrDefault(x => !before.Contains(x) && x is RevisionDiffWindow && x.IsVisible);
+            Check(diffWin != null, "revision diff window opens");
+            if (diffWin != null)
             {
-                var diffWin = Application.Current.Windows.OfType<Window>().FirstOrDefault(x => !before.Contains(x) && x is RevisionDiffWindow && x.IsVisible);
-                if (diffWin != null)
-                {
-                    await InspectWindow(diffWin, "revision diff window", closeWithButton: true);
-                }
+                await InspectWindow(diffWin, "revision diff window", closeWithButton: true);
             }
             try { await compareTask; } catch { }
         }
@@ -514,7 +516,8 @@ public partial class MainWindow
             await Wait(500);
         }
         Check(_tasks.Tasks.Any(t => t.Title == "Self-test task" && t.DueDate == DateTime.Today.AddDays(1)), "tasks: quick add with 'tomorrow'");
-        var items = Tree(_tasksView!).OfType<ListBoxItem>().Where(i => i.Tag is TaskItem).ToList();
+        var taskList = Tree(_tasksView!).OfType<ListBox>().FirstOrDefault();
+        var items = (taskList != null ? taskList.Items.OfType<ListBoxItem>() : Tree(_tasksView!).OfType<ListBoxItem>()).Where(i => i.Tag is TaskItem).ToList();
         Check(items.Count >= 5, $"tasks: list shows the tasks ({items.Count})");
         if (items.FirstOrDefault() is { } first) { first.IsSelected = true; await Wait(400); }
         Shot(this, "tasks");
@@ -545,6 +548,40 @@ public partial class MainWindow
         editDlg.Close();
 
         SwitchModule(PimModule.Mail); await Wait(300);
+    }
+
+    async Task StepTemplatesAndQuickSteps()
+    {
+        // 1. Template Manager Window
+        var tmplWin = new TemplateManagerWindow(_templateStore, this);
+        tmplWin.Show(); await Wait(400);
+        Check(tmplWin.IsVisible, "template manager window opened");
+        Shot(tmplWin, "templates-manager");
+        CheckTexts(tmplWin, "templates-manager");
+        tmplWin.Close();
+
+        // 2. Quick Steps Manager Window
+        var qsWin = new QuickStepManagerWindow(_quickStepStore, _templateStore, this);
+        qsWin.Show(); await Wait(400);
+        Check(qsWin.IsVisible, "quick steps manager window opened");
+        Shot(qsWin, "quickstep-manager");
+        CheckTexts(qsWin, "quickstep-manager");
+        qsWin.Close();
+
+        // 3. Quick Step execution on mail
+        var mail = _messages.FirstOrDefault();
+        if (mail != null)
+        {
+            var flagStep = _quickStepStore.Steps.FirstOrDefault(s => s.Actions.Any(a => a.Type == QuickStepActionType.Flag))
+                           ?? _quickStepStore.Steps.FirstOrDefault();
+            if (flagStep != null)
+            {
+                var executed = await ExecuteQuickStepAsync(flagStep, mail);
+                Check(executed, "quick step executed on test mail");
+                Shot(this, "quickstep-executed");
+            }
+        }
+        Pass("templates and quick steps");
     }
 
     async Task StepReminders()
