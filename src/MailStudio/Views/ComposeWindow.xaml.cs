@@ -450,7 +450,8 @@ public partial class ComposeWindow : Window
             QuotedHtml=EditorContent.Sanitize(snapshot.RootElement.GetProperty("quote").GetString()),
             BodyHtml = EditorContent.Sanitize(snapshot.RootElement.GetProperty("html").GetString()),
             Body = snapshot.RootElement.GetProperty("text").GetString() ?? "",
-            InReplyTo = _req.InReplyTo
+            InReplyTo = _req.InReplyTo,
+            CalendarIcs = _req.CalendarIcs, CalendarMethod = _req.CalendarMethod
         };
         r.AttachmentPaths.AddRange(_attachments);
         return r;

@@ -223,4 +223,8 @@ public class ComposeRequest
     public string? QuotedHtml { get; set; }
     public string? InReplyTo { get; set; }
     public List<string> AttachmentPaths { get; set; } = new();
+    /// <summary>Meeting request / reply / cancellation sent with the mail (text/calendar part + invite.ics).</summary>
+    public string? CalendarIcs { get; set; }
+    /// <summary>iCalendar METHOD of <see cref="CalendarIcs"/>: REQUEST, REPLY or CANCEL.</summary>
+    public string? CalendarMethod { get; set; }
 }

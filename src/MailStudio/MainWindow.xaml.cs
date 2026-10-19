@@ -177,6 +177,7 @@ public partial class MainWindow : Window
         var composers = OwnedWindows.OfType<ComposeWindow>().ToList();
         foreach (var composer in composers) composer.Close();
         if (composers.Any(w => !IsWindowClosed(w))) args.Cancel = true;
+        else ClosePim();
     }
 
     static bool IsWindowClosed(Window window) => !Application.Current.Windows.Cast<Window>().Contains(window);
@@ -215,6 +216,7 @@ public partial class MainWindow : Window
         _initialized = true;
         if (_startInTray) HideToTray();
         _cache.Init();
+        InitPim();
         _cache.Corrupted += () => Dispatcher.BeginInvoke(() => AddSystemChat(L.T("Yerel posta önbelleğinde bozuk bir bölüm bulundu. İletiler şimdilik sunucudan açılıyor; MailStudio'yu kapatıp açtığınızda önbellek kendiliğinden onarılır (hesaplar, taslaklar ve ekler etkilenmez).")));
         _store.Load();
         if (_cache.RepairedBackup != null)
@@ -713,6 +715,7 @@ public partial class MainWindow : Window
         AvatarText.Text = Initials(h.FromDisplay);
         AvatarBorder.Background = AvatarBrush(h.FromAddress);
         AttachmentList.ItemsSource = null;
+        InviteBar.Visibility = Visibility.Collapsed;
         IncludeMailText.Text = L.T("Bağlam: ") + h.SubjectDisplay;
 
         // The attachment list was saved during sync: show it immediately
@@ -755,6 +758,7 @@ public partial class MainWindow : Window
         try { OnSkillContext(h, c); } catch { }
         CcText.Text = string.IsNullOrWhiteSpace(c.Cc) ? "" : L.T("Bilgi: ") + c.Cc;
         AddressChips.Fill(CcPanel, L.T("Bilgi: "), c.Cc);
+        try { ShowInvitation(h, c); } catch (Exception ex) { InviteBar.Visibility = Visibility.Collapsed; Status(L.T("Davet okunamadı: ") + ex.Message); }
         if (c.Attachments.Count > 0) AttachmentList.ItemsSource = c.Attachments;
         if (!_webReady) return;
 
@@ -793,6 +797,8 @@ public partial class MainWindow : Window
         var ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
         var shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (ctrl && !shift && key is >= Key.D1 and <= Key.D4) { SwitchModule((PimModule)(key - Key.D1)); e.Handled = true; return; }
+        if (_module != PimModule.Mail) { if (key == Key.F9) { OnSyncAll(this, e); e.Handled = true; } return; } // the calendar / task view handles its own keys
         if (e.OriginalSource is TextBox && !ctrl && key != Key.F9) return; // do not interfere while typing
         bool h = true;
         switch (key)
@@ -805,6 +811,7 @@ public partial class MainWindow : Window
             case Key.U when ctrl: SetReadSelected(false); break;
             case Key.E when ctrl: SearchBox.Focus(); SearchBox.SelectAll(); break;
             case Key.B when ctrl && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift): OnAddressBook(this, new RoutedEventArgs()); break;
+            case Key.K when ctrl && shift: OnMailToTask(this, e); break;
             case Key.F9: OnSyncAll(this, e); break;
             case Key.F5: OnSyncCurrent(this, e); break;
             default: h = false; break;

@@ -738,8 +738,38 @@ public sealed class MailService : IDisposable
         });
         bb.HtmlBody = "<html><head><meta charset=\"utf-8\"></head><body>" + html + "</body></html>";
         foreach (var p in r.AttachmentPaths) bb.Attachments.Add(p);
-        msg.Body = bb.ToMessageBody();
+        msg.Body = string.IsNullOrWhiteSpace(r.CalendarIcs) ? bb.ToMessageBody() : WithCalendar(bb.ToMessageBody(), r.CalendarIcs, r.CalendarMethod ?? "REQUEST");
         return msg;
+    }
+
+    /// <summary>Adds a meeting the way Outlook does: a text/calendar alternative (Outlook, Gmail and phones show
+    /// Accept/Decline for it) and the same data as an invite.ics attachment for other mail programs.</summary>
+    public static MimeEntity WithCalendar(MimeEntity body, string ics, string method)
+    {
+        var calendar = new TextPart("calendar") { Text = ics, ContentTransferEncoding = ContentEncoding.Base64 };
+        calendar.ContentType.Charset = "utf-8";
+        calendar.ContentType.Parameters.Add("method", method.ToUpperInvariant());
+        var file = new MimePart("application", "ics")
+        {
+            Content = new MimeContent(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(ics))),
+            ContentDisposition = new ContentDisposition(ContentDisposition.Attachment),
+            ContentTransferEncoding = ContentEncoding.Base64,
+            FileName = method.Equals("CANCEL", StringComparison.OrdinalIgnoreCase) ? "cancel.ics" : method.Equals("REPLY", StringComparison.OrdinalIgnoreCase) ? "reply.ics" : "invite.ics"
+        };
+        Multipart? alternative = body as Multipart is { ContentType.MediaSubtype: var st } m && st.Equals("alternative", StringComparison.OrdinalIgnoreCase) ? m
+            : (body as Multipart)?.OfType<Multipart>().FirstOrDefault(x => x.ContentType.MediaSubtype.Equals("alternative", StringComparison.OrdinalIgnoreCase));
+        if (alternative == null)
+        {
+            alternative = new Multipart("alternative");
+            if (body is Multipart mixed && mixed.ContentType.MediaSubtype.Equals("mixed", StringComparison.OrdinalIgnoreCase) && mixed.Count > 0)
+            {
+                var first = mixed[0]; mixed.RemoveAt(0); alternative.Add(first); mixed.Insert(0, alternative);
+            }
+            else { alternative.Add(body); body = alternative; }
+        }
+        alternative.Add(calendar);
+        if (body is Multipart top && top.ContentType.MediaSubtype.Equals("mixed", StringComparison.OrdinalIgnoreCase)) { top.Add(file); return top; }
+        return new Multipart("mixed") { body, file };
     }
 
     async Task<string?> AfterSendAsync(AccountConfig a, MimeMessage msg, CancellationToken ct)

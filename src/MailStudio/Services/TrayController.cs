@@ -42,6 +42,12 @@ public sealed class TrayController : IDisposable
         _icon.ShowBalloonTip(7000, header.FromDisplay,
             header.SubjectDisplay + (extraCount > 0 ? L.F("\n+{0} yeni ileti daha", extraCount) : ""), Forms.ToolTipIcon.Info);
     }
+    public void ShowReminder(string title, string text, Action open)
+    {
+        if (_disposed) return;
+        _openMail = open;
+        _icon.ShowBalloonTip(7000, title, text, Forms.ToolTipIcon.Info);
+    }
     public void ClearNewMail() { if (!_disposed) _icon.Text = L.T("MailStudio — yeni posta kontrol ediliyor"); }
     public void Dispose()
     {

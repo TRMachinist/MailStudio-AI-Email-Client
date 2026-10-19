@@ -72,17 +72,17 @@
                 </Grid>
             </Border>
             <StackPanel Orientation="Horizontal" Margin="2,0,0,0">
-                <RadioButton GroupName="rib" Content="Giriş" Style="{StaticResource RibbonTab}" Tag="home" IsChecked="True" Checked="OnRibbonTabChanged"/>
-                <RadioButton GroupName="rib" Content="Gönder / Al" Style="{StaticResource RibbonTab}" Tag="sendrecv" Checked="OnRibbonTabChanged"/>
-                <RadioButton GroupName="rib" Content="Klasör" Style="{StaticResource RibbonTab}" Tag="folder" Checked="OnRibbonTabChanged"/>
-                <RadioButton GroupName="rib" Content="Görünüm" Style="{StaticResource RibbonTab}" Tag="view" Checked="OnRibbonTabChanged"/>
-                <RadioButton GroupName="rib" Content="Yapay Zeka" Style="{StaticResource RibbonTab}" Tag="ai" Checked="OnRibbonTabChanged"/>
+                <RadioButton x:Name="TabHome" GroupName="rib" Content="Giriş" Style="{StaticResource RibbonTab}" Tag="home" IsChecked="True" Checked="OnRibbonTabChanged" Click="OnRibbonTabClick"/>
+                <RadioButton GroupName="rib" Content="Gönder / Al" Style="{StaticResource RibbonTab}" Tag="sendrecv" Checked="OnRibbonTabChanged" Click="OnRibbonTabClick"/>
+                <RadioButton GroupName="rib" Content="Klasör" Style="{StaticResource RibbonTab}" Tag="folder" Checked="OnRibbonTabChanged" Click="OnRibbonTabClick"/>
+                <RadioButton GroupName="rib" Content="Görünüm" Style="{StaticResource RibbonTab}" Tag="view" Checked="OnRibbonTabChanged" Click="OnRibbonTabClick"/>
+                <RadioButton GroupName="rib" Content="Yapay Zeka" Style="{StaticResource RibbonTab}" Tag="ai" Checked="OnRibbonTabChanged" Click="OnRibbonTabClick"/>
             </StackPanel>
         </DockPanel>
 
         <!-- ================= COMPACT RIBBON ================= -->
         <Border Grid.Row="1" Background="{DynamicResource BgSurfaceSecondaryBrush}" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="0,0,0,1" MinHeight="58" Padding="4,2">
-            <Grid>
+            <Grid x:Name="RibbonGrid">
                 <!-- HOME -->
                 <WrapPanel x:Name="RibbonHome" Orientation="Horizontal">
                     <HeaderedContentControl Header="Yeni" Style="{StaticResource RibbonGroup}">
@@ -106,6 +106,12 @@
                             <Button Style="{StaticResource RibbonCmd}" Tag="&#xE8C3;" Click="OnToggleRead" Content="Okundu / Okunmadı" ToolTip="Okundu (Ctrl+Q) · Okunmadı (Ctrl+U)"/>
                             <Button Style="{StaticResource RibbonCmd}" Tag="&#xE7C1;" Click="OnToggleFlag" Content="Bayrak"/>
                             <Button Style="{StaticResource RibbonCmd}" Tag="&#xE8DE;" Click="OnMoveMenu" Content="Taşı…"/>
+                        </StackPanel>
+                    </HeaderedContentControl>
+                    <HeaderedContentControl Header="Takip" Style="{StaticResource RibbonGroup}">
+                        <StackPanel Orientation="Horizontal">
+                            <Button Style="{StaticResource RibbonCmd}" Tag="&#xE762;" Click="OnMailToTask" Content="Görev Olarak Ekle" ToolTip="Seçili maili görev listesine ekle (Ctrl+Shift+K)"/>
+                            <Button Style="{StaticResource RibbonCmd}" Tag="&#xE787;" Click="OnMailToMeeting" Content="Toplantı" ToolTip="Mailin kişileriyle toplantı ayarla"/>
                         </StackPanel>
                     </HeaderedContentControl>
                     <HeaderedContentControl Header="Gönder / Al" Style="{StaticResource RibbonGroup}">
@@ -226,6 +232,7 @@
                     <RowDefinition Height="*"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
+                <ContentControl x:Name="PimSide" Visibility="Collapsed" Panel.ZIndex="5" Background="{DynamicResource BgSurfaceSecondaryBrush}"/>
                 <TreeView x:Name="FolderTree" BorderThickness="0" Padding="4,8,0,0" Background="Transparent" SelectedItemChanged="OnFolderSelected">
                     <TreeView.ItemContainerStyle>
                         <Style TargetType="TreeViewItem" BasedOn="{StaticResource {x:Type TreeViewItem}}">
@@ -264,10 +271,10 @@
                 <!-- Bottom navigation (Mail / Calendar / Contacts / Tasks) -->
                 <Border Grid.Row="1" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="0,1,0,0" Padding="6,4">
                     <UniformGrid Rows="1">
-                        <Button Style="{StaticResource NavIcon}" Content="&#xE715;" Foreground="{DynamicResource AccentPrimaryBrush}" ToolTip="Posta"/>
-                        <Button Style="{StaticResource NavIcon}" Content="&#xE787;" ToolTip="Takvim (yakında)" Tag="Takvim" Click="OnNavSoon"/>
-                        <Button Style="{StaticResource NavIcon}" Content="&#xE77B;" ToolTip="Kişiler" Tag="Kişiler" Click="OnNavSoon"/>
-                        <Button Style="{StaticResource NavIcon}" Content="&#xE762;" ToolTip="Görevler (yakında)" Tag="Görevler" Click="OnNavSoon"/>
+                        <Button Style="{StaticResource NavIcon}" x:Name="NavMail" Content="&#xE715;" Foreground="{DynamicResource AccentPrimaryBrush}" ToolTip="Posta (Ctrl+1)" Click="OnNavMail"/>
+                        <Button Style="{StaticResource NavIcon}" x:Name="NavCalendar" Content="&#xE787;" ToolTip="Takvim (Ctrl+2)" Click="OnNavCalendar"/>
+                        <Button Style="{StaticResource NavIcon}" x:Name="NavPeople" Content="&#xE77B;" ToolTip="Kişiler (Ctrl+3)" Tag="Kişiler" Click="OnNavSoon"/>
+                        <Button Style="{StaticResource NavIcon}" x:Name="NavTasks" Content="&#xE762;" ToolTip="Görevler (Ctrl+4)" Click="OnNavTasks"/>
                     </UniformGrid>
                 </Border>
             </Grid>
@@ -310,6 +317,8 @@
                             <MenuItem Header="Okunmadı / Okundu olarak işaretle" Icon="&#xE8C3;" InputGestureText="Ctrl+Q / Ctrl+U" Click="OnToggleRead"/>
                             <MenuItem Header="İzleme bayrağı" Icon="&#xE7C1;" Click="OnToggleFlag"/>
                             <MenuItem Header="Taşı…" Icon="&#xE8DE;" Click="OnMoveMenu"/>
+                            <MenuItem Header="Görev olarak ekle" Icon="&#xE762;" InputGestureText="Ctrl+Shift+K" Click="OnMailToTask"/>
+                            <MenuItem Header="Toplantı ayarla" Icon="&#xE787;" Click="OnMailToMeeting"/>
                             <Separator/>
                             <MenuItem Header="AI ile özetle" Icon="&#xE8BD;" Click="OnAiSummarize"/>
                             <MenuItem Header="AI ile cevap yazdır" Icon="&#xE70F;" Click="OnAiDraftReply"/>
@@ -460,6 +469,7 @@
                                 <TextBlock Text="Bu maildeki internet resimleri engellendi." VerticalAlignment="Center" Foreground="{DynamicResource StatusWarningBrush}" TextWrapping="Wrap"/>
                             </DockPanel>
                         </Border>
+                        <Border x:Name="InviteBar" Visibility="Collapsed" Background="{DynamicResource AccentSubtleBrush}" BorderBrush="{DynamicResource AccentSubtleBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,8"/>
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
@@ -580,6 +590,7 @@
                                         <StackPanel Orientation="Horizontal" Margin="0,6,0,0" Visibility="{Binding ShowActions, Converter={StaticResource BoolVis}}">
                                             <Button Style="{StaticResource FlatButton}" Padding="7,1" MinHeight="24" FontSize="12" Click="OnChatCopy" Tag="{Binding}" Content="{x:Static local:ChatMessage.CopyLabel}"/>
                                             <Button Style="{StaticResource FlatButton}" Padding="7,1" MinHeight="24" FontSize="12" Click="OnChatUseAsReply" Tag="{Binding}" Content="{x:Static local:ChatMessage.UseAsReplyLabel}"/>
+                                            <Button Style="{StaticResource FlatButton}" Padding="7,1" MinHeight="24" FontSize="12" Click="OnChatToTasks" Tag="{Binding}" Content="{x:Static local:ChatMessage.ToTasksLabel}"/>
                                         </StackPanel>
                                     </StackPanel>
                                 </Border>
@@ -617,6 +628,9 @@
                     </Grid>
                 </Border>
             </Grid>
+
+            <!-- CALENDAR / TASKS (Outlook modules) -->
+            <ContentControl Grid.Column="2" Grid.ColumnSpan="5" x:Name="PimHost" Visibility="Collapsed" Panel.ZIndex="20" Focusable="False"/>
         </Grid>
 
         <!-- ================= STATUS BAR ================= -->
