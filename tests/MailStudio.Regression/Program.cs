@@ -589,5 +589,11 @@ await Test("calendar: Outlook/Google invitations (time zones, RRULE, EXDATE, ala
     Check(added == 2 && tasks.Tasks.Count == 3, "duplicate open task skipped");
     tasks.SetCompleted(t1, true);
     Check(new MailStudio.Services.Calendar.TaskStore(Path.Combine(root, "tasks.json")).Find(t1.Id)!.CompletedAt != null && tasks.DueReminders(DateTime.Now).Count == 0, "completed task saved, no reminder");
+    var shared = Path.Combine(root, "tasks-shared.json");
+    var app = new MailStudio.Services.Calendar.TaskStore(shared); var agent = new MailStudio.Services.Calendar.TaskStore(shared);
+    app.Save(new MailStudio.Services.Calendar.TaskItem { Title = "from the app" });
+    agent.Save(new MailStudio.Services.Calendar.TaskItem { Title = "from the agent" });
+    app.Save(new MailStudio.Services.Calendar.TaskItem { Title = "app again" });
+    Check(new MailStudio.Services.Calendar.TaskStore(shared).Tasks.Count == 3 && agent.ReloadIfChanged() && agent.Tasks.Count == 3, "app and MCP agent edits to the same task file are both kept");
 }));
 Console.WriteLine($"RESULT {passed} passed. Synthetic evidence: {root}");
