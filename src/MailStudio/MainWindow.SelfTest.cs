@@ -103,7 +103,10 @@ public partial class MainWindow
         Log("INFO", $"done: PASS {_stPass} FAIL {_stFail} WARN {_stWarn}");
         _stLog?.Dispose(); _stLog = null;
         _exitRequested = true;
-        Dispatcher.BeginInvoke(() => Application.Current.Shutdown(_stFail == 0 ? 0 : 1));
+        var code = _stFail == 0 ? 0 : 1;
+        Dispatcher.BeginInvoke(() => Application.Current.Shutdown(code));
+        // A modal box or a stuck window must not keep the test process alive
+        new Thread(() => { Thread.Sleep(15000); Environment.Exit(code); }) { IsBackground = true }.Start();
     }
 
     // ===================================================================== helpers
@@ -302,17 +305,22 @@ public partial class MainWindow
                     if (cls.ToString() != "#32770") return true;
                     var title = new StringBuilder(256); GetWindowText(h, title, 256);
                     var text = new StringBuilder();
+                    var buttons = new List<(IntPtr Handle, string Text)>();
                     EnumChildWindows(h, (c, _) =>
                     {
                         var cc = new StringBuilder(32); GetClassName(c, cc, 32);
-                        if (cc.ToString() == "Static") { var t = new StringBuilder(1024); GetWindowText(c, t, 1024); if (t.Length > 0) text.Append(t).Append(' '); }
+                        var t = new StringBuilder(1024); GetWindowText(c, t, 1024);
+                        if (cc.ToString() == "Static" && t.Length > 0) text.Append(t).Append(' ');
+                        if (cc.ToString() == "Button") buttons.Add((c, t.ToString().Replace("&", "")));
                         return true;
                     }, IntPtr.Zero);
-                    Log("BOX", $"'{title}' {text.ToString().Trim().Replace("\n", " ")} → answered No/Cancel");
-                    // Yes/No boxes ignore WM_CLOSE: press No, then Cancel, then OK (whichever the box has)
-                    PostMessage(h, 0x0111, (IntPtr)7, IntPtr.Zero);  // WM_COMMAND IDNO
-                    PostMessage(h, 0x0111, (IntPtr)2, IntPtr.Zero);  // IDCANCEL
-                    PostMessage(h, 0x0111, (IntPtr)1, IntPtr.Zero);  // IDOK
+                    // Click like a user: No, else Cancel, else OK (Yes/No boxes ignore WM_CLOSE)
+                    var order = new[] { "Hayır", "No", "İptal", "Cancel", "Vazgeç", "Tamam", "OK" };
+                    var pick = order.Select(o => buttons.FirstOrDefault(b => b.Text.Equals(o, StringComparison.OrdinalIgnoreCase))).FirstOrDefault(b => b.Handle != IntPtr.Zero);
+                    if (pick.Handle == IntPtr.Zero && buttons.Count > 0) pick = buttons[^1];
+                    Log("BOX", $"'{title}' {text.ToString().Trim().Replace("\n", " ")} → '{(pick.Handle != IntPtr.Zero ? pick.Text : "close")}'");
+                    if (pick.Handle != IntPtr.Zero) PostMessage(pick.Handle, 0x00F5, IntPtr.Zero, IntPtr.Zero); // BM_CLICK
+                    else PostMessage(h, 0x0010, IntPtr.Zero, IntPtr.Zero);
                     return true;
                 }, IntPtr.Zero);
             }
