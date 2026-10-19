@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using MailStudio.Models;
 using MailStudio.Services;
 using MailStudio.Regression;
@@ -461,4 +462,30 @@ await Test("contacts: Outlook/Gmail/Turkish CSV and vCard import, export round t
     var split = ContactStore.SplitAddresses("\"Keller, Anna\" <anna@x.example>; tom@y.example, Lisa <lisa@z.example>");
     Check(split.Count == 3 && split[0].Name == "Keller, Anna" && split[1].Address == "tom@y.example", "address field split");
 }));
+await Test("signatures: Outlook .htm import (1254 charset, <style> inlined, _files logo embedded), pasted HTML sanitized", async () =>
+{
+    var dir = Path.Combine(root, "Signatures"); var files = Path.Combine(dir, "Firma_files"); Directory.CreateDirectory(files);
+    var png = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==");
+    File.WriteAllBytes(Path.Combine(files, "image001.png"), png);
+    File.WriteAllBytes(Path.Combine(root, "secret.png"), png);
+    var htm = "<html><head><meta http-equiv=Content-Type content=\"text/html; charset=windows-1254\"><style><!-- /* Font Definitions */ @font-face {font-family:Calibri;} p.MsoNormal, li.MsoNormal {margin:0cm; font-size:11.0pt; mso-fareast-font-family:Calibri;} @page WordSection1 {size:612pt 792pt;} --></style></head>" +
+              "<body><div class=WordSection1><p class=MsoNormal>Saygılarımla,<br><b>Yasin Işık</b></p><table cellpadding=0 style='border:none'><tr><td><img width=120 src=\"Firma_files/image001.png\"></td><td style='color:#0F6CBD'>Çelik Makina</td></tr></table>" +
+              "<img src=\"../secret.png\"><img src=\"https://logo.example/x.png\"><script>alert(1)</script><p class=MsoNormal><o:p>&nbsp;</o:p></p></div></body></html>";
+    System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+    var path = Path.Combine(dir, "Firma.htm"); File.WriteAllBytes(path, System.Text.Encoding.GetEncoding(1254).GetBytes(htm));
+    var found = SignatureImport.FindOutlookSignatures(new[] { dir });
+    Check(found.Count == 1 && found[0].Name == "Firma", "Outlook signature folder scan");
+    var text = SignatureImport.ReadHtmlFile(path);
+    Check(text.Contains("Yasin Işık") && text.Contains("Çelik"), "windows-1254 charset honoured");
+    var fetched = new List<string>();
+    var html = await SignatureImport.PrepareAsync(text, dir, u => { fetched.Add(u); return Task.FromResult<byte[]?>(png); });
+    Check(html.Contains("<table") && html.Contains("Çelik Makina") && Regex.IsMatch(html, @"<td[^>]*style=""[^""]*color"), "table and inline colour kept: " + html);
+    Check(Regex.Matches(html, "data:image/png;base64,").Count == 2, "local _files logo and remote logo embedded, file outside folder dropped: " + html);
+    Check(fetched.SequenceEqual(new[] { "https://logo.example/x.png" }), "remote image fetched once");
+    Check(!html.Contains("script") && !html.Contains("secret") && !html.Contains("WordSection1 {"), "script / outside path removed");
+    Check(Regex.IsMatch(html, @"<p[^>]*style=""[^""]*margin:\s*0") && html.Contains("11pt"), "MsoNormal style inlined: " + html);
+    Check(!Regex.IsMatch(html, @"<p[^>]*>(\s|&nbsp;)*</p>\s*$"), "trailing empty paragraph trimmed");
+    var keep = await SignatureImport.PrepareAsync("<p>Hi <img src=\"https://x.example/a.png\"></p>", null, null);
+    Check(keep.Contains("https://x.example/a.png"), "without fetch remote image link is kept");
+});
 Console.WriteLine($"RESULT {passed} passed. Synthetic evidence: {root}");

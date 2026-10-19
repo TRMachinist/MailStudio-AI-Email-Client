@@ -32,6 +32,9 @@ public sealed class SignatureManagerWindow : Window
         var tools=new WrapPanel{Margin=new Thickness(0,0,0,8)};Grid.SetRow(tools,1);grid.Children.Add(tools);tools.Children.Add(_name);tools.Children.Add(_default);
         tools.Children.Add(Add(L.T("Kalın"),async()=>await Js("ms.exec('bold')")));tools.Children.Add(Add(L.T("İtalik"),async()=>await Js("ms.exec('italic')")));
         tools.Children.Add(Add(L.T("Resim ekle"),async()=>{var d=new OpenFileDialog{Filter="Resimler|*.png;*.jpg;*.jpeg;*.gif;*.bmp"};if(d.ShowDialog(this)!=true)return;var ext=System.IO.Path.GetExtension(d.FileName).TrimStart('.').ToLowerInvariant().Replace("jpg","jpeg");var data=Convert.ToBase64String(await System.IO.File.ReadAllBytesAsync(d.FileName));await Js("ms.insertHtml("+JsonSerializer.Serialize($"<img src=\"data:image/{ext};base64,{data}\">")+")");}));
+        tools.Children.Add(Add(L.T("HTML kodu…"),async()=>await EditSourceAsync()));
+        tools.Children.Add(Add(L.T("HTML dosyası aç…"),async()=>await OpenFileAsync()));
+        tools.Children.Add(Add(L.T("Outlook'tan al…"),async()=>await ImportOutlookAsync()));
         Grid.SetRow(_editor,2);grid.Children.Add(_editor);
         var save=Add(L.T("Kaydet"),async()=>{try{await SaveCurrentAsync();if(!_closed)DialogResult=true;}catch(Exception ex){if(!_closed)MessageBox.Show(this,ex.Message,L.T("İmza kaydedilemedi"));}});save.IsEnabled=false;
         var close=Add(L.T("Vazgeç"),()=>Close());var footer=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,10,0,0)};footer.Children.Add(close);footer.Children.Add(save);Grid.SetRow(footer,3);grid.Children.Add(footer);
@@ -50,7 +53,7 @@ public sealed class SignatureManagerWindow : Window
                 core.WebMessageReceived+=async(_,e)=>
                 {
                     if(_closed)return;
-                    try{using var message=JsonDocument.Parse(e.TryGetWebMessageAsString());if(message.RootElement.GetProperty("t").GetString()=="paste")await Js("ms.insertHtml("+JsonSerializer.Serialize(EditorContent.Sanitize(message.RootElement.GetProperty("html").GetString()))+")");}catch(Exception ex){if(!_closed)Title=L.T("İmza: ")+ex.Message;}
+                    try{using var message=JsonDocument.Parse(e.TryGetWebMessageAsString());if(message.RootElement.GetProperty("t").GetString()=="paste")await Js("ms.insertHtml("+JsonSerializer.Serialize(await SignatureImport.PrepareAsync(message.RootElement.GetProperty("html").GetString(),null,FetchImage))+")");}catch(Exception ex){if(!_closed)Title=L.T("İmza: ")+ex.Message;}
                 };
                 var done=new TaskCompletionSource();core.NavigationCompleted+=(_,_)=>done.TrySetResult();_editor.NavigateToString(EditorHtml.Page);await done.Task.WaitAsync(_life.Token);if(_closed)return;
                 _ready=true;if(_signatures.Count==0)_signatures.Add(new(){Name=L.T("İmzam")});Reload(_signatures.FirstOrDefault(s=>s.Id==DefaultId)??_signatures[0]);save.IsEnabled=true;
@@ -58,6 +61,66 @@ public sealed class SignatureManagerWindow : Window
             catch(Exception ex){if(!_closed)Title=L.T("İmza editörü açılamadı: ")+ex.Message;}
         };
         Closed+=(_,_)=>{_closed=true;_life.Cancel();_editor.Dispose();};
+    }
+    static readonly System.Net.Http.HttpClient Http=new(){Timeout=TimeSpan.FromSeconds(10)};
+    /// <summary>Downloads a logo of a pasted/imported signature so it is embedded in the mail (max 2 MB, images only).</summary>
+    static async Task<byte[]?> FetchImage(string url)
+    {
+        using var r=await Http.GetAsync(url,System.Net.Http.HttpCompletionOption.ResponseHeadersRead);
+        if(!r.IsSuccessStatusCode||r.Content.Headers.ContentLength>SignatureImport.MaxImageBytes)return null;
+        var data=await r.Content.ReadAsByteArrayAsync();
+        return data.Length<=SignatureImport.MaxImageBytes?data:null;
+    }
+    async Task ApplyHtmlAsync(string html,string? baseDir,string? newName)
+    {
+        Cursor=System.Windows.Input.Cursors.Wait;
+        try
+        {
+            var clean=await SignatureImport.PrepareAsync(html,baseDir,FetchImage);if(_closed)return;
+            if(string.IsNullOrWhiteSpace(clean)){MessageBox.Show(this,L.T("Bu HTML'de imza olarak kullanılabilecek içerik bulunamadı."),L.T("İmza"));return;}
+            if(newName!=null){await SaveCurrentAsync();var s=new MailSignature{Name=newName,Html=clean};_signatures.Add(s);Reload(s);}
+            else await Js("ms.setDraft("+JsonSerializer.Serialize(clean)+")");
+        }
+        finally{Cursor=null;}
+    }
+    async Task EditSourceAsync()
+    {
+        if(!_ready||_selected==null)return;
+        var raw=await _editor.CoreWebView2.ExecuteScriptAsync("ms.draftHtml()");var current=JsonSerializer.Deserialize<string>(raw)??"";
+        var box=new TextBox{Text=current,AcceptsReturn=true,AcceptsTab=true,TextWrapping=TextWrapping.Wrap,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,FontFamily=new System.Windows.Media.FontFamily("Consolas"),FontSize=12};
+        var w=new Window{Owner=this,Title=L.T("İmza HTML kodu"),Width=760,Height=520,WindowStartupLocation=WindowStartupLocation.CenterOwner};
+        var g=new Grid{Margin=new Thickness(12)};g.RowDefinitions.Add(new(){Height=GridLength.Auto});g.RowDefinitions.Add(new());g.RowDefinitions.Add(new(){Height=GridLength.Auto});w.Content=g;
+        g.Children.Add(new TextBlock{Text=L.T("Hazır bir HTML imzanın kodunu buraya yapıştırın (tablo, renk, logo desteklenir). Uzak resimler indirilip maile gömülür; betikler ve formlar temizlenir."),TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,0,0,8)});
+        Grid.SetRow(box,1);g.Children.Add(box);
+        var ok=new Button{Content=L.T("Uygula"),IsDefault=true,Padding=new Thickness(14,4,14,4),Margin=new Thickness(6,0,0,0)};var cancel=new Button{Content=L.T("Vazgeç"),IsCancel=true,Padding=new Thickness(14,4,14,4)};
+        ok.Click+=(_,_)=>w.DialogResult=true;
+        var f=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,10,0,0)};f.Children.Add(cancel);f.Children.Add(ok);Grid.SetRow(f,2);g.Children.Add(f);
+        if(w.ShowDialog()==true)await ApplyHtmlAsync(box.Text,null,null);
+    }
+    async Task OpenFileAsync()
+    {
+        var d=new OpenFileDialog{Filter=L.T("HTML imza")+"|*.htm;*.html"};if(d.ShowDialog(this)!=true)return;
+        try{await ApplyHtmlAsync(SignatureImport.ReadHtmlFile(d.FileName),System.IO.Path.GetDirectoryName(d.FileName),System.IO.Path.GetFileNameWithoutExtension(d.FileName));}
+        catch(Exception ex){MessageBox.Show(this,ex.Message,L.T("İmza"));}
+    }
+    async Task ImportOutlookAsync()
+    {
+        var found=SignatureImport.FindOutlookSignatures();
+        if(found.Count==0){MessageBox.Show(this,L.T("Bu bilgisayarda Outlook imzası bulunamadı (%AppData%\\Microsoft\\Signatures)."),L.T("Outlook'tan al"));return;}
+        var w=new Window{Owner=this,Title=L.T("Outlook imzalarını al"),Width=420,SizeToContent=SizeToContent.Height,WindowStartupLocation=WindowStartupLocation.CenterOwner,ResizeMode=ResizeMode.NoResize};
+        var sp=new StackPanel{Margin=new Thickness(12)};w.Content=sp;
+        sp.Children.Add(new TextBlock{Text=L.T("Alınacak imzaları seçin:"),Margin=new Thickness(0,0,0,8)});
+        var checks=found.Select(x=>new CheckBox{Content=x.Name,Tag=x.Path,IsChecked=true,Margin=new Thickness(0,2,0,2)}).ToList();checks.ForEach(c=>sp.Children.Add(c));
+        var ok=new Button{Content=L.T("Al"),IsDefault=true,Padding=new Thickness(14,4,14,4),Margin=new Thickness(6,0,0,0)};var cancel=new Button{Content=L.T("Vazgeç"),IsCancel=true,Padding=new Thickness(14,4,14,4)};
+        ok.Click+=(_,_)=>w.DialogResult=true;
+        var f=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,12,0,0)};f.Children.Add(cancel);f.Children.Add(ok);sp.Children.Add(f);
+        if(w.ShowDialog()!=true)return;
+        foreach(var c in checks.Where(c=>c.IsChecked==true))
+        {
+            var path=(string)c.Tag;
+            try{await ApplyHtmlAsync(SignatureImport.ReadHtmlFile(path),System.IO.Path.GetDirectoryName(path),(string)c.Content);}
+            catch(Exception ex){MessageBox.Show(this,(string)c.Content+": "+ex.Message,L.T("İmza"));}
+        }
     }
     async Task Js(string value){if(_ready&&!_closed)await _editor.CoreWebView2.ExecuteScriptAsync(value);}
     async Task SaveCurrentAsync(){if(!_ready||_selected==null)return;_selected.Name=string.IsNullOrWhiteSpace(_name.Text)?L.T("İmza"):_name.Text.Trim();var raw=await _editor.CoreWebView2.ExecuteScriptAsync("ms.draftHtml()");_selected.Html=EditorContent.Sanitize(JsonSerializer.Deserialize<string>(raw));if(_default.IsChecked==true)DefaultId=_selected.Id;else if(DefaultId==_selected.Id)DefaultId=null;}
