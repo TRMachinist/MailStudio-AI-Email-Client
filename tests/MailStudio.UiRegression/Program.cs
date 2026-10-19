@@ -339,7 +339,7 @@ internal static class Program
                 var z0=(double)studio.GetType().GetProperty("TestZoom",Private)!.GetValue(studio)!;Invoke(studio,"StepZoom",1,null);var z1=(double)studio.GetType().GetProperty("TestZoom",Private)!.GetValue(studio)!;Check(z1>z0,"zoom in increases page scale");
                 await Until(()=>(bool)Invoke(studio,"TestPageRendered",0)!,20);
                 var wa=(int)Invoke(studio,"TestWordIndex",0,"Malzeme:")!;var wb=(int)Invoke(studio,"TestWordIndex",0,"T7351")!;Check(wa>=0&&wb>wa,"word boxes are available for selection");
-                Invoke(studio,"TestSelect",0,wa,wb);Check(((string)studio.GetType().GetProperty("SelectedText")!.GetValue(studio)!)=="Malzeme: Al 7075-T6 / T7351","selected words join to the original line text");
+                Invoke(studio,"TestSelect",0,wa,wb);var picked=(string)studio.GetType().GetProperty("SelectedText")!.GetValue(studio)!;Check(picked=="Malzeme: Al 7075-T6 / T7351","selected words join to the original line text: '"+picked+"'");
                 Invoke(studio,"TestTool","Highlight");Invoke(studio,"TestFinish",0);Check((int)studio.GetType().GetProperty("TestEditCount",Private)!.GetValue(studio)! ==1,"highlight from text selection adds one markup");
                 var c=(int)Invoke(studio,"TestWordIndex",0,"25")!;Invoke(studio,"TestTool","Correct");Invoke(studio,"TestSelect",0,c,c);Invoke(studio,"TestFinish",0);Invoke(studio,"TestInline","30");
                 Check(((string)Invoke(studio,"TestEditKinds")!).EndsWith("correct"),"text correction opens inline editor and records the replacement");
