@@ -282,7 +282,7 @@ public sealed class SlideEditorWindow : Window
                 foreach (var sid in ordered) list.Append(sid);
                 pres.Presentation.Save();
             }
-            File.Move(temp, dest, true);
+            MailStudio.Services.SafeFile.Move(temp, dest, true);
         }
         finally { if (File.Exists(temp)) try { File.Delete(temp); } catch { } }
     }

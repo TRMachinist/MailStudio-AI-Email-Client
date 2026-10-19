@@ -19,6 +19,7 @@
   An agent still cannot send anything.
 - Calendar and tasks are stored only on this computer (`calendar.json`, `tasks.json` in the data folder).
 - Start option `--open calendar|tasks`.
+- Saving settings, drafts, contacts and the calendar retries for a moment when antivirus or indexing briefly locks a freshly written file ("Access to the path is denied").
 
 ## 1.6.2 – Signature images and cache repair (2026-10-19)
 

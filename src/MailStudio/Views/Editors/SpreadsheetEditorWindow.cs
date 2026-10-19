@@ -539,7 +539,7 @@ public sealed class SpreadsheetEditorWindow : Window
         {
             _status.Text = L.T("Kaydediliyor…");
             var wb = _wb; var dest = path;
-            await Task.Run(() => { var tmp = dest + ".kayit.tmp"; wb.SaveAs(tmp); File.Move(tmp, dest, true); });
+            await Task.Run(() => { var tmp = dest + ".kayit.tmp"; wb.SaveAs(tmp); MailStudio.Services.SafeFile.Move(tmp, dest, true); });
             _savePath = path; _dirty = false; Title = Path.GetFileName(path) + L.T(" — Excel düzenleyici");
             _status.Text = L.T("Kaydedildi: ") + path;
             return true;

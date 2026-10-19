@@ -174,7 +174,7 @@ public static class OfficeConverter
                 throw new IOException(L.T("Belge dönüştürülemedi.") + (msg.Length > 0 ? " (" + (msg.Length > 300 ? msg[..300] : msg) + ")" : ""));
             }
             Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-            File.Move(produced, dest, true);
+            MailStudio.Services.SafeFile.Move(produced, dest, true);
             return dest;
         }
         finally
@@ -227,7 +227,7 @@ public static class OfficeConverter
                     break;
             }
             if (!File.Exists(tmp) || new FileInfo(tmp).Length == 0) throw new IOException(L.T("Office çıktı üretmedi."));
-            File.Move(tmp, dest, true);
+            MailStudio.Services.SafeFile.Move(tmp, dest, true);
         }
         finally
         {

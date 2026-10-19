@@ -33,7 +33,7 @@ public static class AttachmentFiles
                 await stream.FlushAsync(ct);
             }
             ct.ThrowIfCancellationRequested();
-            File.Move(temp, path, true);
+            MailStudio.Services.SafeFile.Move(temp, path, true);
             return path;
         }
         finally { if (File.Exists(temp)) File.Delete(temp); }

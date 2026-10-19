@@ -104,7 +104,7 @@ public sealed class ContactStore
         Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
         var tmp = _path + ".tmp";
         File.WriteAllText(tmp, JsonSerializer.Serialize(_data, Json), new UTF8Encoding(false));
-        File.Move(tmp, _path, true);
+        MailStudio.Services.SafeFile.Move(tmp, _path, true);
         Changed?.Invoke();
     }
 

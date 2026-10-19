@@ -152,7 +152,7 @@ public static class ExcelEditApplier
             changes = Run(wb, plan, out warnings, dryRun: false);
             var tmp = targetPath + ".tmp";
             wb.SaveAs(tmp);
-            File.Move(tmp, targetPath, true);
+            MailStudio.Services.SafeFile.Move(tmp, targetPath, true);
         }
         return changes;
     }

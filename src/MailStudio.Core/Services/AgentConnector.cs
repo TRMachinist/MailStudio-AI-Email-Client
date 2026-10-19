@@ -206,7 +206,7 @@ public static class AgentConnector
     {
         var tmp = path + ".mailstudio-tmp";
         File.WriteAllText(tmp, text, new UTF8Encoding(false));
-        File.Move(tmp, path, true);
+        MailStudio.Services.SafeFile.Move(tmp, path, true);
     }
 
     static string JsonEntry(string text, string section, JsonObject? entry)

@@ -151,7 +151,7 @@ public sealed class TaskStore
         Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
         var tmp = _path + ".tmp";
         File.WriteAllText(tmp, json, new UTF8Encoding(false));
-        File.Move(tmp, _path, true);
+        MailStudio.Services.SafeFile.Move(tmp, _path, true);
         _stamp = File.GetLastWriteTimeUtc(_path);
         Changed?.Invoke();
     }

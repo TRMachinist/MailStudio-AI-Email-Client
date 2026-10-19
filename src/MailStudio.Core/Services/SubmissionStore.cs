@@ -27,7 +27,7 @@ public sealed class SubmissionStore
         try
         {
             File.WriteAllText(temp, JsonSerializer.Serialize(new SubmissionRecord(id, account, messageId, state, detail, DateTimeOffset.Now)));
-            File.Move(temp, path, true);
+            MailStudio.Services.SafeFile.Move(temp, path, true);
         }
         finally { if (File.Exists(temp)) File.Delete(temp); }
     }

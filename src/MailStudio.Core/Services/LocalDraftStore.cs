@@ -18,7 +18,7 @@ public sealed class LocalDraftStore
         try
         {
             File.WriteAllText(temp, JsonSerializer.Serialize(new LocalDraft(accountId, DateTimeOffset.Now, request)));
-            File.Move(temp, path, true);
+            MailStudio.Services.SafeFile.Move(temp, path, true);
         }
         finally { if (File.Exists(temp)) File.Delete(temp); }
     }

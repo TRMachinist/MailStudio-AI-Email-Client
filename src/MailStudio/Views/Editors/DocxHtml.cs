@@ -255,7 +255,7 @@ public static class DocxHtml
                 if (sect != null) body.Append(sect);
                 main.Document.Save();
             }
-            File.Move(tmp, dest, true);
+            MailStudio.Services.SafeFile.Move(tmp, dest, true);
         }
         finally { if (File.Exists(tmp)) try { File.Delete(tmp); } catch { } }
     }
