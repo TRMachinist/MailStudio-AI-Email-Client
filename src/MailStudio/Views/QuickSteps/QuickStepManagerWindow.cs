@@ -117,7 +117,7 @@ public sealed class QuickStepManagerWindow : Window
         spFactory.AppendChild(iconFactory);
 
         var textFactory = new FrameworkElementFactory(typeof(TextBlock));
-        textFactory.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding(nameof(QuickStepItem.Name)));
+        textFactory.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding(nameof(QuickStepItem.DisplayName)));
         textFactory.SetValue(TextBlock.FontWeightProperty, FontWeights.SemiBold);
         textFactory.SetValue(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center);
         spFactory.AppendChild(textFactory);
@@ -401,7 +401,7 @@ public sealed class QuickStepManagerWindow : Window
 
     void LoadStep(QuickStepItem step)
     {
-        _nameBox.Text = step.Name;
+        _nameBox.Text = L.T(step.Name);
 
         // Icon
         int iconIdx = 0;

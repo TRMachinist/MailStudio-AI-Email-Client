@@ -15,6 +15,7 @@ using MailStudio.Views;
 using MailStudio.Views.Calendar;
 using MailStudio.Views.Quotes;
 using MailStudio.Views.QuickSteps;
+using MailStudio.Views.Snooze;
 using MailStudio.Views.Templates;
 using Microsoft.Web.WebView2.Core;
 using MimeKit;
@@ -37,6 +38,9 @@ public partial class MainWindow : Window
     public TemplateStore TemplateStore => _templateStore;
     readonly QuickStepStore _quickStepStore = new();
     public QuickStepStore QuickStepStore => _quickStepStore;
+    readonly SnoozeStore _snoozeStore = new();
+    public SnoozeStore SnoozeStore => _snoozeStore;
+    readonly DispatcherTimer _snoozeTimer = new() { Interval = TimeSpan.FromSeconds(15) };
     readonly DispatcherTimer _queueTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     OutboxItem? _activeUndoItem;
     AccountConfig? _activeUndoAccount;
@@ -113,6 +117,8 @@ public partial class MainWindow : Window
         AiInput.TextChanged += (_, _) => AiPlaceholder.Visibility = AiInput.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         _queueTimer.Tick += (_, _) => QueueTick();
         _queueTimer.Start();
+        _snoozeTimer.Tick += (_, _) => CheckSnoozeDue();
+        _snoozeTimer.Start();
         TellMeBox.TextChanged += (_, _) => TellMePlaceholder.Visibility = TellMeBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         _themeInit = true;
         (ThemeManager.Parse(_settings.Theme) switch { ThemeMode.Dark => ThemeDark, ThemeMode.Light => ThemeLight, _ => ThemeSystem }).IsChecked = true;
@@ -133,7 +139,7 @@ public partial class MainWindow : Window
         Closing += OnMainClosing;
         Closed += (_, _) =>
         {
-            _closed = true; _lifetime.Cancel(); _syncTimer.Stop(); _aiCts?.Cancel(); _loadCts?.Cancel();
+            _closed = true; _lifetime.Cancel(); _syncTimer.Stop(); _snoozeTimer.Stop(); _aiCts?.Cancel(); _loadCts?.Cancel();
             foreach (var watcher in _watchers.Values) watcher.Dispose();
             _watchers.Clear(); _mail.Dispose(); _tray?.Dispose();
             MailWeb.Dispose();
@@ -657,6 +663,9 @@ public partial class MainWindow : Window
     bool FilterMessage(object o)
     {
         if (o is not MailHeader h) return false;
+        bool isSnoozed = _snoozeStore.IsSnoozed(h.AccountId, h.Folder, h.Uid);
+        if (FilterSnoozed?.IsChecked == true) return isSnoozed;
+        if (isSnoozed) return false;
         if (FilterUnread?.IsChecked == true) return !h.IsRead;
         if (FilterFlagged?.IsChecked == true) return h.IsFlagged;
         return true;
@@ -1699,8 +1708,8 @@ public partial class MainWindow : Window
             {
                 Style = (Style)FindResource("RibbonCmd"),
                 Tag = step.Icon,
-                Content = step.Name,
-                ToolTip = string.IsNullOrEmpty(step.Shortcut) ? step.Description : $"{step.Description} ({step.Shortcut})"
+                Content = L.T(step.Name),
+                ToolTip = string.IsNullOrEmpty(step.Shortcut) ? L.T(step.Description) : $"{L.T(step.Description)} ({step.Shortcut})"
             };
             var curStep = step;
             btn.Click += async (_, _) => await ExecuteQuickStepAsync(curStep);
@@ -1839,6 +1848,133 @@ public partial class MainWindow : Window
 
         Status(L.F("Hızlı Adım tamamlandı: {0}", step.Name));
         return true;
+    }
+
+    // =========================================================================
+    // Snooze (Erteleme)
+    // =========================================================================
+
+    void OnSnoozeRibbonClick(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu { PlacementTarget = (UIElement)sender, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        var thisEve = new MenuItem { Header = L.T("Bugün akşam (18:00)") };
+        thisEve.Click += (_, _) => SnoozeSelected(SnoozeStore.GetThisEvening());
+        var tomorrow = new MenuItem { Header = L.T("Yarın sabah (09:00)") };
+        tomorrow.Click += (_, _) => SnoozeSelected(SnoozeStore.GetTomorrowMorning());
+        var nextWeek = new MenuItem { Header = L.T("Gelecek hafta (Pazartesi 09:00)") };
+        nextWeek.Click += (_, _) => SnoozeSelected(SnoozeStore.GetNextWeek());
+        var custom = new MenuItem { Header = L.T("Tarih ve saat seç…") };
+        custom.Click += (_, _) => OnSnoozeCustomDate(this, new RoutedEventArgs());
+
+        menu.Items.Add(thisEve);
+        menu.Items.Add(tomorrow);
+        menu.Items.Add(nextWeek);
+        menu.Items.Add(new Separator());
+        menu.Items.Add(custom);
+
+        var selected = MessageList.SelectedItems.OfType<MailHeader>().ToList();
+        if (selected.Count == 0 && _current != null) selected = new() { _current };
+        if (selected.Any(m => _snoozeStore.IsSnoozed(m.AccountId, m.Folder, m.Uid)))
+        {
+            menu.Items.Add(new Separator());
+            var un = new MenuItem { Header = L.T("Ertelemeyi Kaldır") };
+            un.Click += (_, _) => UnsnoozeSelected();
+            menu.Items.Add(un);
+        }
+
+        menu.IsOpen = true;
+    }
+
+    void OnSnoozeSubmenuOpened(object sender, RoutedEventArgs e)
+    {
+        var selected = MessageList.SelectedItems.OfType<MailHeader>().ToList();
+        if (selected.Count == 0 && _current != null) selected = new() { _current };
+        bool anySnoozed = selected.Any(m => _snoozeStore.IsSnoozed(m.AccountId, m.Folder, m.Uid));
+        if (UnsnoozeContextMenuItem != null)
+        {
+            UnsnoozeContextMenuItem.Visibility = anySnoozed ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+
+    void OnSnoozeThisEvening(object sender, RoutedEventArgs e) => SnoozeSelected(SnoozeStore.GetThisEvening());
+    void OnSnoozeTomorrowMorning(object sender, RoutedEventArgs e) => SnoozeSelected(SnoozeStore.GetTomorrowMorning());
+    void OnSnoozeNextWeek(object sender, RoutedEventArgs e) => SnoozeSelected(SnoozeStore.GetNextWeek());
+
+    void OnSnoozeCustomDate(object sender, RoutedEventArgs e)
+    {
+        var picked = SnoozeCustomDateDialog.Show(this);
+        if (picked.HasValue)
+        {
+            SnoozeSelected(picked.Value);
+        }
+    }
+
+    void OnUnsnooze(object sender, RoutedEventArgs e) => UnsnoozeSelected();
+
+    public void SnoozeSelected(DateTimeOffset until)
+    {
+        var selected = MessageList.SelectedItems.OfType<MailHeader>().ToList();
+        if (selected.Count == 0 && _current != null) selected = new() { _current };
+        if (selected.Count == 0) return;
+
+        foreach (var m in selected)
+        {
+            _snoozeStore.Snooze(m.AccountId, m.Folder, m.Uid, until, m.Subject, m.FromName, m.IsRead);
+            m.IsSnoozed = true;
+            m.SnoozedUntil = until;
+        }
+        _view.Refresh();
+        UpdateCounts();
+        Status(selected.Count == 1
+            ? L.F("İleti ertelendi ({0:g}): {1}", until, selected[0].Subject)
+            : L.F("{0} ileti ertelendi ({1:g})", selected.Count, until));
+    }
+
+    public void UnsnoozeSelected()
+    {
+        var selected = MessageList.SelectedItems.OfType<MailHeader>().ToList();
+        if (selected.Count == 0 && _current != null) selected = new() { _current };
+        if (selected.Count == 0) return;
+
+        foreach (var m in selected)
+        {
+            _snoozeStore.Unsnooze(m.AccountId, m.Folder, m.Uid);
+            m.IsSnoozed = false;
+            m.SnoozedUntil = null;
+        }
+        _view.Refresh();
+        UpdateCounts();
+        Status(L.F("Erteleme kaldırıldı ({0} ileti).", selected.Count));
+    }
+
+    public void CheckSnoozeDue()
+    {
+        var due = _snoozeStore.CheckDue(DateTimeOffset.Now);
+        if (due.Count == 0) return;
+
+        foreach (var item in due)
+        {
+            _cache.SetFlags(item.AccountId, item.Folder, item.Uid, read: false);
+            _cache.TouchDate(item.AccountId, item.Folder, item.Uid, DateTimeOffset.UtcNow);
+
+            var inMemory = _messages.FirstOrDefault(m =>
+                string.Equals(m.AccountId, item.AccountId, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(m.Folder, item.Folder, StringComparison.OrdinalIgnoreCase) &&
+                m.Uid == item.Uid);
+
+            if (inMemory != null)
+            {
+                inMemory.IsRead = false;
+                inMemory.Date = DateTimeOffset.UtcNow;
+                inMemory.IsSnoozed = false;
+                inMemory.SnoozedUntil = null;
+            }
+        }
+
+        LoadMessagesFromCache();
+        Status(due.Count == 1
+            ? L.F("Ertelenen mail geri döndü: {0}", due[0].Subject)
+            : L.F("Ertelenen {0} ileti geri döndü.", due.Count));
     }
 
     async Task RunRuleOnFolderAsync(MailRule rule)

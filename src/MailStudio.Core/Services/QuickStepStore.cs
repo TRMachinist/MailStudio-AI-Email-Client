@@ -124,13 +124,14 @@ public sealed class QuickStepStore
 
     public static List<QuickStepItem> CreateDefaultSteps()
     {
+        var en = L.IsEnglish;
         return new List<QuickStepItem>
         {
             new()
             {
                 Id = "qs-read-archive",
-                Name = "Okundu + Arşive taşı",
-                Description = "Okundu olarak işaretler ve arşive taşır",
+                Name = en ? "Mark Read + Archive" : "Okundu + Arşive taşı",
+                Description = en ? "Marks as read and moves to archive" : "Okundu olarak işaretler ve arşive taşır",
                 Icon = "\uE8B7",
                 Shortcut = "Ctrl+Shift+1",
                 Order = 1,
@@ -144,30 +145,30 @@ public sealed class QuickStepStore
             new()
             {
                 Id = "qs-reply-flag",
-                Name = "Şablonla yanıtla + Bayrakla",
-                Description = "Teklif şablonuyla yanıt açar ve bayrak ekler",
+                Name = en ? "Reply with Template + Flag" : "Şablonla yanıtla + Bayrakla",
+                Description = en ? "Opens reply with template and flags" : "Teklif şablonuyla yanıt açar ve bayrak ekler",
                 Icon = "\uE715",
                 Shortcut = "Ctrl+Shift+2",
                 Order = 2,
                 IsBuiltIn = true,
                 Actions = new List<QuickStepAction>
                 {
-                    new() { Type = QuickStepActionType.ReplyWithTemplate, Parameter = "teklif-ektedir-tr" },
+                    new() { Type = QuickStepActionType.ReplyWithTemplate, Parameter = en ? "quote-attached-en" : "teklif-ektedir-tr" },
                     new() { Type = QuickStepActionType.Flag }
                 }
             },
             new()
             {
                 Id = "qs-task-move",
-                Name = "Görev yap + Taşı",
-                Description = "Takip görevi oluşturur ve arşive taşır",
+                Name = en ? "Create Task + Move" : "Görev yap + Taşı",
+                Description = en ? "Creates follow-up task and moves to archive" : "Takip görevi oluşturur ve arşive taşır",
                 Icon = "\uE823",
                 Shortcut = "Ctrl+Shift+3",
                 Order = 3,
                 IsBuiltIn = true,
                 Actions = new List<QuickStepAction>
                 {
-                    new() { Type = QuickStepActionType.CreateTask, Parameter = "Takip" },
+                    new() { Type = QuickStepActionType.CreateTask, Parameter = en ? "Follow-up" : "Takip" },
                     new() { Type = QuickStepActionType.MoveToArchive }
                 }
             }

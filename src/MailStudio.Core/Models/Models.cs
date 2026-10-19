@@ -101,7 +101,7 @@ public partial class MailHeader : ObservableObject
     public string To { get; init; } = "";
     public string Subject { get; init; } = "";
     public string Preview { get; init; } = "";
-    public DateTimeOffset Date { get; init; }
+    public DateTimeOffset Date { get; set; }
     public bool HasAttachments { get; init; }
     public long Size { get; set; }
     public string? Importance { get; set; } = "normal";
@@ -109,6 +109,8 @@ public partial class MailHeader : ObservableObject
     [ObservableProperty] private string? category;
     [ObservableProperty] private bool isRead;
     [ObservableProperty] private bool isFlagged;
+    [ObservableProperty] private bool isSnoozed;
+    [ObservableProperty] private DateTimeOffset? snoozedUntil;
 
     // ---- Conditional formatting (Outlook "Conditional Formatting") ----
     [ObservableProperty] private string? formatFore;

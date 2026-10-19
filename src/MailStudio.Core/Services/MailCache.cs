@@ -237,6 +237,13 @@ public class MailCache
             ("$v", category), ("$a", account), ("$f", folder), ("$u", (long)uid));
     }
 
+    public void TouchDate(string account, string folder, uint uid, DateTimeOffset date)
+    {
+        using var c = Open();
+        Exec(c, "UPDATE messages SET date=$d WHERE account=$a AND folder=$f AND uid=$u",
+            ("$d", date.ToUnixTimeMilliseconds()), ("$a", account), ("$f", folder), ("$u", (long)uid));
+    }
+
     public void Delete(string account, string folder, uint uid)
     {
         using var c = Open();

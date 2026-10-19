@@ -42,6 +42,8 @@ public sealed class QuickStepItem
     public List<QuickStepAction> Actions { get; set; } = new();
     public int Order { get; set; }
     public bool IsBuiltIn { get; set; }
+    [JsonIgnore]
+    public string DisplayName => L.T(Name);
 
     public QuickStepItem Clone() => new()
     {

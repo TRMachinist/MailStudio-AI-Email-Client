@@ -1392,5 +1392,107 @@ await Test("hızlı adımlar: eylem simülasyonu ve çoklu adım zinciri", () =>
     Check(createdTask?.Title == "Teklif Talebi - DN100 Flanş", "Task title matches mail subject");
 }));
 
+await Test("snooze: SnoozeStore kalıcılık, CRUD, preset zaman hesapları ve filtreleme", () => Sync(() =>
+{
+    var snoozeFile = Path.Combine(root, "snooze-test.json");
+    if (File.Exists(snoozeFile)) File.Delete(snoozeFile);
+
+    var store = new SnoozeStore(snoozeFile);
+    Check(store.Items.Count == 0, "SnoozeStore starts empty");
+
+    // Presets
+    var fixedNow = new DateTimeOffset(2026, 10, 20, 10, 0, 0, TimeSpan.FromHours(3)); // Tuesday 10:00
+    var eve = SnoozeStore.GetThisEvening(fixedNow);
+    Check(eve.Hour == 18 && eve.Date == fixedNow.Date, "GetThisEvening returns today 18:00");
+
+    var tmw = SnoozeStore.GetTomorrowMorning(fixedNow);
+    Check(tmw.Hour == 9 && tmw.Date == fixedNow.Date.AddDays(1), "GetTomorrowMorning returns tomorrow 09:00");
+
+    var nxtWk = SnoozeStore.GetNextWeek(fixedNow);
+    Check(nxtWk.Hour == 9 && nxtWk.DayOfWeek == DayOfWeek.Monday && nxtWk > fixedNow, "GetNextWeek returns next Monday 09:00");
+
+    var weekend = SnoozeStore.GetThisWeekend(fixedNow);
+    Check(weekend.Hour == 9 && weekend.DayOfWeek == DayOfWeek.Saturday, "GetThisWeekend returns Saturday 09:00");
+
+    // Snooze item
+    store.Snooze("acc1", "INBOX", 42, tmw, subject: "Teklif Revizyonu", from: "Anna", wasRead: true, restoreAsUnread: true);
+    Check(store.IsSnoozed("acc1", "INBOX", 42), "Message 42 is snoozed");
+    Check(!store.IsSnoozed("acc1", "INBOX", 43), "Message 43 is not snoozed");
+    Check(!store.IsSnoozed("acc1", "Archive", 42), "Different folder is not snoozed");
+
+    var item = store.Get("acc1", "INBOX", 42);
+    Check(item != null && item.Subject == "Teklif Revizyonu" && item.RestoreAsUnread, "SnoozeItem retrieved with correct metadata");
+
+    // Persistence reload
+    var reloaded = new SnoozeStore(snoozeFile);
+    Check(reloaded.Items.Count == 1, "Persisted snooze item reloaded from disk");
+    Check(reloaded.IsSnoozed("acc1", "INBOX", 42), "Reloaded store recognizes snoozed email");
+
+    // Unsnooze
+    var un = reloaded.Unsnooze("acc1", "INBOX", 42);
+    Check(un, "Unsnooze returns true on existing item");
+    Check(!reloaded.IsSnoozed("acc1", "INBOX", 42), "Message 42 is no longer snoozed after Unsnooze");
+    Check(reloaded.Items.Count == 0, "Store is empty after unsnooze");
+}));
+
+await Test("snooze: zaman aşımı (CheckDue), okunmamış olarak geri dönme ve tarih güncelleme", () => Sync(() =>
+{
+    var snoozeFile = Path.Combine(root, "snooze-due-test.json");
+    if (File.Exists(snoozeFile)) File.Delete(snoozeFile);
+
+    var store = new SnoozeStore(snoozeFile);
+    var now = DateTimeOffset.Now;
+    var future = now.AddHours(2);
+
+    store.Snooze("acc1", "INBOX", 101, future, subject: "Acil Parça Talebi", from: "Tom", wasRead: true, restoreAsUnread: true);
+
+    // Before due
+    var notYet = store.CheckDue(now.AddHours(1));
+    Check(notYet.Count == 0, "No items due before scheduled time");
+    Check(store.IsSnoozed("acc1", "INBOX", 101), "Message remains snoozed before due time");
+
+    // MailCache integration simulation
+    var cacheDir = Path.Combine(root, "cache-snooze-test");
+    Directory.CreateDirectory(cacheDir);
+    var cache = new MailCache(Path.Combine(cacheDir, "mail.db"));
+    cache.Init();
+
+    var header = new MailHeader
+    {
+        AccountId = "acc1",
+        Folder = "INBOX",
+        Uid = 101,
+        Subject = "Acil Parça Talebi",
+        FromName = "Tom",
+        Date = now.AddDays(-1),
+        IsRead = true
+    };
+    cache.UpsertHeaders(new[] { header });
+
+    // Verify initial state
+    var initHeaders = cache.GetHeaders("acc1", "INBOX");
+    Check(initHeaders.Count == 1 && initHeaders[0].IsRead, "Cached message is initially read");
+
+    // After due time
+    var due = store.CheckDue(future.AddMinutes(5));
+    Check(due.Count == 1 && due[0].Uid == 101, "CheckDue returns expired snooze item");
+    Check(!store.IsSnoozed("acc1", "INBOX", 101), "Woken message is automatically removed from snoozed list");
+
+    // Apply waking actions as MainWindow does
+    foreach (var d in due)
+    {
+        if (d.RestoreAsUnread)
+        {
+            cache.SetFlags(d.AccountId, d.Folder, d.Uid, read: false);
+        }
+        cache.TouchDate(d.AccountId, d.Folder, d.Uid, DateTimeOffset.UtcNow);
+    }
+
+    var updatedHeaders = cache.GetHeaders("acc1", "INBOX");
+    Check(updatedHeaders.Count == 1, "Message still in cache");
+    Check(!updatedHeaders[0].IsRead, "Woken message marked unread in cache");
+    Check(updatedHeaders[0].Date > now, "Woken message date touched so it sorts to the top");
+}));
+
 Console.WriteLine($"RESULT {passed} passed. Synthetic evidence: {root}");
 

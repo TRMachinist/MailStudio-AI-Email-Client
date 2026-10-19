@@ -108,6 +108,9 @@
                             <Button Style="{StaticResource RibbonCmd}" Tag="&#xE713;" Click="OnManageQuickSteps" Content="Yönet…" ToolTip="Hızlı adımları düzenle"/>
                         </StackPanel>
                     </HeaderedContentControl>
+                    <HeaderedContentControl Header="Ertele" Style="{StaticResource RibbonGroup}">
+                        <Button Style="{StaticResource RibbonCmd}" Tag="&#xE823;" Click="OnSnoozeRibbonClick" Content="Ertele" ToolTip="Seçili maili ertele (okunmamış olarak geri döner)"/>
+                    </HeaderedContentControl>
                     <HeaderedContentControl Header="Etiketler" Style="{StaticResource RibbonGroup}">
                         <StackPanel Orientation="Horizontal">
                             <Button Style="{StaticResource RibbonCmd}" Tag="&#xE8C3;" Click="OnToggleRead" Content="Okundu / Okunmadı" ToolTip="Okundu (Ctrl+Q) · Okunmadı (Ctrl+U)"/>
@@ -311,6 +314,7 @@
                         <RadioButton x:Name="FilterAll" Style="{StaticResource FilterTab}" IsChecked="True" Checked="OnFilterChanged">Tümü</RadioButton>
                         <RadioButton x:Name="FilterUnread" Style="{StaticResource FilterTab}" Checked="OnFilterChanged">Okunmamış</RadioButton>
                         <RadioButton x:Name="FilterFlagged" Style="{StaticResource FilterTab}" Checked="OnFilterChanged">Bayraklı</RadioButton>
+                        <RadioButton x:Name="FilterSnoozed" Style="{StaticResource FilterTab}" Checked="OnFilterChanged">Ertelenen</RadioButton>
                     </StackPanel>
                 </DockPanel>
                 <ListView Grid.Row="2" x:Name="MessageList" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource BorderSubtleBrush}" Background="Transparent"
@@ -327,6 +331,14 @@
                             <Separator/>
                             <MenuItem Header="Okunmadı / Okundu olarak işaretle" Icon="&#xE8C3;" InputGestureText="Ctrl+Q / Ctrl+U" Click="OnToggleRead"/>
                             <MenuItem Header="İzleme bayrağı" Icon="&#xE7C1;" Click="OnToggleFlag"/>
+                            <MenuItem Header="Ertele" Icon="&#xE823;" x:Name="SnoozeContextMenu" SubmenuOpened="OnSnoozeSubmenuOpened">
+                                <MenuItem Header="Bugün akşam (18:00)" Click="OnSnoozeThisEvening"/>
+                                <MenuItem Header="Yarın sabah (09:00)" Click="OnSnoozeTomorrowMorning"/>
+                                <MenuItem Header="Gelecek hafta (Pazartesi 09:00)" Click="OnSnoozeNextWeek"/>
+                                <Separator/>
+                                <MenuItem Header="Tarih ve saat seç…" Click="OnSnoozeCustomDate"/>
+                                <MenuItem Header="Ertelemeyi Kaldır" x:Name="UnsnoozeContextMenuItem" Click="OnUnsnooze" Visibility="Collapsed"/>
+                            </MenuItem>
                             <MenuItem Header="Taşı…" Icon="&#xE8DE;" Click="OnMoveMenu"/>
                             <MenuItem Header="Görev olarak ekle" Icon="&#xE762;" InputGestureText="Ctrl+Shift+K" Click="OnMailToTask"/>
                             <MenuItem Header="Toplantı ayarla" Icon="&#xE787;" Click="OnMailToMeeting"/>

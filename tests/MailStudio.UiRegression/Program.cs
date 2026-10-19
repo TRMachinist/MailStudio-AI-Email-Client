@@ -14,6 +14,7 @@ using MailStudio.Views.Calendar;
 using MailStudio.Views.Quotes;
 using MailStudio.Views.Templates;
 using MailStudio.Views.QuickSteps;
+using MailStudio.Views.Snooze;
 using MailStudio.Regression;
 using Microsoft.Web.WebView2.Wpf;
 
@@ -782,7 +783,16 @@ internal static class Program
             Capture(qsWin, "quickstep-manager-window.png");
             qsWin.Close();
 
+            // SnoozeCustomDateDialog
+            var snoozeWin = new SnoozeCustomDateDialog();
+            snoozeWin.Show(); await Task.Delay(300);
+            Check(snoozeWin.IsVisible, "SnoozeCustomDateDialog opens");
+            Audit(snoozeWin, "SnoozeCustomDateDialog");
+            Capture(snoozeWin, "snooze-custom-date-dialog.png");
+            snoozeWin.Close();
+
             Console.WriteLine("PASS Şablonlar ve Hızlı Adımlar UI views and interactions"); _passed++;
+            Console.WriteLine("PASS Mail Erteleme (Snooze) UI views and interactions"); _passed++;
         }
 
         if (L.IsEnglish)
@@ -837,6 +847,9 @@ internal static class Program
             var auditQsStore = new QuickStepStore(Path.Combine(AppPaths.Root, "audit-qs-en.json"));
             var auditQsWin = new QuickStepManagerWindow(auditQsStore, auditTmplStore);
             auditQsWin.Show(); await Task.Delay(300); Audit(auditQsWin, "QuickStepManagerWindow(en)"); auditQsWin.Close();
+
+            var auditSnoozeWin = new SnoozeCustomDateDialog();
+            auditSnoozeWin.Show(); await Task.Delay(300); Audit(auditSnoozeWin, "SnoozeCustomDateDialog(en)"); auditSnoozeWin.Close();
 
             foreach (var t in TurkishLooking) Console.WriteLine("REVIEW " + t);
             foreach (var t in Untranslated) Console.WriteLine("UNTRANSLATED " + t);

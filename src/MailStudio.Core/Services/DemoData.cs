@@ -243,7 +243,7 @@ public static class DemoData
             Add(new() { Title = T("Monthly quality review", "Aylık kalite değerlendirmesi"), Start = today.AddDays(-20).AddHours(16), End = today.AddDays(-20).AddHours(17), Category = "Kırmızı",
                 Repeat = new() { Frequency = Calendar.RepeatFrequency.Monthly, WeekOfMonth = -1, Days = { DayOfWeek.Friday } } });
         }
-        if (tasks.Tasks.Count == 0)
+        if (!tasks.Tasks.Any(t => t.SourceMail == $"{AccountId}|INBOX|1"))
         {
             tasks.Save(new() { Title = T("Prepare flange quotation NW-1042", "Flanş teklifini hazırla (NW-1042)"), DueDate = today, Priority = Calendar.TaskPriority.High, SourceMail = $"{AccountId}|INBOX|1",
                 SourceSubject = T("Quotation request – 120× flange DN100 PN16", "Teklif talebi – 120 adet flanş DN100 PN16"), SourceFrom = "Anna Keller", ReminderAt = today.AddDays(1).AddHours(9) });
@@ -343,6 +343,14 @@ public static class DemoData
     public static void SeedQuickSteps(QuickStepStore store)
     {
         if (store.Steps.Count == 0) store.ResetToDefaults();
+    }
+
+    public static void SeedSnooze(SnoozeStore store)
+    {
+        if (store.Items.Count > 0) return;
+        store.Snooze(AccountId, "INBOX", 8, DateTimeOffset.Now.AddDays(2),
+            L.IsEnglish ? "Material certificate 3.1 – heat 52817" : "Malzeme sertifikası 3.1 – döküm 52817",
+            "Quality Lab", wasRead: true, restoreAsUnread: true);
     }
 
     static string WrapHtml(string body) => "<div style=\"font-family:Segoe UI,Calibri,sans-serif;font-size:14px\">" + body + "</div>";

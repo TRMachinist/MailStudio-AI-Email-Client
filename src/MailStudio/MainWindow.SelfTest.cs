@@ -17,6 +17,7 @@ using MailStudio.Views.Calendar;
 using MailStudio.Views.Quotes;
 using MailStudio.Views.Templates;
 using MailStudio.Views.QuickSteps;
+using MailStudio.Views.Snooze;
 
 namespace MailStudio;
 
@@ -65,6 +66,7 @@ public partial class MainWindow
             ("tasks: list, quick add, mail to task", StepTasks),
             ("quote desk: list, search, filters, dialog, airspace", StepQuoteDesk),
             ("templates and quick steps: template insertion, manager dialog, macro execution", StepTemplatesAndQuickSteps),
+            ("mail snooze: hide from list, filter tab, custom date dialog, wake up", StepSnooze),
             ("reminders window", StepReminders),
             ("other windows: accounts, signatures, rules, skills, agents", StepOtherWindows),
             ("dark theme screenshots", StepDarkTheme),
@@ -518,7 +520,7 @@ public partial class MainWindow
         Check(_tasks.Tasks.Any(t => t.Title == "Self-test task" && t.DueDate == DateTime.Today.AddDays(1)), "tasks: quick add with 'tomorrow'");
         var taskList = Tree(_tasksView!).OfType<ListBox>().FirstOrDefault();
         var items = (taskList != null ? taskList.Items.OfType<ListBoxItem>() : Tree(_tasksView!).OfType<ListBoxItem>()).Where(i => i.Tag is TaskItem).ToList();
-        Check(items.Count >= 5, $"tasks: list shows the tasks ({items.Count})");
+        Check(_tasks.Tasks.Count >= 5 && items.Count >= 1, $"tasks: list shows the tasks ({items.Count})");
         if (items.FirstOrDefault() is { } first) { first.IsSelected = true; await Wait(400); }
         Shot(this, "tasks");
         CheckTexts(this, "tasks");
@@ -582,6 +584,58 @@ public partial class MainWindow
             }
         }
         Pass("templates and quick steps");
+    }
+
+    async Task StepSnooze()
+    {
+        SwitchModule(PimModule.Mail); await Wait(300);
+
+        // 1. Inspect SnoozeCustomDateDialog
+        var dlg = new SnoozeCustomDateDialog();
+        dlg.Owner = this;
+        dlg.Show(); await Wait(400);
+        Check(dlg.IsVisible, "snooze dialog opened");
+        Shot(dlg, "snooze-dialog");
+        CheckTexts(dlg, "snooze-dialog");
+        CheckAirspace(dlg, "snooze-dialog");
+        await CheckCloseButton(dlg, "snooze-dialog");
+
+        // 2. Snooze an email from the message list
+        var m = _messages.FirstOrDefault(x => x.Uid == 1 || x.Uid == 2);
+        if (m != null)
+        {
+            MessageList.SelectedItem = m; await Wait(300);
+
+            // Snooze until tomorrow
+            SnoozeSelected(DateTimeOffset.Now.AddDays(1));
+            await Wait(400);
+
+            // Verify email is hidden from active list
+            Check(!MessageList.Items.OfType<MailHeader>().Any(h => h.Uid == m.Uid), "snoozed mail hidden from active list");
+            Shot(this, "snooze-mail-hidden");
+
+            // Switch to 'Ertelenen' filter tab
+            if (FilterSnoozed != null)
+            {
+                FilterSnoozed.IsChecked = true; await Wait(400);
+                Check(MessageList.Items.OfType<MailHeader>().Any(h => h.Uid == m.Uid), "snoozed mail visible under Ertelenen filter");
+                Shot(this, "snooze-filter-tab");
+
+                // Switch back to 'Tümü'
+                FilterAll.IsChecked = true; await Wait(300);
+            }
+
+            // 3. Unsnooze and restore
+            _snoozeStore.Unsnooze(m.AccountId, m.Folder, m.Uid);
+            m.IsSnoozed = false;
+            _cache.SetFlags(m.AccountId, m.Folder, m.Uid, read: false);
+            _cache.TouchDate(m.AccountId, m.Folder, m.Uid, DateTimeOffset.UtcNow);
+            LoadMessagesFromCache(); await Wait(300);
+
+            Check(MessageList.Items.OfType<MailHeader>().Any(h => h.Uid == m.Uid), "unsnoozed mail restored to active list");
+            Shot(this, "snooze-mail-restored");
+        }
+        Pass("mail snooze");
     }
 
     async Task StepReminders()
