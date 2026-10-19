@@ -56,6 +56,7 @@ never send mail on its own.
 - Ribbon, folder pane, message list with date groups, reading pane, conversation view, flags, search (Ctrl+E)
 - Offline copy of mail **and attachments**, instant opening, push notifications (IMAP IDLE), desktop alerts, tray mode
 - Rich HTML composer with signatures, inline replies, pop-out windows, contact auto-complete, safe drafts and recovery
+- **Address book**: contacts, groups, Outlook/Gmail CSV and vCard import/export, To/Cc/Bcc picker; every address in a mail is clickable (copy, new mail, add to contacts, find mails)
 - **Conditional formatting** like Outlook — and you can create the rules in plain language with AI
 - Gmail / Outlook.com / Microsoft 365 (OAuth or app password), Yandex and any IMAP/SMTP server
 - Light and dark theme

@@ -30,7 +30,7 @@ builder.Logging.ClearProviders();
 builder.Logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace); // stdout is reserved for the MCP protocol
 builder.Logging.SetMinimumLevel(LogLevel.Warning);
 builder.Services.AddSingleton(new MailContext(permission));
-var mcp = builder.Services.AddMcpServer(o => o.ServerInfo = new() { Name = "mailstudio", Version = "1.6.0" })
+var mcp = builder.Services.AddMcpServer(o => o.ServerInfo = new() { Name = "mailstudio", Version = "1.6.1" })
     .WithStdioServerTransport()
     .WithTools<MailTools>()
     .WithTools<SkillTools>();

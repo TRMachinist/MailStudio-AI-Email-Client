@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.6.1 – Address book (2026-10-19)
+
+- **Clickable addresses**: sender, To and Cc in the reading pane and message window are links. Click or right-click:
+  copy name and address, copy address only, copy all addresses, new mail, add to contacts / edit, find this person's mails.
+- **Address book** (Home → Address Book, Ctrl+Shift+B): saved contacts (name, three e-mails, company, title,
+  phone, mobile, notes), contact groups (distribution lists), contacts collected from mail, search and filter.
+- Import from Outlook / Gmail CSV (English and Turkish headers, `;` or `,`) and vCard; export as CSV or vCard.
+- New mail: one "Select Names" dialog fills To, Cc and Bcc; suggestions while typing include saved contacts, groups and company names.
+- Contacts are stored only on this computer (`%AppData%\MailStudio\contacts.json`).
+
 ## 1.6.0 – Skills and agent connection (2026-10-18)
 
 - **Skills**: SKILL.md rules (Claude/Codex-compatible format) that read the mail and its attachments and produce a note,
