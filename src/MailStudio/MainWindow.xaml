@@ -266,7 +266,7 @@
                     </TreeView.ItemTemplate>
                 </TreeView>
                 <TextBlock x:Name="NoAccountHint" Margin="14,20,14,0" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}" Visibility="Collapsed">
-                    Henüz hesap yok. <Hyperlink Click="OnAddAccount">Hesap ekle</Hyperlink>
+                    <Run x:Name="NoAccountRun" Text="Henüz hesap yok."/> <Hyperlink Click="OnAddAccount"><Run x:Name="AddAccountRun" Text="Hesap ekle"/></Hyperlink>
                 </TextBlock>
                 <!-- Bottom navigation (Mail / Calendar / Contacts / Tasks) -->
                 <Border Grid.Row="1" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="0,1,0,0" Padding="6,4">

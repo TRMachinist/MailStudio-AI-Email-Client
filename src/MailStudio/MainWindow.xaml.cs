@@ -55,6 +55,7 @@ public partial class MainWindow : Window
     public MainWindow(bool startInTray = false, bool enableTray = true)
     {
         InitializeComponent();
+        NoAccountRun.Text = L.T("Henüz hesap yok."); AddAccountRun.Text = L.T("Hesap ekle");
         UiTranslator.Apply(this);
         Title = L.T("Gelen Kutusu") + " - " + L.ProductName;
         _startInTray = startInTray;
