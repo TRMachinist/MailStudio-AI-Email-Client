@@ -111,7 +111,7 @@ public sealed class SignatureManagerWindow : Window
         var sp=new StackPanel{Margin=new Thickness(12)};w.Content=sp;
         sp.Children.Add(new TextBlock{Text=L.T("Alınacak imzaları seçin:"),Margin=new Thickness(0,0,0,8)});
         var checks=found.Select(x=>new CheckBox{Content=x.Name,Tag=x.Path,IsChecked=true,Margin=new Thickness(0,2,0,2)}).ToList();checks.ForEach(c=>sp.Children.Add(c));
-        var ok=new Button{Content=L.T("Al"),IsDefault=true,Padding=new Thickness(14,4,14,4),Margin=new Thickness(6,0,0,0)};var cancel=new Button{Content=L.T("Vazgeç"),IsCancel=true,Padding=new Thickness(14,4,14,4)};
+        var ok=new Button{Content=L.T("İmzaları al"),IsDefault=true,Padding=new Thickness(14,4,14,4),Margin=new Thickness(6,0,0,0)};var cancel=new Button{Content=L.T("Vazgeç"),IsCancel=true,Padding=new Thickness(14,4,14,4)};
         ok.Click+=(_,_)=>w.DialogResult=true;
         var f=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,12,0,0)};f.Children.Add(cancel);f.Children.Add(ok);sp.Children.Add(f);
         if(w.ShowDialog()!=true)return;
