@@ -10,7 +10,7 @@ using Microsoft.Win32;
 
 namespace MailStudio.Views.Calendar;
 
-public enum CalendarMode { Day, WorkWeek, Week, Month }
+public enum CalendarViewMode { Day, WorkWeek, Week, Month }
 
 /// <summary>What the calendar and task views need from the main window (mail, address book, status bar).</summary>
 public interface IPimHost
@@ -32,13 +32,13 @@ public sealed class CalendarView : UserControl
     readonly CalendarStore _store;
     readonly IPimHost _host;
     DateTime _date = DateTime.Today;
-    static CalendarMode _lastMode = CalendarMode.WorkWeek;
-    CalendarMode _mode = _lastMode;
+    static CalendarViewMode _lastMode = CalendarViewMode.WorkWeek;
+    CalendarViewMode _mode = _lastMode;
     readonly Grid _body = new();
     readonly TextBlock _rangeTitle = PimUi.Text("", 18, bold: true);
     readonly MiniMonth _mini = new();
     readonly StackPanel _upcoming = new();
-    readonly Dictionary<CalendarMode, RadioButton> _modeButtons = new();
+    readonly Dictionary<CalendarViewMode, RadioButton> _modeButtons = new();
     ScrollViewer? _timeScroll;
     double _scrollOffset = -1;
     Occurrence? _selected;
@@ -65,7 +65,7 @@ public sealed class CalendarView : UserControl
             PimUi.Cmd("", L.T("Geri"), (_, _) => Move(-1), L.T("Önceki (Alt+Sol)")),
             PimUi.Cmd("", L.T("İleri"), (_, _) => Move(1), L.T("Sonraki (Alt+Sağ)"))));
         var modes = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        foreach (var (m, text) in new[] { (CalendarMode.Day, L.T("Gün")), (CalendarMode.WorkWeek, L.T("İş Haftası")), (CalendarMode.Week, L.T("Hafta")), (CalendarMode.Month, L.T("Ay")) })
+        foreach (var (m, text) in new[] { (CalendarViewMode.Day, L.T("Gün")), (CalendarViewMode.WorkWeek, L.T("İş Haftası")), (CalendarViewMode.Week, L.T("Hafta")), (CalendarViewMode.Month, L.T("Ay")) })
         {
             var rb = PimUi.Segment(text, "calmode", (_, _) => SetMode(m));
             _modeButtons[m] = rb; modes.Children.Add(rb);
@@ -100,7 +100,7 @@ public sealed class CalendarView : UserControl
         Loaded += (_, _) => { _modeButtons[_mode].IsChecked = true; Refresh(); Focus(); };
     }
 
-    public CalendarMode Mode => _mode;
+    public CalendarViewMode Mode => _mode;
     public DateTime Date => _date;
 
     void OnKey(object sender, KeyEventArgs e)
@@ -112,10 +112,10 @@ public sealed class CalendarView : UserControl
         else if (Keyboard.Modifiers == ModifierKeys.Alt && e.SystemKey is Key.Left or Key.Right) { Move(e.SystemKey == Key.Left ? -1 : 1); e.Handled = true; }
         else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.T) { GoTo(DateTime.Today); e.Handled = true; }
         else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.N) { NewEvent(false); e.Handled = true; }
-        else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key is >= Key.D1 and <= Key.D4) { SetMode((CalendarMode)(e.Key - Key.D1)); _modeButtons[_mode].IsChecked = true; e.Handled = true; }
+        else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key is >= Key.D1 and <= Key.D4) { SetMode((CalendarViewMode)(e.Key - Key.D1)); _modeButtons[_mode].IsChecked = true; e.Handled = true; }
     }
 
-    public void SetMode(CalendarMode m)
+    public void SetMode(CalendarViewMode m)
     {
         if (_mode == m && _body.Children.Count > 0) return;
         _mode = _lastMode = m; _selected = null; _slot = null;
@@ -128,8 +128,8 @@ public sealed class CalendarView : UserControl
     {
         _date = _mode switch
         {
-            CalendarMode.Day => _date.AddDays(dir),
-            CalendarMode.Month => new DateTime(_date.Year, _date.Month, 1).AddMonths(dir),
+            CalendarViewMode.Day => _date.AddDays(dir),
+            CalendarViewMode.Month => new DateTime(_date.Year, _date.Month, 1).AddMonths(dir),
             _ => _date.AddDays(7 * dir)
         };
         Refresh();
@@ -137,9 +137,9 @@ public sealed class CalendarView : UserControl
 
     (DateTime From, DateTime To) VisibleRange() => _mode switch
     {
-        CalendarMode.Day => (_date, _date.AddDays(1)),
-        CalendarMode.WorkWeek => (Recurrence.WeekStart(_date), Recurrence.WeekStart(_date).AddDays(5)),
-        CalendarMode.Week => (Recurrence.WeekStart(_date), Recurrence.WeekStart(_date).AddDays(7)),
+        CalendarViewMode.Day => (_date, _date.AddDays(1)),
+        CalendarViewMode.WorkWeek => (Recurrence.WeekStart(_date), Recurrence.WeekStart(_date).AddDays(5)),
+        CalendarViewMode.Week => (Recurrence.WeekStart(_date), Recurrence.WeekStart(_date).AddDays(7)),
         _ => MonthRange()
     };
 
@@ -156,17 +156,17 @@ public sealed class CalendarView : UserControl
         var (from, to) = VisibleRange();
         _rangeTitle.Text = _mode switch
         {
-            CalendarMode.Day => _date.ToString("D", L.Culture),
-            CalendarMode.Month => _date.ToString("MMMM yyyy", L.Culture),
+            CalendarViewMode.Day => _date.ToString("D", L.Culture),
+            CalendarViewMode.Month => _date.ToString("MMMM yyyy", L.Culture),
             _ => from.Month == to.AddDays(-1).Month
                 ? $"{from.Day} – {to.AddDays(-1).ToString("d MMMM yyyy", L.Culture)}"
                 : $"{from.ToString("d MMMM", L.Culture)} – {to.AddDays(-1).ToString("d MMMM yyyy", L.Culture)}"
         };
-        _mini.Range = _mode == CalendarMode.Month ? null : (from, to);
+        _mini.Range = _mode == CalendarViewMode.Month ? null : (from, to);
         _mini.Selected = _date;
         _body.Children.Clear(); _body.RowDefinitions.Clear(); _body.ColumnDefinitions.Clear(); _dayCanvases.Clear(); _slotRect = null;
         var occurrences = _store.Occurrences(from, to);
-        if (_mode == CalendarMode.Month) RenderMonth(from, occurrences); else RenderDays(from, (to - from).Days, occurrences);
+        if (_mode == CalendarViewMode.Month) RenderMonth(from, occurrences); else RenderDays(from, (to - from).Days, occurrences);
         RenderUpcoming();
     }
 
@@ -195,7 +195,7 @@ public sealed class CalendarView : UserControl
             sp.Children.Add(num); sp.Children.Add(name);
             var b = new Border { Child = sp, BorderThickness = new Thickness(1, 0, 0, day == DateTime.Today ? 3 : 1), Cursor = Cursors.Hand, ToolTip = day.ToString("D", L.Culture) };
             b.SetResourceReference(Border.BorderBrushProperty, day == DateTime.Today ? "AccentPrimaryBrush" : "BorderSubtleBrush");
-            b.MouseLeftButtonDown += (_, e) => { if (e.ClickCount == 2) { _date = day; SetMode(CalendarMode.Day); _modeButtons[CalendarMode.Day].IsChecked = true; } };
+            b.MouseLeftButtonDown += (_, e) => { if (e.ClickCount == 2) { _date = day; SetMode(CalendarViewMode.Day); _modeButtons[CalendarViewMode.Day].IsChecked = true; } };
             Grid.SetColumn(b, i + 1); head.Children.Add(b);
         }
         Grid.SetRow(head, 0); _body.Children.Add(head);
@@ -564,7 +564,7 @@ public sealed class CalendarView : UserControl
             {
                 var more = new Button { Content = L.F("+{0} daha", items.Count - (max - 1)), HorizontalAlignment = HorizontalAlignment.Left, Padding = new Thickness(6, 0, 6, 0), Height = 20, Margin = new Thickness(3, 0, 0, 0) };
                 more.SetResourceReference(StyleProperty, "SubtleButton");
-                more.Click += (_, _) => { _date = day; SetMode(CalendarMode.Day); _modeButtons[CalendarMode.Day].IsChecked = true; };
+                more.Click += (_, _) => { _date = day; SetMode(CalendarViewMode.Day); _modeButtons[CalendarViewMode.Day].IsChecked = true; };
                 list.Children.Add(more);
             }
             cell.Children.Add(list);
@@ -609,7 +609,7 @@ public sealed class CalendarView : UserControl
             sp.Children.Add(PimUi.Text(o.Event.Title, 12, bold: true));
             sp.Children.Add(PimUi.Text(PimUi.RangeText(o) + (o.Event.Location.Length > 0 ? " · " + o.Event.Location : ""), 11, brush: "TextSecondaryBrush"));
             row.Child = sp;
-            row.MouseLeftButtonDown += (_, e) => { if (e.ClickCount == 2) Open(o); else { _date = o.Start.Date; if (_mode == CalendarMode.Month) Refresh(); else GoTo(o.Start.Date); } };
+            row.MouseLeftButtonDown += (_, e) => { if (e.ClickCount == 2) Open(o); else { _date = o.Start.Date; if (_mode == CalendarViewMode.Month) Refresh(); else GoTo(o.Start.Date); } };
             _upcoming.Children.Add(row);
         }
     }
@@ -662,7 +662,7 @@ public sealed class CalendarView : UserControl
 
     public void NewEvent(bool meeting, DateTime? start, DateTime? end, bool allDay = false)
     {
-        var s = start ?? NextHalfHour(_mode == CalendarMode.Month || _date != DateTime.Today ? _date.AddHours(9) : DateTime.Now);
+        var s = start ?? NextHalfHour(_mode == CalendarViewMode.Month || _date != DateTime.Today ? _date.AddHours(9) : DateTime.Now);
         var e = new CalendarEvent { Start = s, End = end ?? s.AddMinutes(30), AllDay = allDay };
         if (allDay) { e.End = e.Start.Date == e.End.Date ? e.Start.Date.AddDays(1) : e.End; e.Busy = BusyStatus.Free; e.ReminderMinutes = 720; }
         if (allDay) e.End = e.End.AddDays(-1); // the form shows the inclusive last day

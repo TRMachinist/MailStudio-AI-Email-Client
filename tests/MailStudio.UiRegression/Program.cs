@@ -219,14 +219,14 @@ internal static class Program
                   ((UIElement)main.FindName("RibbonHome")).Visibility == Visibility.Collapsed && ((UIElement)main.FindName("FolderTree")).Visibility == Visibility.Collapsed,
                   "calendar module replaces the mail view, folder pane and ribbon");
             int Chips() => Descendants(view).OfType<Border>().Count(b => b.Tag is Occurrence);
-            foreach (var mode in new[] { CalendarMode.Day, CalendarMode.WorkWeek, CalendarMode.Week, CalendarMode.Month })
+            foreach (var mode in new[] { CalendarViewMode.Day, CalendarViewMode.WorkWeek, CalendarViewMode.Week, CalendarViewMode.Month })
             {
                 view.SetMode(mode); main.UpdateLayout(); await Task.Delay(250);
-                Check(Chips() >= (mode == CalendarMode.Day ? 2 : 3), $"calendar {mode} view shows the items ({Chips()})");
-                if (mode == CalendarMode.Week) { Audit(main, "MainWindow(calendar)"); Capture(main, "calendar-week.png"); }
-                if (mode == CalendarMode.Month) Capture(main, "calendar-month.png");
+                Check(Chips() >= (mode == CalendarViewMode.Day ? 2 : 3), $"calendar {mode} view shows the items ({Chips()})");
+                if (mode == CalendarViewMode.Week) { Audit(main, "MainWindow(calendar)"); Capture(main, "calendar-week.png"); }
+                if (mode == CalendarViewMode.Month) Capture(main, "calendar-month.png");
             }
-            view.SetMode(CalendarMode.Day); main.UpdateLayout(); await Task.Delay(250);
+            view.SetMode(CalendarViewMode.Day); main.UpdateLayout(); await Task.Delay(250);
             var block = Descendants(view).OfType<Border>().First(b => b.Tag is Occurrence o && o.Event.Id == single.Id);
             Check(Math.Abs(Canvas.GetTop(block) - (10 * CalendarView.HourHeight + 1)) < 0.5, "timed item is placed at its hour");
             Invoke(view, "ApplyMove", new Occurrence(single, single.Start, single.End), single.Start.AddHours(2), single.End.AddHours(2));
