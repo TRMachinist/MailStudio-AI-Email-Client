@@ -16,7 +16,16 @@ public static class EditorContent
         sanitizer.AllowedAttributes.Remove("contenteditable");
         sanitizer.AllowedAttributes.Remove("nonce");
         sanitizer.AllowedTags.ExceptWith(new[] { "form", "input", "button", "textarea", "select", "option", "keygen" });
-        var clean = sanitizer.Sanitize(html ?? "");
+        html ??= "";
+        // Outlook/Exchange write "data:IMAGE/PNG;base64,..." - the sanitizer drops upper-case data URIs (empty boxes in quotes)
+        html = System.Text.RegularExpressions.Regex.Replace(html, @"data:(image/[a-z0-9.+-]+)(?=;base64,)", m => "data:" + m.Groups[1].Value.ToLowerInvariant(), System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        // Mail-client <style> blocks (p.MsoNormal{margin:0}, span.x{font-family:Wingdings}) are removed by sanitizing; keep their effect inline
+        if (html.Contains("<style", StringComparison.OrdinalIgnoreCase))
+        {
+            var styled = new AngleSharp.Html.Parser.HtmlParser().ParseDocument(html);
+            if (SignatureImport.InlineStyles(styled)) html = styled.Body?.InnerHtml ?? html;
+        }
+        var clean = sanitizer.Sanitize(html);
         var document = new AngleSharp.Html.Parser.HtmlParser().ParseDocument(clean);
         foreach (var element in document.QuerySelectorAll("[href]"))
             if (element.GetAttribute("href")?.TrimStart().StartsWith("data:", StringComparison.OrdinalIgnoreCase) == true)

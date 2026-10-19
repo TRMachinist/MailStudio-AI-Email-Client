@@ -109,10 +109,10 @@ public static class SignatureImport
 
     /// <summary>Copies simple rules (tag, .class, tag.class, comma lists) from &lt;style&gt; into style attributes;
     /// existing inline styles win. Sanitizing would otherwise drop the &lt;style&gt; block.</summary>
-    static void InlineStyles(IDocument doc)
+    public static bool InlineStyles(IDocument doc)
     {
         var css = string.Join("\n", doc.QuerySelectorAll("style").Select(s => s.TextContent));
-        if (css.Length == 0) return;
+        if (css.Length == 0) return false;
         css = Regex.Replace(css, @"/\*.*?\*/|<!--|-->", "", RegexOptions.Singleline);
         css = Regex.Replace(css, @"@[\w-]+[^{;]*\{([^{}]*\{[^{}]*\})*[^{}]*\}|@[^;{]+;", "", RegexOptions.Singleline); // @page, @font-face, @media
         var rules = new List<(string Selector, string Decl)>();
@@ -126,6 +126,7 @@ public static class SignatureImport
                 if (Regex.IsMatch(s, @"^[a-zA-Z][\w]*$|^[a-zA-Z]*\.[\w-]+$")) rules.Add((s, decl));
             }
         }
+        var changed = false;
         foreach (var el in doc.Body?.QuerySelectorAll("*").ToList() ?? new())
         {
             var add = new StringBuilder();
@@ -141,6 +142,8 @@ public static class SignatureImport
             if (add.Length == 0) continue;
             var own = el.GetAttribute("style");
             el.SetAttribute("style", add + (string.IsNullOrWhiteSpace(own) ? "" : own));
+            changed = true;
         }
+        return changed;
     }
 }

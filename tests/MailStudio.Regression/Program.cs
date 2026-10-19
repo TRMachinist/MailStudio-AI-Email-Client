@@ -488,4 +488,14 @@ await Test("signatures: Outlook .htm import (1254 charset, <style> inlined, _fil
     var keep = await SignatureImport.PrepareAsync("<p>Hi <img src=\"https://x.example/a.png\"></p>", null, null);
     Check(keep.Contains("https://x.example/a.png"), "without fetch remote image link is kept");
 });
+await Test("quoted Outlook mail keeps upper-case data: images and its <style> class formatting", () => Sync(() =>
+{
+    var png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    var html = "<html><head><style><!-- p.MsoNormal {margin:0cm; font-size:11.0pt;} span.leaf {font-family:Wingdings; mso-style-type:personal;} --></style></head><body>" +
+               "<p class=MsoNormal><img width=282 height=90 id=\"Resim_x0020_1\" src=\"data:IMAGE/PNG;base64," + png + "\"></p><p class=MsoNormal><span class=leaf>þ</span> not</p></body></html>";
+    var clean = EditorContent.Sanitize(html);
+    Check(clean.Contains("data:image/png;base64," + png), "upper-case data image kept: " + clean);
+    Check(Regex.IsMatch(clean, @"<p[^>]*style=""[^""]*margin:\s*0") && clean.Contains("Wingdings"), "class styles inlined: " + clean);
+    Check(InlineImages.Replace("<img src=\"cid:a@b\">", "a@b", null, "IMAGE/PNG", new byte[] { 1 }).Contains("data:image/png;"), "inline image mime lower-cased");
+}));
 Console.WriteLine($"RESULT {passed} passed. Synthetic evidence: {root}");

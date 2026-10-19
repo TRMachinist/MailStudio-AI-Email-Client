@@ -9,7 +9,7 @@ public static class InlineImages
     public static string Replace(string html,string? contentId,string? location,string mime,byte[] bytes)
     {
         if(!mime.StartsWith("image/",StringComparison.OrdinalIgnoreCase))return html;
-        var data=$"data:{mime};base64,{Convert.ToBase64String(bytes)}";
+        var data=$"data:{mime.ToLowerInvariant()};base64,{Convert.ToBase64String(bytes)}";
         string Normalize(string value){try{return Uri.UnescapeDataString(WebUtility.HtmlDecode(value)).Trim('<','>');}catch{return value;}}
         var id=Normalize(contentId??"");var loc=Normalize(location??"");
         string? Resolve(string source)
