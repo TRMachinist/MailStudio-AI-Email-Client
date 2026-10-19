@@ -95,6 +95,7 @@ public class ContactsWindow : Window
             buttons.Children.Add(mail);
         }
         var close = new Button { Content = pickMode ? L.T("İptal") : L.T("Kapat"), Style = (Style)FindResource("FlatButton"), Padding = new Thickness(14, 4, 14, 4), IsCancel = true, Margin = new Thickness(6, 0, 0, 0) };
+        close.Click += (_, _) => { if (!App.IsModal(this)) Close(); };
         buttons.Children.Add(close);
         bottom.Children.Add(buttons);
 

@@ -27,6 +27,12 @@ public partial class App : Application
         DispatcherUnhandledException += OnUnhandled;
         Services.ThemeManager.Apply(Services.ThemeManager.Parse(Services.AppSettings.Shared.Theme));
         EventManager.RegisterClassHandler(typeof(Window), FrameworkElement.LoadedEvent, new RoutedEventHandler((s, _) => { if (s is Window w) Services.ThemeManager.ApplyTitleBar(w); }));
+        // A Cancel/Close button (IsCancel) only closes a window shown with ShowDialog; make it close modeless windows too
+        EventManager.RegisterClassHandler(typeof(System.Windows.Controls.Button), System.Windows.Controls.Primitives.ButtonBase.ClickEvent, new RoutedEventHandler((s, _) =>
+        {
+            if (s is System.Windows.Controls.Button { IsCancel: true } b && Window.GetWindow(b) is { } w && !IsModal(w))
+                w.Dispatcher.BeginInvoke(() => { if (w.IsVisible) w.Close(); });
+        }));
         // Developer test: MailStudio.exe --ai-test Codex  -> writes the answer to ai-test.txt
         if (e.Args.Length >= 2 && e.Args[0] == "--ai-test")
         {
@@ -79,6 +85,13 @@ public partial class App : Application
         MainWindow = window;
         _instance.Listen(Dispatcher, window.ShowFromTray);
         window.Show();
+        // --demo --selftest <folder> : drives the whole app on the demo mailbox and writes selftest.log / summary.txt
+        var selfTestAt = Array.IndexOf(e.Args, "--selftest");
+        if (demo && selfTestAt >= 0 && selfTestAt + 1 < e.Args.Length)
+        {
+            var target = System.IO.Path.GetFullPath(e.Args[selfTestAt + 1]);
+            window.ContentRendered += async (_, _) => await window.RunSelfTestAsync(target);
+        }
         // --open calendar|tasks : start in that module (demo videos, shortcuts)
         var openAt = Array.IndexOf(e.Args, "--open");
         if (openAt >= 0 && openAt + 1 < e.Args.Length && Enum.TryParse<PimModule>(e.Args[openAt + 1], true, out var module))
@@ -154,7 +167,15 @@ public partial class App : Application
                 $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {e.Exception}\n\n");
         }
         catch { }
-        MessageBox.Show(e.Exception.Message, "MailStudio - " + L.T("Hata"), MessageBoxButton.OK, MessageBoxImage.Error);
         e.Handled = true;
+        if (SelfTesting) return; // the self-test logs it
+        MessageBox.Show(e.Exception.Message, "MailStudio - " + L.T("Hata"), MessageBoxButton.OK, MessageBoxImage.Error);
     }
+
+    /// <summary>Set while `--selftest` drives the app.</summary>
+    public static bool SelfTesting { get; set; }
+
+    /// <summary>True while the window runs as a modal dialog (WPF keeps this private).</summary>
+    public static bool IsModal(Window w) =>
+        typeof(Window).GetField("_showingAsDialog", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)?.GetValue(w) is true;
 }
