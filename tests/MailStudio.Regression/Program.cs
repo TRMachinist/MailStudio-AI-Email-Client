@@ -930,4 +930,101 @@ await Test("missing attachment warning: Turkish/English keywords, false alarms, 
     Check(!AttachmentReminder.ShouldWarn(null, "Teknik resim ektedir.", 1, null, null, null, out _), "no warning when file is actually attached");
     Check(!AttachmentReminder.ShouldWarn(null, "Please find attached the report.", 2, null, null, null, out _), "no warning when 2 files are attached");
 }));
+
+await Test("revision comparison: part and rev parsing across patterns", () => Sync(() =>
+{
+    var (p1, r1) = RevisionService.ParsePartAndRevision("NW-1042 rev B");
+    Check(p1 == "NW-1042" && r1 == "B", "NW-1042 rev B parsed correctly");
+
+    var (p2, r2) = RevisionService.ParsePartAndRevision("bracket-revC.stp", "bracket-revC.stp");
+    Check(p2.Contains("bracket") && r2 == "C", "bracket-revC.stp parsed correctly");
+
+    var (p3, r3) = RevisionService.ParsePartAndRevision("delivery-schedule-wk43.xlsx", "delivery-schedule-wk43.xlsx");
+    Check(p3.Contains("delivery-schedule") && r3 == "Wk43", "delivery-schedule-wk43 parsed correctly");
+
+    var (p4, r4) = RevisionService.ParsePartAndRevision("flange-DN100-revC.pdf", "flange-DN100-revC.pdf");
+    Check(p4 == "flange-DN100" && r4 == "C", "flange-DN100-revC parsed correctly");
+
+    var (p5, r5) = RevisionService.ParsePartAndRevision("part_R02.dxf", "part_R02.dxf");
+    Check(p5 == "part" && r5 == "02", "part_R02 parsed correctly");
+}));
+
+string FindDemoDir()
+{
+    var dir = new DirectoryInfo(AppContext.BaseDirectory);
+    while (dir != null)
+    {
+        var p = Path.Combine(dir.FullName, "src", "MailStudio", "Demo");
+        if (Directory.Exists(p)) return p;
+        dir = dir.Parent;
+    }
+    return Path.Combine(Directory.GetCurrentDirectory(), "src", "MailStudio", "Demo");
+}
+
+await Test("revision comparison: Excel schedules diff cell-by-cell", () => Sync(() =>
+{
+    var demoDir = FindDemoDir();
+    var f1 = Path.Combine(demoDir, "delivery-schedule-wk43.xlsx");
+    var f2 = Path.Combine(demoDir, "delivery-schedule-wk44.xlsx");
+    Check(File.Exists(f1) && File.Exists(f2), "Excel demo files exist for test");
+
+    var report = RevisionService.CompareExcel(f1, f2);
+    Check(report.FileType == "Excel", "Report file type is Excel");
+    Check(report.TotalChanges > 0, "Changes detected between wk43 and wk44");
+    Check(report.Items.Any(i => i.Category == "Hücre" && i.Property.Contains("D2")), "D2 (NW-1042 quantity) changed");
+    Check(report.Items.Any(i => i.Category == "Hücre" && i.Property.Contains("E2")), "E2 (NW-1042 unit price) changed");
+
+    var replyText = report.ToReplyText();
+    Check(replyText.Contains("Revizyon") && replyText.Contains("delivery-schedule"), "ToReplyText contains part and header");
+
+    var aiPrompt = report.ToAiPrompt();
+    Check(aiPrompt.Contains("imalat") || aiPrompt.Contains("manufacturing"), "ToAiPrompt contains manufacturing context");
+}));
+
+await Test("revision comparison: DXF 2D CAD diff detects dimensions and notes", () => Sync(() =>
+{
+    var demoDir = FindDemoDir();
+    var f1 = Path.Combine(demoDir, "flange-DN100-revB.dxf");
+    var f2 = Path.Combine(demoDir, "flange-DN100-revC.dxf");
+    Check(File.Exists(f1) && File.Exists(f2), "DXF demo files exist for test");
+
+    var report = RevisionService.CompareDxf(f1, f2);
+    Check(report.FileType == "DXF", "Report file type is DXF");
+    Check(report.TotalChanges > 0, "Changes detected in DXF");
+    Check(report.Items.Any(i => i.Category.StartsWith("Ölçü") || i.Category.StartsWith("Yazı")), "Dimensions or text modified");
+    Check(report.Items.Any(i => i.Description.Contains("20") || i.Description.Contains("26") || i.Description.Contains("REV C")), "Rev C changes found in diff");
+}));
+
+await Test("revision comparison: STEP 3D CAD diff detects geometry and cylindrical features", () => Sync(() =>
+{
+    var demoDir = FindDemoDir();
+    var f1 = Path.Combine(demoDir, "bracket-revB.stp");
+    var f2 = Path.Combine(demoDir, "bracket-revC.stp");
+    Check(File.Exists(f1) && File.Exists(f2), "STEP demo files exist for test");
+
+    var report = RevisionService.CompareStep(f1, f2);
+    Check(report.FileType == "STEP", "Report file type is STEP");
+    Check(report.OldRevision == "B" && report.NewRevision == "C", "Parsed revisions B and C from STEP filenames");
+    // With pure C# fallback or worker extract:
+    Check(report.OldFileName.Contains("revB") && report.NewFileName.Contains("revC"), "File names preserved");
+}));
+
+await Test("revision comparison: PDF drawing diff and candidate discovery", () => Sync(() =>
+{
+    var demoDir = FindDemoDir();
+    var f1 = Path.Combine(demoDir, "flange-DN100-revB.pdf");
+    var f2 = Path.Combine(demoDir, "flange-DN100-revC.pdf");
+    Check(File.Exists(f1) && File.Exists(f2), "PDF demo files exist for test");
+
+    // Candidate discovery
+    var candidates = RevisionService.FindCandidates(null, "", f2);
+    Check(candidates.Count > 0, "Candidate revisions found for flange-DN100-revC");
+    Check(candidates.Any(c => c.FileName.Contains("revB")), "rev B identified as candidate for rev C");
+
+    // PDF comparison
+    var report = RevisionService.ComparePdf(f1, f2);
+    Check(report.FileType == "PDF", "Report file type is PDF");
+    Check(report.OldRevision == "B" && report.NewRevision == "C", "PDF revisions identified as B and C");
+}));
+
 Console.WriteLine($"RESULT {passed} passed. Synthetic evidence: {root}");

@@ -12,7 +12,7 @@ os.makedirs(out, exist_ok=True)
 
 
 # ----------------------------------------------------------------------------- DXF: flange drawing
-def flange_dxf(path):
+def flange_dxf(path, rev='B'):
     doc = ezdxf.new('R2018', setup=True)
     doc.units = ezdxf.units.MM
     for name, color, lt in [('OUTLINE', 7, 'CONTINUOUS'), ('CENTER', 1, 'CENTER'), ('HIDDEN', 8, 'DASHED'),
@@ -23,16 +23,21 @@ def flange_dxf(path):
     msp.add_circle((cx, cy), 110, dxfattribs={'layer': 'OUTLINE', 'lineweight': 50})
     msp.add_circle((cx, cy), 55, dxfattribs={'layer': 'OUTLINE', 'lineweight': 50})
     msp.add_circle((cx, cy), 90, dxfattribs={'layer': 'CENTER'})
+    hole_radius = 10 if rev == 'C' else 9
+    hole_dia = 20 if rev == 'C' else 18
+    thickness = 26 if rev == 'C' else 24
+    ra_val = 'Ra 1.6' if rev == 'C' else 'Ra 3.2'
+
     for i in range(8):
         a = math.radians(22.5 + i * 45)
         hx, hy = cx + 90 * math.cos(a), cy + 90 * math.sin(a)
-        msp.add_circle((hx, hy), 9, dxfattribs={'layer': 'OUTLINE', 'lineweight': 35})
+        msp.add_circle((hx, hy), hole_radius, dxfattribs={'layer': 'OUTLINE', 'lineweight': 35})
         msp.add_line((hx - 13, hy), (hx + 13, hy), dxfattribs={'layer': 'CENTER'})
         msp.add_line((hx, hy - 13), (hx, hy + 13), dxfattribs={'layer': 'CENTER'})
     msp.add_line((cx - 125, cy), (cx + 125, cy), dxfattribs={'layer': 'CENTER'})
     msp.add_line((cx, cy - 125), (cx, cy + 125), dxfattribs={'layer': 'CENTER'})
     sx = 330
-    outline = [(sx, cy - 110), (sx + 24, cy - 110), (sx + 24, cy - 70), (sx + 60, cy - 66), (sx + 60, cy - 55), (sx, cy - 55)]
+    outline = [(sx, cy - 110), (sx + thickness, cy - 110), (sx + thickness, cy - 70), (sx + 60, cy - 66), (sx + 60, cy - 55), (sx, cy - 55)]
     for sign in (1, -1):
         pts = [(x, cy + sign * (y - cy)) for x, y in outline]
         msp.add_lwpolyline(pts, close=True, dxfattribs={'layer': 'OUTLINE', 'lineweight': 50})
@@ -45,17 +50,18 @@ def flange_dxf(path):
     o = {'dimtxt': 5, 'dimasz': 4, 'dimlfac': 1}
     msp.add_diameter_dim(center=(cx, cy), radius=110, angle=135, dimstyle='EZ_MM_RADIUS', override=o, dxfattribs={'layer': 'DIMS'}).render()
     msp.add_diameter_dim(center=(cx, cy), radius=55, angle=30, dimstyle='EZ_MM_RADIUS', override=o, dxfattribs={'layer': 'DIMS'}).render()
-    msp.add_linear_dim(base=(sx + 75, cy), p1=(sx + 24, cy + 110), p2=(sx + 24, cy - 110), angle=90, dimstyle='EZDXF', override=dict(o, dimexe=2), dxfattribs={'layer': 'DIMS'}).render()
+    msp.add_linear_dim(base=(sx + 75, cy), p1=(sx + thickness, cy + 110), p2=(sx + thickness, cy - 110), angle=90, dimstyle='EZDXF', override=dict(o, dimexe=2), dxfattribs={'layer': 'DIMS'}).render()
     msp.add_linear_dim(base=(sx, cy - 130), p1=(sx, cy - 110), p2=(sx + 60, cy - 66), dimstyle='EZDXF', override=o, dxfattribs={'layer': 'DIMS'}).render()
-    msp.add_text('8x Ø18 THRU EQ. SP. ON PCD 180', height=5, dxfattribs={'layer': 'TEXT'}).set_placement((cx - 80, cy - 140), align=TextEntityAlignment.LEFT)
+    msp.add_text(f'8x Ø{hole_dia} THRU EQ. SP. ON PCD 180', height=5, dxfattribs={'layer': 'TEXT'}).set_placement((cx - 80, cy - 140), align=TextEntityAlignment.LEFT)
     msp.add_text('SECTION A-A', height=6, dxfattribs={'layer': 'TEXT'}).set_placement((sx - 5, cy + 125), align=TextEntityAlignment.LEFT)
-    msp.add_text('Ra 3.2', height=4, dxfattribs={'layer': 'TEXT'}).set_placement((sx + 30, cy + 80), align=TextEntityAlignment.LEFT)
+    msp.add_text(ra_val, height=4, dxfattribs={'layer': 'TEXT'}).set_placement((sx + 30, cy + 80), align=TextEntityAlignment.LEFT)
     msp.add_lwpolyline([(0, 0), (480, 0), (480, 345), (0, 345)], close=True, dxfattribs={'layer': 'TITLE', 'lineweight': 70})
     msp.add_lwpolyline([(300, 0), (480, 0), (480, 50), (300, 50)], close=True, dxfattribs={'layer': 'TITLE', 'lineweight': 50})
     for y in (16, 33):
         msp.add_line((300, y), (480, y), dxfattribs={'layer': 'TITLE'})
     msp.add_line((390, 0), (390, 33), dxfattribs={'layer': 'TITLE'})
-    for txt, x, y, h in [('FLANGE DN100 PN16', 305, 38, 7), ('DWG NO. NW-1042', 305, 21, 5), ('MAT. S235JR', 395, 21, 5),
+    dwg_no = f'DWG NO. NW-1042 REV {rev}'
+    for txt, x, y, h in [('FLANGE DN100 PN16', 305, 38, 7), (dwg_no, 305, 21, 5), ('MAT. S235JR', 395, 21, 5),
                          ('SCALE 1:2   SHEET 1/1', 305, 5, 4.5), ('NORTHWIND MACHINING (DEMO)', 395, 5, 3.6)]:
         msp.add_text(txt, height=h, dxfattribs={'layer': 'TITLE'}).set_placement((x, y), align=TextEntityAlignment.LEFT)
     doc.saveas(path)
@@ -77,17 +83,25 @@ def dxf_to_pdf(doc, path):
     plt.close(fig)
 
 
-def schedule_xlsx(path):
+def schedule_xlsx(path, week=43):
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    wb = Workbook(); ws = wb.active; ws.title = 'Week 43'
+    wb = Workbook(); ws = wb.active; ws.title = f'Week {week}'
     ws.append(['Part no.', 'Description', 'Material', 'Qty', 'Unit price (EUR)', 'Total (EUR)', 'Due date', 'Status'])
-    rows = [('NW-1042', 'Flange DN100 PN16', 'S235JR', 120, 38.5, '2026-10-23', 'In production'),
-            ('NW-1043', 'Flange DN80 PN16', 'S235JR', 60, 31.2, '2026-10-23', 'In production'),
-            ('CA-2201', 'Bracket rev C', 'AlMg3', 40, 22.9, '2026-10-27', 'CAM ready'),
-            ('CA-2202', 'Spacer Ø40x12', '1.4301', 250, 3.4, '2026-10-29', 'Waiting material'),
-            ('CA-2210', 'Shaft Ø25 h7', '42CrMo4', 30, 64.0, '2026-11-02', 'Quoted'),
-            ('NW-1050', 'Cover plate 300x200', 'S355J2', 18, 47.8, '2026-11-05', 'Quoted')]
+    if week == 44:
+        rows = [('NW-1042', 'Flange DN100 PN16', 'S235JR', 150, 41.0, '2026-10-30', 'Released'),
+                ('NW-1043', 'Flange DN80 PN16', 'S235JR', 60, 31.2, '2026-10-30', 'In production'),
+                ('CA-2201', 'Bracket rev C', 'AlMg3', 50, 22.9, '2026-11-03', 'CAM ready'),
+                ('CA-2202', 'Spacer Ø40x12', '1.4301', 250, 3.4, '2026-11-05', 'Material received'),
+                ('CA-2210', 'Shaft Ø25 h7', '42CrMo4', 30, 64.0, '2026-11-09', 'In production'),
+                ('NW-1050', 'Cover plate 300x200', 'S355J2', 25, 47.8, '2026-11-12', 'Quoted')]
+    else:
+        rows = [('NW-1042', 'Flange DN100 PN16', 'S235JR', 120, 38.5, '2026-10-23', 'In production'),
+                ('NW-1043', 'Flange DN80 PN16', 'S235JR', 60, 31.2, '2026-10-23', 'In production'),
+                ('CA-2201', 'Bracket rev C', 'AlMg3', 40, 22.9, '2026-10-27', 'CAM ready'),
+                ('CA-2202', 'Spacer Ø40x12', '1.4301', 250, 3.4, '2026-10-29', 'Waiting material'),
+                ('CA-2210', 'Shaft Ø25 h7', '42CrMo4', 30, 64.0, '2026-11-02', 'Quoted'),
+                ('NW-1050', 'Cover plate 300x200', 'S355J2', 18, 47.8, '2026-11-05', 'Quoted')]
     for i, r in enumerate(rows, start=2):
         ws.append([r[0], r[1], r[2], r[3], r[4], f'=D{i}*E{i}', r[5], r[6]])
     n = len(rows) + 1
@@ -145,9 +159,16 @@ def op20_nc(path):
 
 
 if __name__ == '__main__':
-    doc = flange_dxf(os.path.join(out, 'flange-DN100.dxf'))
-    dxf_to_pdf(doc, os.path.join(out, 'flange-DN100.pdf'))
-    schedule_xlsx(os.path.join(out, 'delivery-schedule-wk43.xlsx'))
+    doc_b = flange_dxf(os.path.join(out, 'flange-DN100-revB.dxf'), rev='B')
+    dxf_to_pdf(doc_b, os.path.join(out, 'flange-DN100-revB.pdf'))
+    flange_dxf(os.path.join(out, 'flange-DN100.dxf'), rev='B')
+    dxf_to_pdf(doc_b, os.path.join(out, 'flange-DN100.pdf'))
+
+    doc_c = flange_dxf(os.path.join(out, 'flange-DN100-revC.dxf'), rev='C')
+    dxf_to_pdf(doc_c, os.path.join(out, 'flange-DN100-revC.pdf'))
+
+    schedule_xlsx(os.path.join(out, 'delivery-schedule-wk43.xlsx'), week=43)
+    schedule_xlsx(os.path.join(out, 'delivery-schedule-wk44.xlsx'), week=44)
     report_docx(os.path.join(out, 'FAI-report-NW-1042.docx'))
     kickoff_pptx(os.path.join(out, 'kickoff-bracket-revC.pptx'))
     op20_nc(os.path.join(out, 'OP20.nc'))

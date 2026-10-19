@@ -926,6 +926,73 @@ public partial class MainWindow : Window
         Status(failed == 0 ? L.T("Tüm ekler kaydedildi: ") + dlg.FolderName : L.F("{0} ek kaydedilemedi; diğerleri: {1}", failed, dlg.FolderName));
     }
 
+    async void OnAttachmentCompareRevision(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not AttachmentInfo att) return;
+        await CompareAttachmentRevisionAsync(att);
+    }
+
+    async Task CompareAttachmentRevisionAsync(AttachmentInfo att)
+    {
+        var h = _current;
+        var path = await DownloadAttachmentAsync(h, att);
+        if (path == null) return;
+
+        var ext = Path.GetExtension(path).ToLowerInvariant();
+        var candidates = RevisionService.FindCandidates(_cache, h?.AccountId ?? "", path, h?.Subject);
+
+        string? oldPath = null;
+        if (candidates.Count > 0)
+        {
+            oldPath = candidates[0].FilePath;
+        }
+        else
+        {
+            var filter = ext switch
+            {
+                ".step" or ".stp" => "STEP (*.step;*.stp)|*.step;*.stp|All files (*.*)|*.*",
+                ".dxf" or ".dwg" => "CAD (*.dxf;*.dwg)|*.dxf;*.dwg|All files (*.*)|*.*",
+                ".xlsx" or ".xlsm" => "Excel (*.xlsx;*.xlsm)|*.xlsx;*.xlsm|All files (*.*)|*.*",
+                ".pdf" => "PDF (*.pdf)|*.pdf|All files (*.*)|*.*",
+                _ => "All files (*.*)|*.*"
+            };
+            var dlg = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = L.T("Önceki revizyon dosyasını seçin"),
+                Filter = filter,
+                InitialDirectory = Path.GetDirectoryName(path)
+            };
+            if (dlg.ShowDialog(this) == true) oldPath = dlg.FileName;
+        }
+
+        if (string.IsNullOrEmpty(oldPath) || !File.Exists(oldPath)) return;
+
+        Status(L.T("Revizyonlar karşılaştırılıyor..."));
+        try
+        {
+            var report = await RevisionService.CompareAsync(oldPath, path, () => new TechnicalWorker(), _lifetime.Token);
+            var win = new RevisionDiffWindow(report,
+                onAddToReply: text =>
+                {
+                    if (_current != null && _currentContent != null)
+                        Reply(false, text);
+                    else
+                        Clipboard.SetText(text);
+                },
+                aiRunner: async (prompt, ct) => await AiCompleteAsync(prompt, ct))
+            {
+                Owner = this
+            };
+            win.Show();
+            Status(L.F("Revizyon karşılaştırma tamamlandı: {0} fark bulundu.", report.TotalChanges));
+        }
+        catch (Exception ex)
+        {
+            Status(L.T("Revizyon karşılaştırılamadı: ") + ex.Message);
+            MessageBox.Show(this, ex.Message, L.T("Revizyon Karşılaştırma Hatası"), MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     // =====================================================================
     // Komutlar (ribbon)
     // =====================================================================

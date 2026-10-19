@@ -505,6 +505,7 @@
                                     <Button.ContextMenu>
                                         <ContextMenu>
                                             <MenuItem Header="{local:Tr 'MailStudio içinde aç / ölç'}" Icon="&#xE7B3;" Click="OnAttachmentMenuOpen"/>
+                                            <MenuItem Header="{local:Tr 'Önceki revizyonla karşılaştır...'}" Icon="&#xE8AB;" Click="OnAttachmentCompareRevision"/>
                                             <MenuItem Header="{local:Tr 'Farklı kaydet...'}" Icon="&#xE792;" Click="OnAttachmentSaveAs"/>
                                             <MenuItem Header="{local:Tr 'Tüm ekleri kaydet...'}" Icon="&#xE8B7;" Click="OnSaveAllAttachments"/>
                                         </ContextMenu>

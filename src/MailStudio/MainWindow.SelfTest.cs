@@ -56,6 +56,7 @@ public partial class MainWindow
             ("mail: address links and address book", StepAddressBook),
             ("mail: new mail, reply and message window", StepCompose),
             ("mail: attachments open in the viewers", StepAttachments),
+            ("mail: revision comparison diff window", StepRevisionDiff),
             ("calendar: every view, overlap with the mail view", StepCalendar),
             ("calendar: appointment form", StepEventForm),
             ("tasks: list, quick add, mail to task", StepTasks),
@@ -435,6 +436,28 @@ public partial class MainWindow
                 foreach (var extra in Application.Current.Windows.OfType<Window>().Where(x => !before.Contains(x) && x.IsVisible).ToList()) extra.Close();
                 await Until(() => open.IsCompleted, 3000);
             }
+        }
+    }
+
+    async Task StepRevisionDiff()
+    {
+        var m = MessageList.Items.OfType<MailHeader>().FirstOrDefault(x => x.Uid == 10 || x.Uid == 1);
+        if (m == null) return;
+        MessageList.SelectedItem = m; await Until(() => _current == m, 8000); await Wait(600);
+        var att = _cache.GetAttachments(m.AccountId, m.Folder, m.Uid).FirstOrDefault(a => a.FileName.Contains("revC") || a.FileName.Contains("flange"));
+        if (att != null)
+        {
+            var before = Application.Current.Windows.OfType<Window>().ToHashSet();
+            var compareTask = CompareAttachmentRevisionAsync(att);
+            if (await Until(() => Application.Current.Windows.OfType<Window>().Any(x => !before.Contains(x) && x is RevisionDiffWindow && x.IsVisible), 15000))
+            {
+                var diffWin = Application.Current.Windows.OfType<Window>().FirstOrDefault(x => !before.Contains(x) && x is RevisionDiffWindow && x.IsVisible);
+                if (diffWin != null)
+                {
+                    await InspectWindow(diffWin, "revision diff window", closeWithButton: true);
+                }
+            }
+            try { await compareTask; } catch { }
         }
     }
 

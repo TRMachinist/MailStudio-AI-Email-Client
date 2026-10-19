@@ -652,6 +652,31 @@ internal static class Program
             Check(testPromptTriggered && capturedKeyword == "ektedir", "ComposeWindow triggers missing attachment prompt on Send without files");
             Close(missPromptWin);
         }
+        {
+            // 1.8: Revision comparison window test
+            var sampleReport = new RevisionDiffReport
+            {
+                FileType = "STEP",
+                PartNumber = "NW-1042",
+                OldRevision = "B",
+                NewRevision = "C",
+                OldFileName = "flange-DN100-revB.pdf",
+                NewFileName = "flange-DN100-revC.pdf",
+                Items = new List<RevisionDiffItem>
+                {
+                    new() { Kind = RevisionDiffKind.Modified, Category = "Ölçü", Property = "Delik Çapı", OldValue = "Ø18 mm", NewValue = "Ø20 mm", Description = "8 adet flanş deliği Ø18 → Ø20" },
+                    new() { Kind = RevisionDiffKind.Modified, Category = "Ölçü", Property = "Kalınlık", OldValue = "24 mm", NewValue = "26 mm", Description = "Flanş kalınlığı 24 mm → 26 mm" },
+                    new() { Kind = RevisionDiffKind.Added, Category = "Yüzey", Property = "Yüzey Pürüzlülüğü", NewValue = "Ra 1.6", Description = "İşleme yüzeyi Ra 1.6 olarak güncellendi" }
+                }
+            };
+            var diffWin = new RevisionDiffWindow(sampleReport, onAddToReply: _ => { }, aiRunner: (_, _) => Task.FromResult("İmalat etkisi: delik çapı 20 mm için delik işleme takımı değişecek."));
+            diffWin.Show(); await Task.Delay(400);
+            Check(diffWin.IsVisible && Field<ListView>(diffWin, "_diffList").Items.Count == 3, "RevisionDiffWindow opens and populates 3 diff items");
+            Audit(diffWin, "RevisionDiffWindow");
+            Capture(diffWin, "revision-diff-window.png");
+            diffWin.Close();
+            Console.WriteLine("PASS revision comparison window UI and actions"); _passed++;
+        }
         if (L.IsEnglish)
         {
             foreach (var w in Application.Current.Windows.OfType<Window>().Where(w => w.IsVisible).ToList()) Audit(w, w.GetType().Name);
@@ -661,6 +686,21 @@ internal static class Program
             var cardWin = new ContactEditWindow(new Contact()); cardWin.Show(); await Task.Delay(300); Audit(cardWin, "ContactEditWindow"); cardWin.Close();
             var groupWin = new GroupEditWindow(new ContactGroup()); groupWin.Show(); await Task.Delay(300); Audit(groupWin, "GroupEditWindow"); groupWin.Close();
             var auditRulesWin = new RulesWindow(new RuleStore(Path.Combine(AppPaths.Root, "audit-rules.json")), new List<MailHeader>(), (_, _) => Task.FromResult(""), () => "Test"); auditRulesWin.Show(); await Task.Delay(300); Audit(auditRulesWin, "RulesWindow"); auditRulesWin.Close();
+
+            var auditDiffWin = new RevisionDiffWindow(new RevisionDiffReport
+            {
+                FileType = "STEP",
+                PartNumber = "NW-1042",
+                OldRevision = "B",
+                NewRevision = "C",
+                OldFileName = "flange-DN100-revB.pdf",
+                NewFileName = "flange-DN100-revC.pdf",
+                Items = new List<RevisionDiffItem>
+                {
+                    new() { Kind = RevisionDiffKind.Modified, Category = "Ölçü", Property = "Delik Çapı", OldValue = "Ø18 mm", NewValue = "Ø20 mm", Description = "8 adet flanş deliği Ø18 → Ø20" }
+                }
+            });
+            auditDiffWin.Show(); await Task.Delay(300); Audit(auditDiffWin, "RevisionDiffWindow(en)"); auditDiffWin.Close();
 
             var auditMissingWin = new Window { Title = L.T("Ek unutulmuş olabilir") };
             var sp = new StackPanel();
