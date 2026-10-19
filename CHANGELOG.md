@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.6.2 – Signature images and cache repair (2026-10-19)
+
+- Fixed: images in Outlook/Exchange signatures (logos, banners) showed as empty boxes in replies and forwards.
+  On Turkish Windows the case-insensitive match failed for `data:IMAGE/PNG` (dotless ı); all case-insensitive
+  matching is now culture-invariant.
+- Quoted mails keep their own formatting: simple `<style>` rules (e.g. `p.MsoNormal`, Wingdings symbols) are applied inline.
+- Local cache: a damaged page found while running no longer breaks reading – the message opens from the server and
+  the cache is rebuilt at the next start (the old file is kept as a backup). The MCP server never moves the cache file.
+
 ## 1.6.1 – Address book and HTML signatures (2026-10-19)
 
 - **Clickable addresses**: sender, To and Cc in the reading pane and message window are links. Click or right-click:
