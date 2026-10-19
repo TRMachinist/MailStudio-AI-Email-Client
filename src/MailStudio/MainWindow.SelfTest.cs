@@ -519,6 +519,7 @@ public partial class MainWindow
         await OpenAndInspect("account settings", () => new AccountWindow(acc, _settings, _oauth) { Owner = this }.ShowDialog());
         await OpenAndInspect("signatures", () => new SignatureManagerWindow(this, acc).ShowDialog());
         await OpenAndInspect("conditional formatting", () => OnFormatRules(this, new RoutedEventArgs()));
+        await OpenAndInspect("email rules", () => OnRules(this, new RoutedEventArgs()));
         await OpenAndInspect("skills", () => OnSkills(this, new RoutedEventArgs()));
         await OpenAndInspect("agents", () => OnAgents(this, new RoutedEventArgs()));
     }

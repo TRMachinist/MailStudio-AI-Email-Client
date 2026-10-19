@@ -4,11 +4,18 @@
 param(
     [string]$Repo = (Resolve-Path "$PSScriptRoot\..\..").Path,
     [string]$Out = "",
+    [string]$Work = "",
     [switch]$SkipUiTests,
     [string[]]$Languages = @('tr', 'en')
 )
 $ErrorActionPreference = 'Continue'
-if (-not $Out) { $Out = Join-Path $Repo 'work\selftest' }
+if (-not $Out) {
+    if ($Work) { $Out = Join-Path $Work 'selftest' }
+    else { $Out = Join-Path $Repo 'work\selftest' }
+}
+if ($Work -and -not (Test-Path (Join-Path $Repo 'work\run-ui-tests.ps1')) -and (Test-Path (Join-Path $Work 'run-ui-tests.ps1'))) {
+    # If repo doesn't have its own runner, work can provide one
+}
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $run = Join-Path $Out $stamp
 New-Item -ItemType Directory -Force $run | Out-Null
@@ -61,7 +68,8 @@ foreach ($lang in $Languages) {
     New-Item -ItemType Directory -Force $dir, $data | Out-Null
     $env:MAILSTUDIO_DATA_DIR = $data
     $env:MAILSTUDIO_LANG = $lang
-    if (Test-Path (Join-Path $Repo 'work\technical-dist\MailStudio.Technical\MailStudio.Technical.exe')) { $env:MAILSTUDIO_TECHNICAL_EXE = Join-Path $Repo 'work\technical-dist\MailStudio.Technical\MailStudio.Technical.exe' }
+    if ($Work -and (Test-Path (Join-Path $Work 'technical-dist\MailStudio.Technical\MailStudio.Technical.exe'))) { $env:MAILSTUDIO_TECHNICAL_EXE = Join-Path $Work 'technical-dist\MailStudio.Technical\MailStudio.Technical.exe' }
+    elseif (Test-Path (Join-Path $Repo 'work\technical-dist\MailStudio.Technical\MailStudio.Technical.exe')) { $env:MAILSTUDIO_TECHNICAL_EXE = Join-Path $Repo 'work\technical-dist\MailStudio.Technical\MailStudio.Technical.exe' }
     $p = Start-Process $exe -ArgumentList '--demo', '--selftest', "`"$dir`"" -PassThru
     if (-not $p.WaitForExit(20 * 60 * 1000)) {
         S "[selftest-$lang] TIMEOUT after 20 min (process $($p.Id) stopped)"

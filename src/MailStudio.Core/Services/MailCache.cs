@@ -96,7 +96,17 @@ public class MailCache
         var names = new HashSet<string>();
         while (reader.Read()) names.Add(reader.GetString(1));
         reader.Close();
-        foreach (var (name, type) in new[] { ("is_draft", "INTEGER DEFAULT 0"), ("reply_to", "TEXT"), ("in_reply_to", "TEXT"), ("refs_json", "TEXT"), ("body_encoding_version", "INTEGER NOT NULL DEFAULT 0"), ("calendar_ics", "TEXT") })
+        foreach (var (name, type) in new[] {
+            ("is_draft", "INTEGER DEFAULT 0"),
+            ("reply_to", "TEXT"),
+            ("in_reply_to", "TEXT"),
+            ("refs_json", "TEXT"),
+            ("body_encoding_version", "INTEGER NOT NULL DEFAULT 0"),
+            ("calendar_ics", "TEXT"),
+            ("category", "TEXT"),
+            ("importance", "TEXT"),
+            ("msg_size", "INTEGER DEFAULT 0")
+        })
             if (!names.Contains(name)) Exec(c, L.F("ALTER TABLE messages ADD COLUMN {0} {1}", name, type));
     }
 
@@ -218,6 +228,13 @@ public class MailCache
         if (flagged.HasValue)
             Exec(c, "UPDATE messages SET is_flagged=$v WHERE account=$a AND folder=$f AND uid=$u",
                 ("$v", flagged.Value ? 1 : 0), ("$a", account), ("$f", folder), ("$u", (long)uid));
+    }
+
+    public void SetCategory(string account, string folder, uint uid, string? category)
+    {
+        using var c = Open();
+        Exec(c, "UPDATE messages SET category=$v WHERE account=$a AND folder=$f AND uid=$u",
+            ("$v", category), ("$a", account), ("$f", folder), ("$u", (long)uid));
     }
 
     public void Delete(string account, string folder, uint uid)
@@ -412,7 +429,8 @@ public class MailCache
     {
         var list = new List<MailHeader>();
         using var r = cmd.ExecuteReader();
-        string S(string n) { var i = r.GetOrdinal(n); return r.IsDBNull(i) ? "" : r.GetString(i); }
+        string S(string n) { try { var i = r.GetOrdinal(n); return r.IsDBNull(i) ? "" : r.GetString(i); } catch { return ""; } }
+        long LSafe(string n) { try { var i = r.GetOrdinal(n); return r.IsDBNull(i) ? 0 : r.GetInt64(i); } catch { return 0; } }
         var epochs = new Dictionary<(string, string), uint>();
         uint Epoch(string account, string folder)
         {
@@ -434,6 +452,9 @@ public class MailCache
                 IsRead = r.GetInt64(r.GetOrdinal("is_read")) == 1,
                 IsFlagged = r.GetInt64(r.GetOrdinal("is_flagged")) == 1,
                 HasAttachments = r.GetInt64(r.GetOrdinal("has_att")) == 1,
+                Category = S("category"),
+                Importance = string.IsNullOrEmpty(S("importance")) ? "normal" : S("importance"),
+                Size = LSafe("msg_size")
             });
         }
         return list;

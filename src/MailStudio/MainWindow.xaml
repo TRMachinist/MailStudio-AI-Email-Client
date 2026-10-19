@@ -166,8 +166,11 @@
                             <Button Style="{StaticResource RibbonCmd}" Tag="&#xE99A;" Click="OnToggleAiPane" Content="AI Paneli"/>
                         </StackPanel>
                     </HeaderedContentControl>
-                    <HeaderedContentControl Header="Biçim" Style="{StaticResource RibbonGroup}">
-                        <Button Style="{StaticResource RibbonCmd}" Tag="&#xE790;" Click="OnFormatRules" Content="Koşullu Biçimlendirme" ToolTip="Gönderen, konu, okunmamış, ek… koşullarına göre listede renk ve kalınlık. Yapay zekayla da oluşturulabilir."/>
+                    <HeaderedContentControl Header="Kurallar ve Biçim" Style="{StaticResource RibbonGroup}">
+                        <StackPanel Orientation="Horizontal">
+                            <Button Style="{StaticResource RibbonCmd}" Tag="&#xE71E;" Click="OnRules" Content="Kurallar" ToolTip="Gelen iletiler için otomatik kurallar (taşı, bayrakla, görev yap). Yapay zekayla da oluşturulabilir."/>
+                            <Button Style="{StaticResource RibbonCmd}" Tag="&#xE790;" Click="OnFormatRules" Content="Koşullu Biçimlendirme" ToolTip="Gönderen, konu, okunmamış, ek… koşullarına göre listede renk ve kalınlık. Yapay zekayla da oluşturulabilir."/>
+                        </StackPanel>
                     </HeaderedContentControl>
                     <HeaderedContentControl Header="Tema" Style="{StaticResource RibbonGroup}">
                         <StackPanel Orientation="Horizontal" Margin="2,3,2,0">
@@ -319,6 +322,7 @@
                             <MenuItem Header="Taşı…" Icon="&#xE8DE;" Click="OnMoveMenu"/>
                             <MenuItem Header="Görev olarak ekle" Icon="&#xE762;" InputGestureText="Ctrl+Shift+K" Click="OnMailToTask"/>
                             <MenuItem Header="Toplantı ayarla" Icon="&#xE787;" Click="OnMailToMeeting"/>
+                            <MenuItem Header="Bunun gibi mailler için kural oluştur…" Icon="&#xE71E;" Click="OnCreateRuleFromMail"/>
                             <Separator/>
                             <MenuItem Header="AI ile özetle" Icon="&#xE8BD;" Click="OnAiSummarize"/>
                             <MenuItem Header="AI ile cevap yazdır" Icon="&#xE70F;" Click="OnAiDraftReply"/>

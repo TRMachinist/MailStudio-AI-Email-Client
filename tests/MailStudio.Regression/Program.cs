@@ -596,4 +596,137 @@ await Test("calendar: Outlook/Google invitations (time zones, RRULE, EXDATE, ala
     app.Save(new MailStudio.Services.Calendar.TaskItem { Title = "app again" });
     Check(new MailStudio.Services.Calendar.TaskStore(shared).Tasks.Count == 3 && agent.ReloadIfChanged() && agent.Tasks.Count == 3, "app and MCP agent edits to the same task file are both kept");
 }));
+await Test("rules: condition and action matrix, order/stop, FakeImap move/flag, store roundtrip and AI parsing", async () =>
+{
+    var storePath = Path.Combine(root, "rules.json");
+    var store = new RuleStore(storePath);
+    Check(store.Rules.Count == 0, "initial store empty");
+
+    // Condition tests
+    var h1 = new MailHeader
+    {
+        AccountId = "synthetic", Folder = "INBOX", Uid = 2, UidValidity = 77,
+        FromName = "Anna Keller", FromAddress = "anna.keller@example.test",
+        To = "machinist@example.test", Subject = "Quotation request for flanges",
+        Preview = "Please provide quotation for 120 pcs",
+        HasAttachments = true, Size = 25000, Importance = "high"
+    };
+    var atts = new List<AttachmentInfo> { new() { FileName = "drawing.pdf" }, new() { FileName = "model.stp" } };
+
+    var cFrom = new RuleCondition { Field = "from", Value = "anna;keller" };
+    var cTo = new RuleCondition { Field = "to", Value = "machinist" };
+    var cSub = new RuleCondition { Field = "subject", Value = "quotation;flange" };
+    var cBody = new RuleCondition { Field = "body", Value = "120 pcs" };
+    var cAtt = new RuleCondition { Field = "has_attachment" };
+    var cType = new RuleCondition { Field = "attachment_type", Value = "pdf;stp" };
+    var cAcc = new RuleCondition { Field = "account", Value = "synthetic" };
+    var cFld = new RuleCondition { Field = "folder", Value = "INBOX" };
+    var cImp = new RuleCondition { Field = "importance", Value = "high" };
+    var cSize1 = new RuleCondition { Field = "size_larger_kb", Value = "20" };
+    var cSize2 = new RuleCondition { Field = "size_smaller_kb", Value = "30" };
+
+    Check(RuleEngine.MatchesCondition(cFrom, h1), "from matches");
+    Check(RuleEngine.MatchesCondition(cTo, h1), "to matches");
+    Check(RuleEngine.MatchesCondition(cSub, h1), "subject matches");
+    Check(RuleEngine.MatchesCondition(cBody, h1, "Please provide quotation for 120 pcs"), "body matches");
+    Check(RuleEngine.MatchesCondition(cAtt, h1), "has_attachment matches");
+    Check(RuleEngine.MatchesCondition(cType, h1, attachments: atts), "attachment_type matches");
+    Check(RuleEngine.MatchesCondition(cAcc, h1), "account matches");
+    Check(RuleEngine.MatchesCondition(cFld, h1), "folder matches");
+    Check(RuleEngine.MatchesCondition(cImp, h1), "importance matches");
+    Check(RuleEngine.MatchesCondition(cSize1, h1), "size_larger_kb matches");
+    Check(RuleEngine.MatchesCondition(cSize2, h1), "size_smaller_kb matches");
+
+    // MatchAll: AND vs OR
+    var ruleAnd = new MailRule { MatchAll = true, Conditions = { cFrom, new RuleCondition { Field = "subject", Value = "nonexistent" } } };
+    Check(!RuleEngine.Matches(ruleAnd, h1), "AND fails when one condition fails");
+    var ruleOr = new MailRule { MatchAll = false, Conditions = { cFrom, new RuleCondition { Field = "subject", Value = "nonexistent" } } };
+    Check(RuleEngine.Matches(ruleOr, h1), "OR succeeds when one condition matches");
+
+    // Rule ordering and stop processing
+    var executedSkills = new List<string>();
+    var taskStore = new MailStudio.Services.Calendar.TaskStore(Path.Combine(root, "rule-tasks.json"));
+    var cache = Cache("rules-cache");
+    cache.UpsertHeaders(new[] { h1 });
+    cache.SaveAttachments("synthetic", "INBOX", 2, atts);
+
+    await using var server = new FakeImap();
+    using var mail = Service(cache, "rules-mail");
+    var account = Account(server);
+
+    var r1 = new MailRule
+    {
+        Name = "Flag and category",
+        StopProcessing = false,
+        Conditions = { cFrom },
+        Actions = {
+            new RuleAction { Type = "mark_as_flagged" },
+            new RuleAction { Type = "set_category", Value = "Important" },
+            new RuleAction { Type = "create_task", Value = "Review" },
+            new RuleAction { Type = "run_skill", Value = "summarize" }
+        }
+    };
+    var r2 = new MailRule
+    {
+        Name = "Move and stop",
+        StopProcessing = true,
+        Conditions = { cSub },
+        Actions = {
+            new RuleAction { Type = "move_to_folder", Value = "Trash" }
+        }
+    };
+    var r3 = new MailRule
+    {
+        Name = "Never reached",
+        StopProcessing = true,
+        Conditions = { cFrom },
+        Actions = {
+            new RuleAction { Type = "mark_as_read" }
+        }
+    };
+
+    var results = await RuleEngine.ApplyRulesAsync(
+        new[] { r1, r2, r3 },
+        h1,
+        account,
+        mail,
+        cache,
+        taskStore,
+        (s, _) => { executedSkills.Add(s); return Task.CompletedTask; }
+    );
+
+    Check(results.Count == 2, "exactly two rules ran before stop_processing");
+    Check(h1.IsFlagged, "action mark_as_flagged executed");
+    Check(h1.Category == "Important", "action set_category executed");
+    Check(taskStore.Tasks.Any(t => t.Title == "Review: " + h1.Subject), "action create_task executed");
+    Check(executedSkills.Contains("summarize"), "action run_skill executed");
+    Check(h1.Folder == "Trash", "action move_to_folder executed");
+    Check(!h1.IsRead, "third rule was stopped by stop_processing");
+
+    // Store persistence
+    store.Rules.AddRange(new[] { r1, r2 });
+    store.Save();
+    var reloaded = new RuleStore(storePath);
+    Check(reloaded.Rules.Count == 2 && reloaded.Rules[0].Name == "Flag and category" && reloaded.Rules[1].StopProcessing, "rules saved and reloaded from json");
+
+    // AI rule parsing
+    var aiJson = """
+    {
+        "Name": "Anna'dan gelen teklifler",
+        "StopProcessing": true,
+        "MatchAll": true,
+        "Conditions": [
+            { "Field": "from", "Value": "anna.keller@" },
+            { "Field": "subject", "Value": "teklif;flanş" }
+        ],
+        "Actions": [
+            { "Type": "move_to_folder", "Value": "Teklifler" },
+            { "Type": "mark_as_flagged" }
+        ]
+    }
+    """;
+    var parsed = RuleEngine.ParseAi(aiJson);
+    Check(parsed.Name == "Anna'dan gelen teklifler" && parsed.Conditions.Count == 2 && parsed.Actions.Count == 2 && parsed.StopProcessing, "AI rule parsed successfully");
+    Check(RuleEngine.AiPrompt("test prompt").Contains("JSON"), "AI prompt generated");
+});
 Console.WriteLine($"RESULT {passed} passed. Synthetic evidence: {root}");

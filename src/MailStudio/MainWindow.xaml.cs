@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     readonly MailService _mail;
     readonly OAuthService _oauth;
     readonly ContactBook _contacts;
+    readonly RuleStore _ruleStore = new();
     readonly Dictionary<string, InboxWatcher> _watchers = new();
     readonly HashSet<string> _alertReady = new();
     readonly AppSettings _settings = AppSettings.Shared;
@@ -453,7 +454,12 @@ public partial class MainWindow : Window
                 if (_alertReady.Contains(acc.Id) && _settings.DesktopAlerts && added > 0)
                 {
                     var fresh = _cache.GetHeaders(acc.Id, node.FullName, 50).Where(m => !m.IsRead && !before.Contains(m.Uid)).ToList();
-                    if (fresh.Count > 0) { ShowDesktopAlert(node, fresh); _ = AutoRunSkillsAsync(fresh); }
+                    if (fresh.Count > 0)
+                    {
+                        ShowDesktopAlert(node, fresh);
+                        _ = AutoRunSkillsAsync(fresh);
+                        _ = RunRulesOnFreshAsync(acc, fresh);
+                    }
                 }
                 _alertReady.Add(acc.Id);
             }
@@ -1320,6 +1326,72 @@ public partial class MainWindow : Window
     }
 
     void Reformat(MailHeader h) => FormatRuleEngine.Apply(_settings.FormatRules, new[] { h });
+
+    void OnRules(object sender, RoutedEventArgs e)
+    {
+        var sample = _messages.Take(200).ToList();
+        var w = new RulesWindow(_ruleStore, sample, (prompt, ct) =>
+        {
+            var provider = CurrentProvider; var model = CurrentModel;
+            return AiStream.CompleteAsync(token => provider.StreamAsync(prompt, model, token), ct);
+        }, () => CurrentProvider.Name, null, RunRuleOnFolderAsync) { Owner = this };
+        w.ShowDialog();
+        Status(L.F("Kurallar: {0} kural kayıtlı.", _ruleStore.Rules.Count));
+    }
+
+    void OnCreateRuleFromMail(object sender, RoutedEventArgs e)
+    {
+        if (_current == null) return;
+        var h = _current;
+        var newRule = new MailRule
+        {
+            Name = L.F("{0} iletileri için kural", (h.FromName ?? h.FromAddress) ?? ""),
+            Enabled = true,
+            MatchAll = true,
+            StopProcessing = true,
+            Conditions = {
+                new RuleCondition { Field = "from", Value = !string.IsNullOrEmpty(h.FromAddress) ? h.FromAddress : h.FromName }
+            },
+            Actions = {
+                new RuleAction { Type = "move_to_folder", Value = "Teklifler" }
+            }
+        };
+        var sample = _messages.Take(200).ToList();
+        var w = new RulesWindow(_ruleStore, sample, (prompt, ct) =>
+        {
+            var provider = CurrentProvider; var model = CurrentModel;
+            return AiStream.CompleteAsync(token => provider.StreamAsync(prompt, model, token), ct);
+        }, () => CurrentProvider.Name, newRule, RunRuleOnFolderAsync) { Owner = this };
+        w.ShowDialog();
+    }
+
+    async Task RunRuleOnFolderAsync(MailRule rule)
+    {
+        if (_currentFolder == null) return;
+        var acc = Acc(_currentFolder.AccountId);
+        if (acc == null) return;
+        var list = _messages.ToList();
+        int affected = 0;
+        foreach (var m in list)
+        {
+            var results = await RuleEngine.ApplyRulesAsync(new[] { rule }, m, acc, _mail, _cache, _tasks, null, _lifetime.Token);
+            if (results.Count > 0) affected++;
+        }
+        LoadMessagesFromCache();
+        Status(L.F("Kural çalıştırıldı: {0} ileti etkilendi.", affected));
+    }
+
+    async Task RunRulesOnFreshAsync(AccountConfig acc, List<MailHeader> fresh)
+    {
+        if (_ruleStore.Rules.Count == 0) return;
+        bool anyMoved = false;
+        foreach (var h in fresh)
+        {
+            var res = await RuleEngine.ApplyRulesAsync(_ruleStore.Rules, h, acc, _mail, _cache, _tasks, null, _lifetime.Token);
+            if (res.Any(r => r.AppliedActions.Any(a => a.Contains("taşındı") || a.Contains("moved")))) anyMoved = true;
+        }
+        if (anyMoved) await Dispatcher.InvokeAsync(LoadMessagesFromCache);
+    }
 
     void OnFormatRules(object sender, RoutedEventArgs e)
     {

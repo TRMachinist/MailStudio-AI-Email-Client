@@ -107,6 +107,39 @@ public static class DemoData
                 Conditions = { new FormatCondition { Field = "from", Value = "news@" } } });
             AppSettings.Shared.Save();
         }
+        var ruleStore = new RuleStore();
+        if (ruleStore.Rules.Count == 0)
+        {
+            ruleStore.Rules.Add(new MailRule
+            {
+                Name = en ? "Quotation requests from Anna" : "Anna'dan gelen teklifler",
+                Enabled = true,
+                StopProcessing = true,
+                MatchAll = true,
+                Conditions = {
+                    new RuleCondition { Field = "from", Value = "anna.keller@" },
+                    new RuleCondition { Field = "subject", Value = en ? "Quotation;RFQ" : "Teklif;Fiyat" }
+                },
+                Actions = {
+                    new RuleAction { Type = "mark_as_flagged" },
+                    new RuleAction { Type = "set_category", Value = en ? "Quotations" : "Teklifler" }
+                }
+            });
+            ruleStore.Rules.Add(new MailRule
+            {
+                Name = en ? "Move newsletters to Newsletters folder" : "Bültenleri Bültenler klasörüne taşı",
+                Enabled = true,
+                StopProcessing = true,
+                MatchAll = true,
+                Conditions = {
+                    new RuleCondition { Field = "from", Value = "news@" }
+                },
+                Actions = {
+                    new RuleAction { Type = "move_to_folder", Value = en ? "Newsletters" : "Bültenler" }
+                }
+            });
+            ruleStore.Save();
+        }
         var files = Path.Combine(AppPaths.Root, "demo-files");
         Directory.CreateDirectory(files);
         var source = Path.Combine(AppContext.BaseDirectory, "Demo");

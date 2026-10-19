@@ -87,7 +87,7 @@ public partial class FolderNode : ObservableObject
 public partial class MailHeader : ObservableObject
 {
     public string AccountId { get; init; } = "";
-    public string Folder { get; init; } = "";
+    public string Folder { get; set; } = "";
     public uint Uid { get; init; }
     public uint UidValidity { get; init; }
     public bool IsDraft { get; init; }
@@ -103,7 +103,10 @@ public partial class MailHeader : ObservableObject
     public string Preview { get; init; } = "";
     public DateTimeOffset Date { get; init; }
     public bool HasAttachments { get; init; }
+    public long Size { get; set; }
+    public string? Importance { get; set; } = "normal";
 
+    [ObservableProperty] private string? category;
     [ObservableProperty] private bool isRead;
     [ObservableProperty] private bool isFlagged;
 

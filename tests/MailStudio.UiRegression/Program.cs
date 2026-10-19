@@ -549,6 +549,17 @@ internal static class Program
             rulesWin.Show();Field<TextBox>(rulesWin,"_aiBox").Text="tedarikçiden gelenler kırmızı kalın";await (Task)Invoke(rulesWin,"AiCreateAsync")!;
             Check(rulesWin.Rules.Count==1&&rulesWin.Rules[0].Bold&&rulesWin.Rules[0].TextColor=="#C42B1C"&&Field<TextBlock>(rulesWin,"_matchInfo").Text.Contains(L.IsEnglish?"1 of":"1 tanesi"),"AI creates a reviewable conditional formatting rule with live match count");
             Capture(rulesWin,"format-rules.png");rulesWin.Close();
+            // Email rules window + AI
+            var mailRulesStore = new RuleStore(Path.Combine(AppPaths.Root, "ui-rules.json"));
+            var mailRulesWin = new RulesWindow(mailRulesStore, new List<MailHeader>{new(){FromName="Anna Keller",FromAddress="anna@example.test",Subject="Teklif talebi",Date=DateTimeOffset.Now}},
+                (prompt,_)=>Task.FromResult(prompt.Contains("<tarif>")?"{\"Name\":\"Anna teklifleri\",\"Conditions\":[{\"Field\":\"from\",\"Value\":\"anna\"}],\"Actions\":[{\"Type\":\"move_to_folder\",\"Value\":\"Teklifler\"}],\"StopProcessing\":true,\"MatchAll\":true}":"{}"),()=>"Test");
+            mailRulesWin.Show();
+            Field<TextBox>(mailRulesWin,"_aiBox").Text="Anna'dan gelen teklifleri Teklifler klasörüne taşı";
+            await (Task)Invoke(mailRulesWin,"AiCreateAsync")!;
+            Check(mailRulesWin.Rules.Count==1&&mailRulesWin.Rules[0].Name=="Anna teklifleri"&&mailRulesWin.Rules[0].Actions[0].Type=="move_to_folder"&&Field<TextBlock>(mailRulesWin,"_matchInfo").Text.Contains(L.IsEnglish?"1 of":"1 tanesi"),"AI creates a reviewable email rule with live match count");
+            Audit(mailRulesWin, "RulesWindow");
+            Capture(mailRulesWin,"rules-window.png");
+            mailRulesWin.Close();
         }
         var trayMain=new MainWindow();
         trayMain.Loaded-=(RoutedEventHandler)Delegate.CreateDelegate(typeof(RoutedEventHandler),trayMain,trayMain.GetType().GetMethod("OnLoaded",Private)!);
@@ -631,6 +642,7 @@ internal static class Program
             var pickWin = new ContactsWindow(true); pickWin.Show(); await Task.Delay(300); Audit(pickWin, "ContactsWindow(pick)"); pickWin.Close();
             var cardWin = new ContactEditWindow(new Contact()); cardWin.Show(); await Task.Delay(300); Audit(cardWin, "ContactEditWindow"); cardWin.Close();
             var groupWin = new GroupEditWindow(new ContactGroup()); groupWin.Show(); await Task.Delay(300); Audit(groupWin, "GroupEditWindow"); groupWin.Close();
+            var auditRulesWin = new RulesWindow(new RuleStore(Path.Combine(AppPaths.Root, "audit-rules.json")), new List<MailHeader>(), (_, _) => Task.FromResult(""), () => "Test"); auditRulesWin.Show(); await Task.Delay(300); Audit(auditRulesWin, "RulesWindow"); auditRulesWin.Close();
             foreach (var t in TurkishLooking) Console.WriteLine("REVIEW " + t);
             foreach (var t in Untranslated) Console.WriteLine("UNTRANSLATED " + t);
             Check(Untranslated.Count == 0, "English UI: every visible UI string is translated");
