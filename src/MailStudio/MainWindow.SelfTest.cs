@@ -271,8 +271,9 @@ public partial class MainWindow
         foreach (var w in Application.Current.Windows.OfType<Window>().Where(x => x != this && x.IsVisible && x is not ReminderWindow).ToList())
         {
             Warn(step, $"window left open: {w.GetType().Name} '{w.Title}'");
-            try { w.Close(); } catch { }
+            if (w is ComposeWindow c) ForceClose(c); else try { w.Close(); } catch { }
         }
+        foreach (var c in OwnedWindows.OfType<ComposeWindow>().ToList()) ForceClose(c); // inline (hidden) composers too
     }
 
     // ---- message boxes: logged and answered (No / Cancel) from a background thread so nothing blocks
@@ -308,7 +309,10 @@ public partial class MainWindow
                         return true;
                     }, IntPtr.Zero);
                     Log("BOX", $"'{title}' {text.ToString().Trim().Replace("\n", " ")} → answered No/Cancel");
-                    PostMessage(h, 0x0010, IntPtr.Zero, IntPtr.Zero); // WM_CLOSE = Cancel/No
+                    // Yes/No boxes ignore WM_CLOSE: press No, then Cancel, then OK (whichever the box has)
+                    PostMessage(h, 0x0111, (IntPtr)7, IntPtr.Zero);  // WM_COMMAND IDNO
+                    PostMessage(h, 0x0111, (IntPtr)2, IntPtr.Zero);  // IDCANCEL
+                    PostMessage(h, 0x0111, (IntPtr)1, IntPtr.Zero);  // IDOK
                     return true;
                 }, IntPtr.Zero);
             }
@@ -395,11 +399,11 @@ public partial class MainWindow
         finally { foreach (var c in OwnedWindows.OfType<ComposeWindow>().ToList()) ForceClose(c); }
     }
 
-    /// <summary>Closes a compose window without the "save draft?" question.</summary>
+    /// <summary>Closes a compose window answering "save draft?" with No (nothing is saved or sent).</summary>
     static void ForceClose(ComposeWindow c)
     {
-        try { c.GetType().GetMethod("Discard", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public)?.Invoke(c, null); } catch { }
-        try { if (c.IsVisible) c.Close(); } catch { }
+        try { typeof(ComposeWindow).GetField("_confirmClose", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)?.SetValue(c, (Func<MessageBoxResult>)(() => MessageBoxResult.No)); } catch { }
+        try { c.Close(); } catch { }
     }
 
     async Task StepAttachments()
@@ -408,8 +412,8 @@ public partial class MainWindow
         {
             var m = MessageList.Items.OfType<MailHeader>().FirstOrDefault(x => x.Uid == uid);
             if (m == null) continue;
-            MessageList.SelectedItem = m; await Until(() => _current == m && _currentContent != null, 8000);
-            foreach (var att in _currentContent!.Attachments.ToList())
+            MessageList.SelectedItem = m; await Until(() => _current == m, 8000); await Wait(600);
+            foreach (var att in _cache.GetAttachments(m.AccountId, m.Folder, m.Uid).ToList())
             {
                 var name = "attachment " + att.FileName;
                 var before = Application.Current.Windows.OfType<Window>().ToHashSet();
