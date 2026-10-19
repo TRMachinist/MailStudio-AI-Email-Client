@@ -215,6 +215,7 @@ public partial class MainWindow : Window
         _initialized = true;
         if (_startInTray) HideToTray();
         _cache.Init();
+        _cache.Corrupted += () => Dispatcher.BeginInvoke(() => AddSystemChat(L.T("Yerel posta önbelleğinde bozuk bir bölüm bulundu. İletiler şimdilik sunucudan açılıyor; MailStudio'yu kapatıp açtığınızda önbellek kendiliğinden onarılır (hesaplar, taslaklar ve ekler etkilenmez).")));
         _store.Load();
         if (_cache.RepairedBackup != null)
             AddSystemChat(L.T("Yerel posta önbelleği bozuk bulundu (SQLite bütünlük hatası). Eski dosya silinmedi, şuraya taşındı:\n") + _cache.RepairedBackup +

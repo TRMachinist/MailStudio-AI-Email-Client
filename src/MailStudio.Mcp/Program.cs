@@ -54,7 +54,7 @@ public sealed class MailContext : IDisposable
     {
         Permission = permission;
         Store.Load();
-        Cache.Init();
+        Cache.Init(repair: false);
         OAuth = new OAuthService(() => Settings) { AllowInteractive = false };
         Mail = new MailService(Cache, OAuth);
     }

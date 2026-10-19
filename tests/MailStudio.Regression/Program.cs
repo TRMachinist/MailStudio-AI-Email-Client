@@ -36,6 +36,11 @@ await Test("corrupt cache is moved aside and rebuilt empty instead of serving wr
     Check(reopened.RepairedBackup!=null&&File.Exists(reopened.RepairedBackup),"Corrupt cache not preserved as backup");
     Check(reopened.GetHeaders("synthetic","INBOX").Count==0,"Rebuilt cache is not empty");
     var healthy=new MailCache(Path.Combine(root,"healthy.db"));healthy.Init();var again=new MailCache(Path.Combine(root,"healthy.db"));again.Init();Check(again.RepairedBackup==null,"Healthy cache was treated as corrupt");
+    var marked=Path.Combine(root,"marked.db");var m1=new MailCache(marked);m1.Init();m1.UpsertHeaders(new[]{new MailHeader{AccountId="synthetic",Folder="INBOX",Uid=1,Subject="x"}});
+    Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();File.WriteAllText(marked+".repair","x");
+    var helper=new MailCache(marked);helper.Init(repair:false);Check(helper.RepairedBackup==null&&helper.GetHeaders("synthetic","INBOX").Count==1,"helper process (MCP) must never move the cache");
+    Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+    var m2=new MailCache(marked);m2.Init();Check(m2.RepairedBackup!=null&&!File.Exists(marked+".repair")&&m2.GetHeaders("synthetic","INBOX").Count==0,"runtime corruption marker rebuilds the cache at next start");
 }));
 await Test("AI correction preserves technical numeric tokens and excludes quote instructions",()=>Sync(()=>
 {

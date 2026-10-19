@@ -23,8 +23,8 @@ public class MailCache
     /// </summary>
     public bool CheckAndRepair()
     {
-        if (!File.Exists(_path)) return false;
-        string? problem = null;
+        if (!File.Exists(_path)) { try { File.Delete(RepairMarker); } catch (IOException) { } return false; }
+        string? problem = File.Exists(RepairMarker) ? L.T("Çalışırken bozuk sayfa bulundu") : null;
         try
         {
             using var c = Open();
@@ -35,16 +35,22 @@ public class MailCache
             while (r.Read()) lines.Add(r.GetString(0));
             if (!(lines.Count == 1 && lines[0] == "ok")) problem = string.Join("; ", lines);
         }
-        catch (SqliteException ex) { problem = ex.Message; }
+        catch (SqliteException ex) { problem = (problem == null ? "" : problem + "; ") + ex.Message; }
         if (problem == null) return false;
         SqliteConnection.ClearAllPools();
         var dir = Path.Combine(Path.GetDirectoryName(_path)!, "cache-bozuk-yedek");
         Directory.CreateDirectory(dir);
         var stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
         var target = Path.Combine(dir, $"cache-{stamp}.db");
-        foreach (var suffix in new[] { "", "-wal", "-shm" })
-            if (File.Exists(_path + suffix)) File.Move(_path + suffix, target + suffix);
+        try
+        {
+            foreach (var suffix in new[] { "", "-wal", "-shm" })
+                if (File.Exists(_path + suffix)) File.Move(_path + suffix, target + suffix);
+        }
+        catch (IOException) { return false; } // another process (e.g. MailStudio itself while the agent server starts) still has it open
+        catch (UnauthorizedAccessException) { return false; }
         File.WriteAllText(Path.Combine(dir, $"cache-{stamp}.txt"), L.T("SQLite bütünlük kontrolü: ") + problem);
+        try { File.Delete(RepairMarker); } catch (IOException) { }
         RepairedBackup = target;
         return true;
     }
@@ -56,9 +62,10 @@ public class MailCache
         return c;
     }
 
-    public void Init()
+    /// <param name="repair">false for helper processes (MCP server): they must never move the file the app is using.</param>
+    public void Init(bool repair = true)
     {
-        CheckAndRepair();
+        if (repair) CheckAndRepair();
         using var c = Open();
         Exec(c, """
             PRAGMA journal_mode=WAL;
@@ -221,6 +228,12 @@ public class MailCache
 
     public void SaveBody(string account, string folder, uint uid, MailContent content)
     {
+        try { SaveBodyCore(account, folder, uid, content); }
+        catch (SqliteException ex) when (IsCorrupt(ex)) { OnCorrupt(); }
+    }
+
+    void SaveBodyCore(string account, string folder, uint uid, MailContent content)
+    {
         using var c = Open();
         Exec(c, "UPDATE messages SET body_html=$h, body_text=$t, cc=$cc, body_encoding_version=2 WHERE account=$a AND folder=$f AND uid=$u",
             ("$h", content.Html), ("$t", content.Text), ("$cc", content.Cc), ("$a", account), ("$f", folder), ("$u", (long)uid));
@@ -228,7 +241,27 @@ public class MailCache
             ("$t", content.Text), ("$a", account), ("$f", folder), ("$u", (long)uid));
     }
 
+    /// <summary>Set when SQLite reported a damaged file while running; the next start moves it aside and rebuilds.</summary>
+    public bool CorruptionDetected { get; private set; }
+    public event Action? Corrupted;
+    string RepairMarker => _path + ".repair";
+    static bool IsCorrupt(SqliteException ex) => ex.SqliteErrorCode is 11 or 26; // SQLITE_CORRUPT, SQLITE_NOTADB
+    void OnCorrupt()
+    {
+        if (CorruptionDetected) return;
+        CorruptionDetected = true;
+        try { File.WriteAllText(RepairMarker, DateTime.Now.ToString("O")); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        Corrupted?.Invoke();
+    }
+
+    /// <summary>Cached body, or null (= download from the server) when the row is unreadable.</summary>
     public MailContent? GetBody(string account, string folder, uint uid)
+    {
+        try { return GetBodyCore(account, folder, uid); }
+        catch (SqliteException ex) when (IsCorrupt(ex)) { OnCorrupt(); return null; }
+    }
+
+    MailContent? GetBodyCore(string account, string folder, uint uid)
     {
         using var c = Open();
         using var cmd = c.CreateCommand();
