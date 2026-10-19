@@ -90,11 +90,15 @@ public static class Ics
     static Prop? ParseLine(string line)
     {
         // NAME;PARAM=a;PARAM2="b:c":value  — colons inside quoted parameters are not the separator
-        var inQuote = false; var colon = -1;
+        // (also inside parentheses: some servers write TZID=(UTC+03:00) Istanbul without quotes)
+        var inQuote = false; var paren = 0; var colon = -1;
         for (var i = 0; i < line.Length; i++)
         {
-            if (line[i] == '"') inQuote = !inQuote;
-            else if (line[i] == ':' && !inQuote) { colon = i; break; }
+            var ch = line[i];
+            if (ch == '"') inQuote = !inQuote;
+            else if (!inQuote && ch == '(') paren++;
+            else if (!inQuote && ch == ')' && paren > 0) paren--;
+            else if (ch == ':' && !inQuote && paren == 0) { colon = i; break; }
         }
         if (colon <= 0) return null;
         var head = line[..colon]; var value = line[(colon + 1)..];
