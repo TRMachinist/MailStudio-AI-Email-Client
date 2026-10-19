@@ -409,18 +409,24 @@ public partial class ComposeWindow : Window
         if (sender is Button { Tag: string p }) _attachments.Remove(p);
     }
 
-    void OnPickTo(object sender, RoutedEventArgs e) => Pick(ToBox);
-    void OnPickCc(object sender, RoutedEventArgs e) => Pick(CcBox);
-    void OnPickBcc(object sender, RoutedEventArgs e) => Pick(BccBox);
+    void OnPickTo(object sender, RoutedEventArgs e) => Pick(ContactsWindow.Target.To);
+    void OnPickCc(object sender, RoutedEventArgs e) => Pick(ContactsWindow.Target.Cc);
+    void OnPickBcc(object sender, RoutedEventArgs e) => Pick(ContactsWindow.Target.Bcc);
 
-    void Pick(RecipientBox box)
+    /// <summary>Outlook "Select Names": one dialog fills To, Cc and Bcc.</summary>
+    void Pick(ContactsWindow.Target target)
     {
-        var w = new ContactsWindow(pickMode: true) { Owner = DialogOwner };
-        if (w.ShowDialog() == true && w.Picked.Count > 0)
+        var w = new ContactsWindow(pickMode: true, target) { Owner = DialogOwner };
+        if (w.ShowDialog() != true) return;
+        static void Append(RecipientBox box, string add)
         {
+            if (add.Length == 0) return;
             var cur = box.Text.Trim().TrimEnd(';');
-            box.Text = (cur.Length > 0 ? cur + "; " : "") + string.Join("; ", w.Picked.Select(c => c.Display)) + "; ";
+            box.Text = (cur.Length > 0 ? cur + "; " : "") + add + "; ";
         }
+        Append(ToBox, w.PickedTo);
+        Append(CcBox, w.PickedCc);
+        Append(BccBox, w.PickedBcc);
     }
 
     // ================================================================ Send / save

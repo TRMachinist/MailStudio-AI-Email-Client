@@ -111,6 +111,9 @@
                     <HeaderedContentControl Header="Gönder / Al" Style="{StaticResource RibbonGroup}">
                         <Button Style="{StaticResource RibbonCmd}" Tag="&#xE895;" Click="OnSyncAll" Content="Tüm Klasörleri Gönder/Al" ToolTip="F9"/>
                     </HeaderedContentControl>
+                    <HeaderedContentControl Header="Bul" Style="{StaticResource RibbonGroup}">
+                        <Button Style="{StaticResource RibbonCmd}" Tag="&#xE779;" Click="OnAddressBook" Content="Adres Defteri" ToolTip="Kişiler ve gruplar · Ctrl+Shift+B"/>
+                    </HeaderedContentControl>
                     <HeaderedContentControl Header="Yapay Zeka" Style="{StaticResource RibbonGroup}">
                         <StackPanel Orientation="Horizontal">
                             <Button Style="{StaticResource RibbonCmd}" Tag="&#xE8BD;" Click="OnAiSummarize" Content="Özetle"/>
@@ -467,9 +470,12 @@
                                 <TextBlock x:Name="AvatarText" Foreground="White" FontSize="14" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                             <StackPanel Grid.Column="1" Margin="12,0,0,0">
-                                <TextBlock x:Name="FromText" FontSize="13.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                                <TextBlock x:Name="ToText" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
-                                <TextBlock x:Name="CcText" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" TextTrimming="CharacterEllipsis" Margin="0,1,0,0"/>
+                                <TextBlock x:Name="FromText" Visibility="Collapsed"/>
+                                <TextBlock x:Name="ToText" Visibility="Collapsed"/>
+                                <TextBlock x:Name="CcText" Visibility="Collapsed"/>
+                                <StackPanel x:Name="FromPanel"/>
+                                <StackPanel x:Name="ToPanel" Margin="0,2,0,0"/>
+                                <StackPanel x:Name="CcPanel" Margin="0,1,0,0"/>
                             </StackPanel>
                             <TextBlock Grid.Column="2" x:Name="DateText" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" Margin="10,0,0,0"/>
                         </Grid>

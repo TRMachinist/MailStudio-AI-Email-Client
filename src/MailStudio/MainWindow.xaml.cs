@@ -61,9 +61,13 @@ public partial class MainWindow : Window
         if (startInTray) { ShowActivated = false; ShowInTaskbar = false; WindowState = WindowState.Minimized; }
         if (enableTray) _tray = new TrayController(ShowFromTray, () => _ = SyncAllAsync(silent: false), RequestExitAsync);
         _oauth = new OAuthService(() => _settings);
-        _contacts = new ContactBook(_cache);
+        _contacts = new ContactBook(_cache, new ContactStore());
         RecipientBox.Provider = q => _contacts.Suggest(q);
         ContactsWindow.Book = _contacts;
+        AddressChips.Store = _contacts.Store;
+        AddressChips.NewMailTo = to => OpenCompose(new ComposeRequest { To = to });
+        AddressChips.FindMailsOf = FindMailsOf;
+        ContactsWindow.FindMailsOf = FindMailsOf;
         ContactsWindow.NewMailTo = c => OpenCompose(new ComposeRequest { To = c.Display + "; " });
         _mail = new MailService(_cache, _oauth);
         _providers = new List<IAiProvider>
@@ -663,6 +667,16 @@ public partial class MainWindow : Window
         if (_currentFolder != null && string.IsNullOrEmpty(_searchQuery)) _currentFolder.UnreadCount = unread;
     }
 
+    /// <summary>Searches the current mailbox for a person's address (from the address links and the address book).</summary>
+    void FindMailsOf(string address)
+    {
+        Activate();
+        SearchBox.Text = address;
+        _searchQuery = address;
+        LoadMessagesFromCache();
+        Status(L.F("Arama: \"{0}\" ({1} sonuç)", _searchQuery, _messages.Count));
+    }
+
     void OnSearchKey(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Enter) { _searchQuery = SearchBox.Text.Trim(); LoadMessagesFromCache(); Status(_searchQuery.Length > 0 ? L.F("Arama: \"{0}\" ({1} sonuç)", _searchQuery, _messages.Count) : ""); }
@@ -691,6 +705,9 @@ public partial class MainWindow : Window
         FromText.Text = string.IsNullOrWhiteSpace(h.FromName) ? h.FromAddress : $"{h.FromName} <{h.FromAddress}>";
         ToText.Text = L.T("Kime: ") + h.To;
         CcText.Text = "";
+        AddressChips.Fill(FromPanel, null, string.IsNullOrWhiteSpace(h.FromName) ? h.FromAddress : $"\"{h.FromName}\" <{h.FromAddress}>", 13.5, bold: true, ThemeManager.Brush("TextPrimaryBrush"));
+        AddressChips.Fill(ToPanel, L.T("Kime: "), h.To);
+        AddressChips.Fill(CcPanel, null, null);
         DateText.Text = h.Date.ToLocalTime().ToString(L.T("dd.MM.yyyy ddd HH:mm"));
         AvatarText.Text = Initials(h.FromDisplay);
         AvatarBorder.Background = AvatarBrush(h.FromAddress);
@@ -736,6 +753,7 @@ public partial class MainWindow : Window
         _currentContent = c;
         try { OnSkillContext(h, c); } catch { }
         CcText.Text = string.IsNullOrWhiteSpace(c.Cc) ? "" : L.T("Bilgi: ") + c.Cc;
+        AddressChips.Fill(CcPanel, L.T("Bilgi: "), c.Cc);
         if (c.Attachments.Count > 0) AttachmentList.ItemsSource = c.Attachments;
         if (!_webReady) return;
 
@@ -785,6 +803,7 @@ public partial class MainWindow : Window
             case Key.Q when ctrl: SetReadSelected(true); break;
             case Key.U when ctrl: SetReadSelected(false); break;
             case Key.E when ctrl: SearchBox.Focus(); SearchBox.SelectAll(); break;
+            case Key.B when ctrl && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift): OnAddressBook(this, new RoutedEventArgs()); break;
             case Key.F9: OnSyncAll(this, e); break;
             case Key.F5: OnSyncCurrent(this, e); break;
             default: h = false; break;
@@ -947,6 +966,8 @@ public partial class MainWindow : Window
         catch (Exception ex) { Status(ex.Message); return; }
         _ = RequestExitAsync();
     }
+
+    void OnAddressBook(object sender, RoutedEventArgs e) => new ContactsWindow(pickMode: false) { Owner = this }.Also(FileViewers.ReturnFocusOnClose).Show();
 
     void OnNavSoon(object sender, RoutedEventArgs e)
     {

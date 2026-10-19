@@ -422,4 +422,43 @@ await Test("agents: MCP entry added and removed without touching other settings 
     }
     finally { AgentConnector.TestRoot = null; }
 }));
+await Test("contacts: Outlook/Gmail/Turkish CSV and vCard import, export round trip, groups in suggestions", () => Sync(() =>
+{
+    var outlook = "First Name,Last Name,E-mail Address,Company,Business Phone,Mobile Phone\r\nAnna,Keller,anna.keller@northwind.example,Northwind,\"+49 1, ext 2\",\r\n\"Tom\",\"Becker\",t.becker@contoso.example,,,+90 555\r\n";
+    var a = ContactStore.ParseCsv(outlook);
+    Check(a.Count == 2 && a[0].DisplayName == "Anna Keller" && a[0].Phone == "+49 1, ext 2" && a[1].Mobile == "+90 555", "Outlook CSV");
+    var tr = "Ad;Soyadı;E-posta Adresi;Şirket\nYasemin;Çelik;yasemin@ornek.test;Örnek Makina\n";
+    var b = ContactStore.ParseCsv(tr);
+    Check(b.Count == 1 && b[0].LastName == "Çelik" && b[0].Company == "Örnek Makina" && b[0].Email == "yasemin@ornek.test", "Turkish semicolon CSV");
+    var gmail = "Name,Given Name,Family Name,E-mail 1 - Value,Phone 1 - Value\nLisa Wong,Lisa,Wong,lisa@fabrikam.example,123\n";
+    Check(ContactStore.ParseCsv(gmail).Single().Email == "lisa@fabrikam.example", "Gmail CSV");
+    var vcf = "BEGIN:VCARD\r\nVERSION:3.0\r\nN:Keller;Anna;;;\r\nFN:Anna Keller\r\nEMAIL;TYPE=INTERNET:anna@x.example\r\nEMAIL:anna2@x.example\r\nTEL;TYPE=CELL:+49 170\r\nORG:North\\, wind;Sales\r\nNOTE:line1\\nline2\r\n folded\r\nEND:VCARD\r\n";
+    var v = ContactStore.ParseVCard(vcf).Single();
+    Check(v.FirstName == "Anna" && v.LastName == "Keller" && v.Email2 == "anna2@x.example" && v.Mobile == "+49 170" && v.Company == "North, wind" && v.Notes == "line1\nline2folded", "vCard parse");
+
+    var store = new ContactStore(Path.Combine(root, "contacts.json"));
+    var csvPath = Path.Combine(root, "c.csv"); File.WriteAllText(csvPath, outlook);
+    var r1 = store.Import(csvPath); var r2 = store.Import(csvPath);
+    Check(r1 == (2, 0) && r2 == (0, 2) && store.Contacts.Count == 2, "import does not duplicate");
+    var trPath = Path.Combine(root, "tr.csv"); System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+    File.WriteAllBytes(trPath, System.Text.Encoding.GetEncoding(1254).GetBytes(tr));
+    store.Import(trPath);
+    Check(store.FindByEmail("YASEMIN@ornek.test")?.LastName == "Çelik", "ANSI (1254) Turkish CSV and case-insensitive lookup");
+    store.Save(new ContactGroup { Name = "Kalite", Members = { "Anna Keller <anna.keller@northwind.example>", "qa@contoso.example" } });
+    var reloaded = new ContactStore(Path.Combine(root, "contacts.json"));
+    Check(reloaded.Contacts.Count == 3 && reloaded.Groups.Single().Members.Count == 2, "saved to disk");
+    var vOut = Path.Combine(root, "out.vcf"); reloaded.ExportVCard(vOut);
+    Check(ContactStore.ParseVCard(File.ReadAllText(vOut)).Count == 3, "vCard export round trip");
+    var cOut = Path.Combine(root, "out.csv"); reloaded.ExportCsv(cOut);
+    Check(ContactStore.ParseCsv(File.ReadAllText(cOut)).Any(c => c.Company == "Örnek Makina"), "CSV export round trip");
+
+    var book = new ContactBook(null, reloaded);
+    var kal = book.Suggest("kal").FirstOrDefault();
+    Check(kal is { IsGroup: true } && kal.Display.Contains("qa@contoso.example") && kal.Display.Contains("anna.keller@northwind.example"), "group suggestion expands to members");
+    Check(book.Suggest("örnek").Any(c => c.Saved && c.Address == "yasemin@ornek.test"), "company search");
+    reloaded.AddFromMail("Lisa Wong", "lisa@fabrikam.example");
+    Check(book.All.Any(c => c.Saved && c.Name == "Lisa Wong"), "store change refreshes the book");
+    var split = ContactStore.SplitAddresses("\"Keller, Anna\" <anna@x.example>; tom@y.example, Lisa <lisa@z.example>");
+    Check(split.Count == 3 && split[0].Name == "Keller, Anna" && split[1].Address == "tom@y.example", "address field split");
+}));
 Console.WriteLine($"RESULT {passed} passed. Synthetic evidence: {root}");

@@ -53,9 +53,11 @@ public class MessageWindow : Window
 
         var header = new StackPanel { Margin = new Thickness(18, 4, 18, 8) };
         header.Children.Add(new TextBlock { Text = h.SubjectDisplay, FontSize = 19, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) });
-        header.Children.Add(new TextBlock { Text = string.IsNullOrWhiteSpace(h.FromName) ? h.FromAddress : $"{h.FromName} <{h.FromAddress}>", FontSize = 14 });
-        header.Children.Add(new TextBlock { Text = L.T("Kime: ") + h.To, Foreground = ThemeManager.Brush("TextSecondaryBrush"), TextTrimming = TextTrimming.CharacterEllipsis });
-        if (!string.IsNullOrWhiteSpace(c.Cc)) header.Children.Add(new TextBlock { Text = L.T("Bilgi: ") + c.Cc, Foreground = ThemeManager.Brush("TextSecondaryBrush"), TextTrimming = TextTrimming.CharacterEllipsis });
+        var fromPanel = new StackPanel(); var toPanel = new StackPanel(); var ccPanel = new StackPanel();
+        AddressChips.Fill(fromPanel, null, string.IsNullOrWhiteSpace(h.FromName) ? h.FromAddress : $"\"{h.FromName}\" <{h.FromAddress}>", 14, bold: true, ThemeManager.Brush("TextPrimaryBrush"));
+        AddressChips.Fill(toPanel, L.T("Kime: "), h.To);
+        AddressChips.Fill(ccPanel, L.T("Bilgi: "), c.Cc);
+        header.Children.Add(fromPanel); header.Children.Add(toPanel); header.Children.Add(ccPanel);
         header.Children.Add(new TextBlock { Text = h.Date.ToLocalTime().ToString(L.T("dd.MM.yyyy dddd HH:mm")), Foreground = ThemeManager.Brush("TextSecondaryBrush") });
 
         var atts = new WrapPanel { Margin = new Thickness(18, 0, 18, 6) };

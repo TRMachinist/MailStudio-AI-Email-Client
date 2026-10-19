@@ -551,6 +551,9 @@ internal static class Program
             foreach (var w in Application.Current.Windows.OfType<Window>().Where(w => w.IsVisible).ToList()) Audit(w, w.GetType().Name);
             var accWin = new AccountWindow(null, new AppSettings(), new OAuthService(() => new AppSettings())); accWin.Show(); await Task.Delay(300); Audit(accWin, "AccountWindow"); Capture(accWin, "account-window.png"); accWin.Close();
             var contactsWin = new ContactsWindow(false); contactsWin.Show(); await Task.Delay(300); Audit(contactsWin, "ContactsWindow"); contactsWin.Close();
+            var pickWin = new ContactsWindow(true); pickWin.Show(); await Task.Delay(300); Audit(pickWin, "ContactsWindow(pick)"); pickWin.Close();
+            var cardWin = new ContactEditWindow(new Contact()); cardWin.Show(); await Task.Delay(300); Audit(cardWin, "ContactEditWindow"); cardWin.Close();
+            var groupWin = new GroupEditWindow(new ContactGroup()); groupWin.Show(); await Task.Delay(300); Audit(groupWin, "GroupEditWindow"); groupWin.Close();
             foreach (var t in TurkishLooking) Console.WriteLine("REVIEW " + t);
             foreach (var t in Untranslated) Console.WriteLine("UNTRANSLATED " + t);
             Check(Untranslated.Count == 0, "English UI: every visible UI string is translated");
