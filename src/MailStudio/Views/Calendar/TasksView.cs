@@ -142,7 +142,7 @@ public sealed class TasksView : UserControl
 
     void Refresh(string? select)
     {
-        var keep = select ?? (_list.SelectedItem as ListBoxItem)?.Tag switch { TaskItem t => t.Id, MailHeader m => Key(m), _ => null };
+        var keep = select ?? (_list.SelectedItem as ListBoxItem)?.Tag switch { TaskItem t => t.Id, MailHeader m => KeyOf(m), _ => null };
         _list.Items.Clear();
         var today = DateTime.Today; var weekEnd = Recurrence.WeekStart(today).AddDays(7);
         var tasks = _store.Tasks.Where(t => _filter switch
@@ -178,7 +178,7 @@ public sealed class TasksView : UserControl
             {
                 var item = new ListBoxItem { Content = MailRow(m), Tag = m };
                 _list.Items.Add(item);
-                if (Key(m) == keep) toSelect = item;
+                if (KeyOf(m) == keep) toSelect = item;
             }
         }
         if (_list.Items.Count == 0)
@@ -191,7 +191,7 @@ public sealed class TasksView : UserControl
         else if (_editing == null) ShowDetail(null, null);
     }
 
-    static string Key(MailHeader m) => $"{m.AccountId}|{m.Folder}|{m.Uid}";
+    static string KeyOf(MailHeader m) => $"{m.AccountId}|{m.Folder}|{m.Uid}";
 
     void Header(string text, int count, bool danger)
     {

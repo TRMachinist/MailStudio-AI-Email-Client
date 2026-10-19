@@ -64,7 +64,7 @@ public sealed class ReminderWindow : Window
     /// <summary>Updates the list; returns how many reminders are due.</summary>
     public int Update(DateTime now)
     {
-        var keep = _list.SelectedItems.OfType<ListBoxItem>().Select(i => i.Tag).Select(Key).ToHashSet();
+        var keep = _list.SelectedItems.OfType<ListBoxItem>().Select(i => i.Tag).Select(KeyOf).ToHashSet();
         var events = _calendar.DueReminders(now);
         var tasks = _tasks.DueReminders(now);
         _list.Items.Clear();
@@ -77,7 +77,7 @@ public sealed class ReminderWindow : Window
             sp.Children.Add(due);
             var item = new ListBoxItem { Content = sp, Tag = o };
             _list.Items.Add(item);
-            if (keep.Contains(Key(o))) item.IsSelected = true;
+            if (keep.Contains(KeyOf(o))) item.IsSelected = true;
         }
         foreach (var t in tasks)
         {
@@ -86,7 +86,7 @@ public sealed class ReminderWindow : Window
             sp.Children.Add(PimUi.Text(t.DueDate is { } d ? L.F("Son tarih: {0}", d.ToString("d", L.Culture)) : L.T("Görev"), 11.5, brush: "TextSecondaryBrush"));
             var item = new ListBoxItem { Content = sp, Tag = t };
             _list.Items.Add(item);
-            if (keep.Contains(Key(t))) item.IsSelected = true;
+            if (keep.Contains(KeyOf(t))) item.IsSelected = true;
         }
         var n = events.Count + tasks.Count;
         _head.Text = n == 1 ? L.T("1 anımsatıcı") : L.F("{0} anımsatıcı", n);
@@ -94,7 +94,7 @@ public sealed class ReminderWindow : Window
         return n;
     }
 
-    static string Key(object? o) => o switch { Occurrence x => "e" + x.Key, TaskItem t => "t" + t.Id, _ => "" };
+    static string KeyOf(object? o) => o switch { Occurrence x => "e" + x.Key, TaskItem t => "t" + t.Id, _ => "" };
 
     IEnumerable<object> Selected(bool all) => (all ? _list.Items.OfType<ListBoxItem>() : _list.SelectedItems.OfType<ListBoxItem>()).Select(i => i.Tag!).ToList();
 
