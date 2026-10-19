@@ -119,6 +119,7 @@ public sealed class CalendarView : UserControl
     {
         if (_mode == m && _body.Children.Count > 0) return;
         _mode = _lastMode = m; _selected = null; _slot = null;
+        if (_modeButtons.TryGetValue(m, out var rb) && rb.IsChecked != true) rb.IsChecked = true;
         Refresh();
     }
 

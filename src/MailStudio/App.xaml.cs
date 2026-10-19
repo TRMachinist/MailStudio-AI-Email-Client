@@ -79,6 +79,10 @@ public partial class App : Application
         MainWindow = window;
         _instance.Listen(Dispatcher, window.ShowFromTray);
         window.Show();
+        // --open calendar|tasks : start in that module (demo videos, shortcuts)
+        var openAt = Array.IndexOf(e.Args, "--open");
+        if (openAt >= 0 && openAt + 1 < e.Args.Length && Enum.TryParse<PimModule>(e.Args[openAt + 1], true, out var module))
+            window.ContentRendered += (_, _) => window.SwitchModule(module);
         var showcaseAt = Array.IndexOf(e.Args, "--showcase");
         if (demo && showcaseAt >= 0 && showcaseAt + 1 < e.Args.Length)
         {
