@@ -390,6 +390,7 @@ public partial class MainWindow
             if (w is ComposeWindow c) await Until(() => c.IsEditorInitialized, 15000);
             await Wait(800); Shot(w, "new mail"); CheckTexts(w, "new mail"); CheckAirspace(w, "new mail");
         });
+        await OpenAndInspect("missing attachment dialog", () => MissingAttachmentDialog.Show(this, "ektedir"));
         foreach (var c in OwnedWindows.OfType<ComposeWindow>().ToList()) ForceClose(c);
         InlineReplyCheck();
     }

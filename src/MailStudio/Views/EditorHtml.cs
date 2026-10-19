@@ -129,7 +129,7 @@ public static class EditorHtml
       clone.querySelectorAll('#ms-quote .ms-hdr').forEach(h => { h.style.borderTop = '1px solid #b5c4df'; h.style.paddingTop = '6px'; });
       return '<div style="font-family:Calibri,\'Segoe UI\',sans-serif;font-size:11pt;color:#222">' + clone.innerHTML + '</div>';
     },
-    snapshot() { return JSON.stringify({ html: this.exportHtml(), text: root.innerText, editable:this.draftHtml(), signature:document.getElementById('ms-signature').innerHTML, quote:this.quoteHtml() }); },
+    snapshot() { return JSON.stringify({ html: this.exportHtml(), text: root.innerText, draftText: draft() ? draft().innerText : root.innerText, editable:this.draftHtml(), signature:document.getElementById('ms-signature').innerHTML, quote:this.quoteHtml() }); },
     text() { return root.innerText; }
   };
 </script>

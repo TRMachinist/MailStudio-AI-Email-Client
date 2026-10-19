@@ -634,6 +634,24 @@ internal static class Program
             finally { AgentConnector.TestRoot = null; }
             Console.WriteLine("PASS skills, Excel preview and agents windows"); _passed++;
         }
+        {
+            // 1.8: Missing attachment prompt test
+            var testPromptTriggered = false;
+            string? capturedKeyword = null;
+            var missPromptWin = new ComposeWindow(new[] { account }, account.Id, new() { To = "supplier@example.test", Subject = "Missing attachment test", Body = "Teklifimiz ektedir." }, mail, (_, _) => Task.FromResult(""), () => "Test");
+            missPromptWin.MissingAttachmentPrompt = (kw) =>
+            {
+                testPromptTriggered = true;
+                capturedKeyword = kw;
+                return MissingAttachmentResult.Cancel;
+            };
+            missPromptWin.Show();
+            await Until(() => missPromptWin.IsEditorInitialized);
+            Invoke(missPromptWin, "OnSend", missPromptWin, new RoutedEventArgs());
+            await Until(() => testPromptTriggered);
+            Check(testPromptTriggered && capturedKeyword == "ektedir", "ComposeWindow triggers missing attachment prompt on Send without files");
+            Close(missPromptWin);
+        }
         if (L.IsEnglish)
         {
             foreach (var w in Application.Current.Windows.OfType<Window>().Where(w => w.IsVisible).ToList()) Audit(w, w.GetType().Name);
@@ -643,6 +661,18 @@ internal static class Program
             var cardWin = new ContactEditWindow(new Contact()); cardWin.Show(); await Task.Delay(300); Audit(cardWin, "ContactEditWindow"); cardWin.Close();
             var groupWin = new GroupEditWindow(new ContactGroup()); groupWin.Show(); await Task.Delay(300); Audit(groupWin, "GroupEditWindow"); groupWin.Close();
             var auditRulesWin = new RulesWindow(new RuleStore(Path.Combine(AppPaths.Root, "audit-rules.json")), new List<MailHeader>(), (_, _) => Task.FromResult(""), () => "Test"); auditRulesWin.Show(); await Task.Delay(300); Audit(auditRulesWin, "RulesWindow"); auditRulesWin.Close();
+
+            var auditMissingWin = new Window { Title = L.T("Ek unutulmuş olabilir") };
+            var sp = new StackPanel();
+            sp.Children.Add(new TextBlock { Text = L.T("Eki eklemeyi unuttunuz mu?") });
+            sp.Children.Add(new TextBlock { Text = L.T("İletinizde ekten bahsedilmiş ancak hiçbir dosya eklenmemiş. Yine de gönderilsin mi?") });
+            sp.Children.Add(new TextBlock { Text = L.F("Tespit edilen ifade: \"{0}\"", "attached") });
+            sp.Children.Add(new Button { Content = L.T("Dosya Ekle") });
+            sp.Children.Add(new Button { Content = L.T("Yine de Gönder") });
+            sp.Children.Add(new Button { Content = L.T("İptal") });
+            auditMissingWin.Content = sp;
+            auditMissingWin.Show(); await Task.Delay(200); Audit(auditMissingWin, "MissingAttachmentDialog"); auditMissingWin.Close();
+
             foreach (var t in TurkishLooking) Console.WriteLine("REVIEW " + t);
             foreach (var t in Untranslated) Console.WriteLine("UNTRANSLATED " + t);
             Check(Untranslated.Count == 0, "English UI: every visible UI string is translated");

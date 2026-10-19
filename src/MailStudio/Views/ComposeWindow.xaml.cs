@@ -62,6 +62,7 @@ public partial class ComposeWindow : Window
     public SendResult? LastSendResult { get; private set; }
     public Action<AccountConfig, ComposeRequest, int>? UndoSendAction { get; set; }
     public Action<AccountConfig, ComposeRequest, DateTimeOffset>? ScheduleSendAction { get; set; }
+    public Func<string, MissingAttachmentResult>? MissingAttachmentPrompt { get; set; }
     public int FollowUpDays => FollowUpCheck?.IsChecked == true && FollowUpDaysBox?.SelectedItem is ComboBoxItem item && int.TryParse(item.Tag as string, out var d) ? d : 0;
     public string SubjectText => SubjectBox?.Text ?? "";
     public string ToAddressText => ToBox?.Text ?? "";
@@ -474,6 +475,7 @@ public partial class ComposeWindow : Window
             QuotedHtml=EditorContent.Sanitize(snapshot.RootElement.GetProperty("quote").GetString()),
             BodyHtml = EditorContent.Sanitize(snapshot.RootElement.GetProperty("html").GetString()),
             Body = snapshot.RootElement.GetProperty("text").GetString() ?? "",
+            DraftText = snapshot.RootElement.TryGetProperty("draftText", out var dt) ? dt.GetString() : null,
             InReplyTo = _req.InReplyTo,
             CalendarIcs = _req.CalendarIcs, CalendarMethod = _req.CalendarMethod
         };
@@ -494,6 +496,20 @@ public partial class ComposeWindow : Window
             if (string.IsNullOrWhiteSpace(SubjectBox.Text) &&
                 MessageBox.Show(DialogOwner, L.T("Konu satırı boş. Yine de gönderilsin mi?"), L.T("İleti"), MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
             request = await CollectAsync();
+            if (_attachments.Count == 0 && AttachmentReminder.ShouldWarn(request.BodyHtml, request.Body, _attachments.Count, request.DraftText, request.QuotedHtml, request.SignatureHtml, out var missingKeyword))
+            {
+                var choice = MissingAttachmentPrompt != null
+                    ? MissingAttachmentPrompt(missingKeyword ?? "")
+                    : MissingAttachmentDialog.Show(DialogOwner, missingKeyword ?? "");
+
+                if (choice == MissingAttachmentResult.Cancel)
+                    return;
+                if (choice == MissingAttachmentResult.AddAttachment)
+                {
+                    OnAttach(this, new RoutedEventArgs());
+                    return;
+                }
+            }
             _drafts.Save(acc.Id, request);
 
             if (UndoSendAction != null && AppSettings.Shared.UndoSendSeconds > 0)
@@ -570,6 +586,20 @@ public partial class ComposeWindow : Window
                 MessageBox.Show(DialogOwner, L.T("Konu satırı boş. Yine de zamanlansın mı?"), L.T("İleti"), MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
 
             request = await CollectAsync();
+            if (_attachments.Count == 0 && AttachmentReminder.ShouldWarn(request.BodyHtml, request.Body, _attachments.Count, request.DraftText, request.QuotedHtml, request.SignatureHtml, out var missingKeyword))
+            {
+                var choice = MissingAttachmentPrompt != null
+                    ? MissingAttachmentPrompt(missingKeyword ?? "")
+                    : MissingAttachmentDialog.Show(DialogOwner, missingKeyword ?? "");
+
+                if (choice == MissingAttachmentResult.Cancel)
+                    return;
+                if (choice == MissingAttachmentResult.AddAttachment)
+                {
+                    OnAttach(this, new RoutedEventArgs());
+                    return;
+                }
+            }
             _drafts.Save(acc.Id, request);
 
             if (ScheduleSendAction != null)

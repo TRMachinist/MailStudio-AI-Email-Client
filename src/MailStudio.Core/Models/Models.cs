@@ -220,6 +220,8 @@ public class ComposeRequest
     public string Cc { get; set; } = "";
     public string Subject { get; set; } = "";
     public string Body { get; set; } = "";
+    /// <summary>Active draft plain text excluding quote and signature.</summary>
+    public string? DraftText { get; set; }
     /// <summary>Formatted body (HTML). If set it is sent instead of Body; Body is its plain-text version.</summary>
     public string? BodyHtml { get; set; }
     /// <summary>Quoted original message (HTML) below a reply/forward.</summary>

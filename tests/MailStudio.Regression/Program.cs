@@ -879,4 +879,55 @@ await Test("undo send and scheduled send: undo aborts before SMTP; scheduled sen
     Check(smtp.Mime.Contains("Morning Report"), "delivered message contains correct subject");
     Check(reloadedOutbox.Items.Count == 0, "sent item cleared from outbox queue");
 });
+
+await Test("missing attachment warning: Turkish/English keywords, false alarms, and quote stripping", () => Sync(() =>
+{
+    // 1. Positive Turkish triggers (0 attachments -> ShouldWarn is true)
+    string? kw;
+    Check(AttachmentReminder.ShouldWarn(null, "Detaylı teklif ekte bilginize sunulmuştur.", 0, null, null, null, out kw) && kw == "ekte", "TR keyword: ekte");
+    Check(AttachmentReminder.ShouldWarn(null, "Yeni çizimleri ekledim, kontrol eder misiniz?", 0, null, null, null, out kw) && kw == "ekledim", "TR keyword: ekledim");
+    Check(AttachmentReminder.ShouldWarn(null, "İlişikteki teknik şartnameye göre üretilecek.", 0, null, null, null, out kw) && kw == "ilişikteki", "TR keyword: ilişikteki");
+    Check(AttachmentReminder.ShouldWarn(null, "Teknik çizim ektedir.", 0, null, null, null, out kw) && kw == "ektedir", "TR keyword: ektedir");
+    Check(AttachmentReminder.ShouldWarn(null, "Ekli dosyada revizyon listesi mevcut.", 0, null, null, null, out kw) && kw == "ekli", "TR keyword: ekli");
+    Check(AttachmentReminder.ShouldWarn(null, "Ek dosyada tüm detaylar verilmiştir.", 0, null, null, null, out kw) && kw!.StartsWith("ek dosya"), "TR keyword: ek dosya");
+    Check(AttachmentReminder.ShouldWarn(null, "Parça modeli ilişiktedir.", 0, null, null, null, out kw) && kw == "ilişiktedir", "TR keyword: ilişiktedir");
+    Check(AttachmentReminder.ShouldWarn(null, "DXF dosyasını ekliyorum.", 0, null, null, null, out kw) && kw == "ekliyorum", "TR keyword: ekliyorum");
+
+    // 2. Positive English triggers (0 attachments -> ShouldWarn is true)
+    Check(AttachmentReminder.ShouldWarn(null, "Please find attached the revised drawing.", 0, null, null, null, out kw) && kw == "attached", "EN keyword: attached");
+    Check(AttachmentReminder.ShouldWarn(null, "See attachment for full tolerances.", 0, null, null, null, out kw) && kw == "attachment", "EN keyword: attachment");
+    Check(AttachmentReminder.ShouldWarn(null, "The purchase order is enclosed.", 0, null, null, null, out kw) && kw == "enclosed", "EN keyword: enclosed");
+    Check(AttachmentReminder.ShouldWarn(null, "I am enclosing the inspection report.", 0, null, null, null, out kw) && kw == "enclosing", "EN keyword: enclosing");
+    Check(AttachmentReminder.ShouldWarn(null, "See attached file.", 0, null, null, null, out kw) && (kw == "attached" || kw!.StartsWith("see attach")), "EN keyword: see attached");
+
+    // 3. Negative false alarm cases (0 attachments -> ShouldWarn is false)
+    Check(!AttachmentReminder.ShouldWarn(null, "Ek olarak yarınki toplantı saat 10:00'da.", 0, null, null, null, out _), "false alarm: ek olarak");
+    Check(!AttachmentReminder.ShouldWarn(null, "Konuyla ilgili ek bilgi gerekirse lütfen arayınız.", 0, null, null, null, out _), "false alarm: ek bilgi");
+    Check(!AttachmentReminder.ShouldWarn(null, "Ek bir sorunuz olursa yanıtlamaktan memnuniyet duyarım.", 0, null, null, null, out _), "false alarm: ek bir");
+    Check(!AttachmentReminder.ShouldWarn(null, "Proje için 2 günlük ek süre rica ediyoruz.", 0, null, null, null, out _), "false alarm: ek süre");
+    Check(!AttachmentReminder.ShouldWarn(null, "Bu revizyon için ek ücret alınmayacaktır.", 0, null, null, null, out _), "false alarm: ek ücret");
+    Check(!AttachmentReminder.ShouldWarn(null, "Ek protokol imzalandı.", 0, null, null, null, out _), "false alarm: ek protokol");
+    Check(!AttachmentReminder.ShouldWarn(null, "No strings attached for this promotional offer.", 0, null, null, null, out _), "false alarm: no strings attached");
+    Check(!AttachmentReminder.ShouldWarn(null, "The customer has an emotional attachment to the legacy model.", 0, null, null, null, out _), "false alarm: emotional attachment");
+    Check(!AttachmentReminder.ShouldWarn(null, "Download link: https://example.test/attached_documents/part.zip", 0, null, null, null, out _), "false alarm: URL containing attached");
+    Check(!AttachmentReminder.ShouldWarn(null, "Please write to attachment-service@company.test for questions.", 0, null, null, null, out _), "false alarm: email address containing attachment");
+
+    // 4. Quoted text stripping (keyword in original message, NOT in user's reply)
+    var replyBody = "Tamamdır, anlaştık.\n\n-----Original Message-----\nFrom: customer@example.test\nSubject: Order\nPlease find attached the quote.";
+    Check(!AttachmentReminder.ShouldWarn(null, replyBody, 0, null, null, null, out _), "quoted text in reply does not trigger warning");
+
+    var trReplyBody = "Revizyonu aldım, teşekkürler.\n\n> Ekteki dosyayı inceleyip onaylayabilir misiniz?\n> Saygılarımla";
+    Check(!AttachmentReminder.ShouldWarn(null, trReplyBody, 0, null, null, null, out _), "quoted text with > does not trigger warning");
+
+    var htmlWithQuote = "<p>Harika haber.</p><div id=\"ms-quote\">----- Özgün İleti -----<br>Ekte teklifimizi iletiyoruz.</div>";
+    Check(!AttachmentReminder.ShouldWarn(htmlWithQuote, null, 0, null, null, null, out _), "HTML quote section does not trigger warning");
+
+    // 5. Signature stripping
+    var htmlWithSig = "<p>Merhaba,</p><p>Yarın görüşürüz.</p><div id=\"ms-signature\"><p>--<br>Gizlilik Notu: Bu e-posta ve ilişikteki tüm belgeler gizlidir.</p></div>";
+    Check(!AttachmentReminder.ShouldWarn(htmlWithSig, null, 0, null, null, null, out _), "HTML signature disclaimer does not trigger warning");
+
+    // 6. When attachment IS present (attachments > 0 -> ShouldWarn is false even if keyword present)
+    Check(!AttachmentReminder.ShouldWarn(null, "Teknik resim ektedir.", 1, null, null, null, out _), "no warning when file is actually attached");
+    Check(!AttachmentReminder.ShouldWarn(null, "Please find attached the report.", 2, null, null, null, out _), "no warning when 2 files are attached");
+}));
 Console.WriteLine($"RESULT {passed} passed. Synthetic evidence: {root}");

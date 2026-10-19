@@ -118,5 +118,12 @@ if __name__ == '__main__':
         'Kime: {0}  ·  Zamanlandı: {1:g}': 'To: {0}  ·  Scheduled: {1:g}',
         'Konu satırı boş. Yine de zamanlansın mı?': 'Subject line is empty. Schedule anyway?',
         'Gönderme seçenekleri (Zamanlanmış gönder)': 'Send options (Schedule send)',
+        'Ek unutulmuş olabilir': 'Attachment may be missing',
+        'Eki eklemeyi unuttunuz mu?': 'Did you forget to attach a file?',
+        'İletinizde ekten bahsedilmiş ancak hiçbir dosya eklenmemiş. Yine de gönderilsin mi?': 'Your message mentions an attachment, but no files are attached. Send anyway?',
+        'Tespit edilen ifade: "{0}"': 'Detected phrase: "{0}"',
+        'Dosya Ekle': 'Add Attachment',
+        'Yine de Gönder': 'Send Anyway',
     }
     update_en(keys)
+
