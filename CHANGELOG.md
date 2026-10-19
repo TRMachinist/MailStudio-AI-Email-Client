@@ -19,6 +19,10 @@
   An agent still cannot send anything.
 - Calendar and tasks are stored only on this computer (`calendar.json`, `tasks.json` in the data folder).
 - Start option `--open calendar|tasks`.
+- Fixed: closing a new mail with "don't save" on a fresh installation raised an error and kept the window open.
+- Fixed: the Close button of the address book (and other Cancel/Close buttons of non-dialog windows) did nothing.
+- Fixed: the calendar and task views showed the last mail through them (the mail view is now hidden behind them).
+- Self-test: `MailStudio.exe --demo --selftest <folder>` and `tools\selftest\Run-SelfTest.ps1` drive the real app on the demo mailbox and write a log with real screenshots.
 - Saving settings, drafts, contacts and the calendar retries for a moment when antivirus or indexing briefly locks a freshly written file ("Access to the path is denied").
 
 ## 1.6.2 – Signature images and cache repair (2026-10-19)

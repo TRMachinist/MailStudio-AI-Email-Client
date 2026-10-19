@@ -22,7 +22,12 @@ public sealed class LocalDraftStore
         }
         finally { if (File.Exists(temp)) File.Delete(temp); }
     }
-    public void Delete(string id) => File.Delete(PathOf(id));
+    /// <summary>Removes the local copy (no error when it was never saved, e.g. the first mail on a new computer).</summary>
+    public void Delete(string id)
+    {
+        var path = PathOf(id);
+        if (File.Exists(path)) File.Delete(path);
+    }
     public IReadOnlyList<LocalDraft> List()
     {
         if (!Directory.Exists(_root)) return Array.Empty<LocalDraft>();

@@ -427,10 +427,11 @@ public partial class MainWindow
                 var before = Application.Current.Windows.OfType<Window>().ToHashSet();
                 var open = OpenAttachmentAsync(m, att);
                 if (!await Until(() => Application.Current.Windows.OfType<Window>().Any(x => !before.Contains(x) && x.IsVisible), 30000)) { Fail(name, "no viewer window opened"); continue; }
-                var w = Application.Current.Windows.OfType<Window>().First(x => !before.Contains(x) && x.IsVisible);
-                await Wait(2500); // let the viewer render (PDF, CAD, Office)
+                await Wait(2500); // let the viewer render (PDF, CAD, Office); Office files may switch to another window
+                var w = Application.Current.Windows.OfType<Window>().LastOrDefault(x => !before.Contains(x) && x.IsVisible);
+                if (w == null) { Fail(name, "viewer window closed by itself"); continue; }
                 await InspectWindow(w, name, closeWithButton: false);
-                w.Close();
+                foreach (var extra in Application.Current.Windows.OfType<Window>().Where(x => !before.Contains(x) && x.IsVisible).ToList()) extra.Close();
                 await Until(() => open.IsCompleted, 3000);
             }
         }
