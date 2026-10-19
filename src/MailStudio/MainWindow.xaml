@@ -45,6 +45,7 @@
             <RowDefinition Height="Auto"/>   <!-- sekmeler -->
             <RowDefinition Height="Auto"/>   <!-- ribbon -->
             <RowDefinition Height="*"/>      <!-- content -->
+            <RowDefinition Height="Auto"/>   <!-- undo send bar -->
             <RowDefinition Height="Auto"/>   <!-- status bar -->
         </Grid.RowDefinitions>
 
@@ -637,8 +638,20 @@
             <ContentControl Grid.Column="2" Grid.ColumnSpan="5" x:Name="PimHost" Visibility="Collapsed" Panel.ZIndex="20" Focusable="False"/>
         </Grid>
 
+        <!-- ================= UNDO SEND NOTIFICATION BAR ================= -->
+        <Border Grid.Row="3" x:Name="UndoSendBar" Background="{DynamicResource AccentSubtleBrush}" BorderBrush="{DynamicResource AccentPrimaryBrush}" BorderThickness="0,1,0,1" MinHeight="36" Padding="14,4" Visibility="Collapsed">
+            <DockPanel LastChildFill="False">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="&#xE724;" FontFamily="{StaticResource Icons}" FontSize="15" Foreground="{DynamicResource AccentPrimaryBrush}" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="UndoSendText" Text="İleti 10 sn içinde gönderilecek..." FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,16,0" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                    <Button x:Name="UndoSendButton" Content="Geri Al" Click="OnUndoSendClick" Style="{StaticResource PrimaryButton}" Padding="12,2" Margin="0,0,8,0" FontWeight="SemiBold"/>
+                    <Button x:Name="SendNowButton" Content="Şimdi Gönder" Click="OnSendNowClick" Style="{StaticResource FlatButton}" Padding="8,2"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
         <!-- ================= STATUS BAR ================= -->
-        <Border Grid.Row="3" Background="{DynamicResource AccentHeaderBrush}" MinHeight="24">
+        <Border Grid.Row="4" Background="{DynamicResource AccentHeaderBrush}" MinHeight="24">
             <DockPanel Margin="10,0">
                 <TextBlock x:Name="ConnText" DockPanel.Dock="Right" Foreground="{DynamicResource TextOnAccentBrush}" FontSize="12" VerticalAlignment="Center" Text="Bağlı değil"/>
                 <TextBlock x:Name="OfflineText" DockPanel.Dock="Right" Foreground="{DynamicResource TextOnAccentBrush}" FontSize="12" Opacity="0.9" VerticalAlignment="Center" Margin="0,0,24,0"

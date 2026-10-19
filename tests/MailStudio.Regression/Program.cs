@@ -814,4 +814,69 @@ await Test("follow-up: reply clears follow-up; expired deadline creates task", (
     var reloadedStore = new FollowUpStore(storePath);
     Check(reloadedStore.FollowUps.Count == 2 && reloadedStore.FollowUps.All(f => f.IsResolved), "follow-ups saved and reloaded with resolved status");
 }));
+await Test("undo send and scheduled send: undo aborts before SMTP; scheduled send waits until due time", async () =>
+{
+    await using var imap = new FakeImap();
+    await using var smtp = new FakeSmtp();
+    var acc = Account(imap, smtp);
+    var cache = Cache("outbox-test");
+    var service = Service(cache, "outbox-test");
+
+    var outboxPath = Path.Combine(root, "test-outbox.json");
+    var outbox = new OutboxStore(outboxPath);
+
+    // 1. Undo Send: queued with 10s delay. Before delay expires, NO SMTP packets are sent.
+    var reqUndo = new ComposeRequest { To = "alice@example.test", Subject = "Urgent update", Body = "Sent with undo" };
+    var undoItem = new OutboxItem
+    {
+        AccountId = acc.Id,
+        Request = reqUndo,
+        ScheduledTime = DateTimeOffset.Now.AddSeconds(10),
+        IsUndoSend = true,
+        Status = "Scheduled"
+    };
+    outbox.Add(undoItem);
+
+    // Attempt processing at current time: should not send because scheduled time is in future
+    var sentUndo0 = await outbox.ProcessDueSendsAsync(_ => acc, service, DateTimeOffset.Now);
+    Check(sentUndo0 == 0, "undo item not sent immediately");
+    Check(smtp.Accepted == 0, "no SMTP packets sent while in undo window");
+
+    // User clicks "Geri Al" (Undo): item is removed from outbox
+    outbox.Remove(undoItem.Id);
+
+    // Time advances past 10 seconds: item was removed, so nothing sends
+    var sentUndoPast = await outbox.ProcessDueSendsAsync(_ => acc, service, DateTimeOffset.Now.AddSeconds(15));
+    Check(sentUndoPast == 0, "cancelled undo item is never sent");
+    Check(smtp.Accepted == 0, "still zero SMTP packets sent after undo window");
+
+    // 2. Scheduled Send (Send Later): scheduled for 2 hours in the future
+    var reqScheduled = new ComposeRequest { To = "bob@example.test", Subject = "Morning Report", Body = "Scheduled for 9am" };
+    var scheduledTime = DateTimeOffset.Now.AddHours(2);
+    var schedItem = new OutboxItem
+    {
+        AccountId = acc.Id,
+        Request = reqScheduled,
+        ScheduledTime = scheduledTime,
+        IsUndoSend = false,
+        Status = "Scheduled"
+    };
+    outbox.Add(schedItem);
+
+    // Test before scheduled time: should NOT send
+    var sentBefore = await outbox.ProcessDueSendsAsync(_ => acc, service, DateTimeOffset.Now.AddHours(1));
+    Check(sentBefore == 0, "scheduled item not sent before its time");
+    Check(smtp.Accepted == 0, "no SMTP packets before scheduled time");
+
+    // Test persistence: outbox saved and reloaded
+    var reloadedOutbox = new OutboxStore(outboxPath);
+    Check(reloadedOutbox.Items.Count == 1 && reloadedOutbox.Items[0].Request.Subject == "Morning Report", "scheduled item survived restart in outbox.json");
+
+    // Test when due time arrives: sends via SMTP and clears from outbox
+    var sentOnTime = await reloadedOutbox.ProcessDueSendsAsync(_ => acc, service, scheduledTime.AddMinutes(1));
+    Check(sentOnTime == 1, "scheduled item sent when due");
+    Check(smtp.Accepted == 1, "exactly one SMTP message delivered");
+    Check(smtp.Mime.Contains("Morning Report"), "delivered message contains correct subject");
+    Check(reloadedOutbox.Items.Count == 0, "sent item cleared from outbox queue");
+});
 Console.WriteLine($"RESULT {passed} passed. Synthetic evidence: {root}");

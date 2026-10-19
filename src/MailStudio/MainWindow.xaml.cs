@@ -27,6 +27,11 @@ public partial class MainWindow : Window
     readonly RuleStore _ruleStore = new();
     readonly FollowUpStore _followUpStore = new();
     public FollowUpStore FollowUpStore => _followUpStore;
+    readonly OutboxStore _outbox = new();
+    public OutboxStore OutboxStore => _outbox;
+    readonly DispatcherTimer _queueTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    OutboxItem? _activeUndoItem;
+    AccountConfig? _activeUndoAccount;
     readonly Dictionary<string, InboxWatcher> _watchers = new();
     readonly HashSet<string> _alertReady = new();
     readonly AppSettings _settings = AppSettings.Shared;
@@ -98,6 +103,8 @@ public partial class MainWindow : Window
 
         SearchBox.TextChanged += (_, _) => SearchPlaceholder.Visibility = SearchBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         AiInput.TextChanged += (_, _) => AiPlaceholder.Visibility = AiInput.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        _queueTimer.Tick += (_, _) => QueueTick();
+        _queueTimer.Start();
         TellMeBox.TextChanged += (_, _) => TellMePlaceholder.Visibility = TellMeBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         _themeInit = true;
         (ThemeManager.Parse(_settings.Theme) switch { ThemeMode.Dark => ThemeDark, ThemeMode.Light => ThemeLight, _ => ThemeSystem }).IsChecked = true;
@@ -966,6 +973,21 @@ public partial class MainWindow : Window
             var dir = Path.Combine(AppPaths.Root, "submissions"); Directory.CreateDirectory(dir);
             Process.Start(new ProcessStartInfo(dir) { UseShellExecute = true });
         });
+        var outboxCount = _outbox.Items.Count(i => !i.IsUndoSend && i.Status == "Scheduled");
+        Add(outboxCount > 0 ? L.F("Giden Kutusu ({0} zamanlanmış)…", outboxCount) : L.T("Giden Kutusu (Zamanlanmış)…"), (_, _) =>
+        {
+            var w = new OutboxWindow(_outbox, (r, a) => OpenCompose(r, a, popOut: true), (a, r) => DoSendAsync(a, r), Acc, this);
+            w.ShowDialog();
+        });
+        var undoSendMenu = new MenuItem { Header = L.T("Göndermeyi geri alma süresi") };
+        foreach (var (sec, label) in new[] { (0, L.T("Kapalı")), (5, "5 " + L.T("sn")), (10, "10 " + L.T("sn")), (20, "20 " + L.T("sn")), (30, "30 " + L.T("sn")) })
+        {
+            var item = new MenuItem { Header = label, IsCheckable = true, IsChecked = _settings.UndoSendSeconds == sec };
+            var s = sec;
+            item.Click += (_, _) => { _settings.UndoSendSeconds = s; _settings.Save(); Status(L.F("Göndermeyi geri alma: {0}", label)); };
+            undoSendMenu.Items.Add(item);
+        }
+        menu.Items.Add(undoSendMenu);
         Add(L.T("Veri klasörünü aç"), (_, _) => Process.Start("explorer.exe", AppPaths.Root));
         var lang = new MenuItem { Header = "Dil / Language" };
         foreach (var (code, name) in new[] { ("tr", "Türkçe"), ("en", "English") })
@@ -1093,6 +1115,8 @@ public partial class MainWindow : Window
         var w = new ComposeWindow(_store.Accounts, accId, req, _mail, AiCompleteAsync, () => CurrentProvider.Name,
             aiOptions:new ComposeAiOptions(_providers,CurrentProvider.Name,CurrentModel),saveAccounts:_store.Save) { Owner = this };
         FileViewers.ReturnFocusOnClose(w);
+        w.UndoSendAction = (acc, r, secs) => QueueSend(acc, r, secs);
+        w.ScheduleSendAction = (acc, r, time) => ScheduleSend(acc, r, time);
         w.Closed += (_, _) => _openDrafts.Remove(req.DraftId);
         w.Sent += async (_, _) =>
         {
@@ -1123,6 +1147,130 @@ public partial class MainWindow : Window
             _ = StartInlineSafeAsync(w);
         }
         else w.Show();
+    }
+
+    public async Task DoSendAsync(AccountConfig acc, ComposeRequest req)
+    {
+        try
+        {
+            Status(L.T("Gönderiliyor..."));
+            var res = await _mail.SendAsync(acc, req, _lifetime.Token);
+            Status(res.Warning ?? L.T("İleti sunucu tarafından kabul edildi."));
+            if (req.FollowUpDays > 0)
+            {
+                var due = DateTimeOffset.Now.AddDays(req.FollowUpDays);
+                _followUpStore.Add(new FollowUpItem
+                {
+                    AccountId = acc.Id,
+                    MessageId = res.MessageId ?? "",
+                    Subject = req.Subject,
+                    Recipients = req.To,
+                    SentDate = DateTimeOffset.Now,
+                    DueDays = req.FollowUpDays,
+                    DueDate = due
+                });
+            }
+            var sent = _roots.SelectMany(r => r.Children).FirstOrDefault(f => f.AccountId == acc.Id && f.SortOrder == 2);
+            if (sent != null) await SyncFolderAsync(sent, silent: true);
+        }
+        catch (Exception ex)
+        {
+            Status(L.T("Gönderilemedi: ") + ex.Message);
+        }
+    }
+
+    public void QueueSend(AccountConfig acc, ComposeRequest req, int undoSeconds)
+    {
+        if (undoSeconds <= 0)
+        {
+            _ = DoSendAsync(acc, req);
+            return;
+        }
+
+        var item = new OutboxItem
+        {
+            AccountId = acc.Id,
+            Request = req,
+            ScheduledTime = DateTimeOffset.Now.AddSeconds(undoSeconds),
+            IsUndoSend = true,
+            Status = "Scheduled"
+        };
+        _activeUndoItem = item;
+        _activeUndoAccount = acc;
+        _outbox.Add(item);
+
+        UndoSendText.Text = L.F("İleti {0} sn içinde gönderilecek...", undoSeconds);
+        UndoSendBar.Visibility = Visibility.Visible;
+    }
+
+    public void ScheduleSend(AccountConfig acc, ComposeRequest req, DateTimeOffset scheduledTime)
+    {
+        var item = new OutboxItem
+        {
+            AccountId = acc.Id,
+            Request = req,
+            ScheduledTime = scheduledTime,
+            IsUndoSend = false,
+            Status = "Scheduled"
+        };
+        _outbox.Add(item);
+        Status(L.F("İleti zamanlandı: {0:g}", scheduledTime.LocalDateTime));
+    }
+
+    void OnUndoSendClick(object sender, RoutedEventArgs e)
+    {
+        if (_activeUndoItem == null) return;
+        var item = _activeUndoItem;
+        var acc = _activeUndoAccount;
+        _activeUndoItem = null;
+        _activeUndoAccount = null;
+        _outbox.Remove(item.Id);
+        UndoSendBar.Visibility = Visibility.Collapsed;
+        Status(L.T("Gönderim geri alındı."));
+        OpenCompose(item.Request, acc?.Id, popOut: true);
+    }
+
+    async void OnSendNowClick(object sender, RoutedEventArgs e)
+    {
+        if (_activeUndoItem == null || _activeUndoAccount == null) return;
+        var item = _activeUndoItem;
+        var acc = _activeUndoAccount;
+        _activeUndoItem = null;
+        _activeUndoAccount = null;
+        _outbox.Remove(item.Id);
+        UndoSendBar.Visibility = Visibility.Collapsed;
+        await DoSendAsync(acc, item.Request);
+    }
+
+    async void QueueTick()
+    {
+        var now = DateTimeOffset.Now;
+        if (_activeUndoItem != null && _activeUndoAccount != null)
+        {
+            var remaining = (_activeUndoItem.ScheduledTime - now).TotalSeconds;
+            if (remaining > 0)
+            {
+                UndoSendText.Text = L.F("İleti {0} sn içinde gönderilecek...", (int)Math.Ceiling(remaining));
+            }
+            else
+            {
+                var item = _activeUndoItem;
+                var acc = _activeUndoAccount;
+                _activeUndoItem = null;
+                _activeUndoAccount = null;
+                UndoSendBar.Visibility = Visibility.Collapsed;
+                _outbox.Remove(item.Id);
+                await DoSendAsync(acc, item.Request);
+            }
+        }
+
+        if (_outbox.GetPendingDue(now).Count > 0)
+        {
+            await _outbox.ProcessDueSendsAsync(Acc, _mail, now, onSent: (item, res) =>
+            {
+                Status(L.F("Zamanlanmış ileti gönderildi: {0}", item.Request.Subject));
+            }, ct: _lifetime.Token);
+        }
     }
 
     async Task StartInlineSafeAsync(ComposeWindow composer){try{await composer.StartInlineAsync();}catch(Exception ex){Status(L.T("Yanıt editörü açılamadı: ")+ex.Message);}}

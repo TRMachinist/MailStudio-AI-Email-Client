@@ -186,12 +186,21 @@
                 <RowDefinition Height="30"/>
                 <RowDefinition Height="28"/>
             </Grid.RowDefinitions>
-            <Button Grid.RowSpan="3" x:Name="SendButton" Click="OnSend" Style="{StaticResource MsPrimaryButtonStyle}" Margin="0,2,12,2" Padding="4" ToolTip="Gönder (Ctrl+Enter)">
-                <StackPanel>
-                    <TextBlock Text="&#xE724;" FontFamily="{StaticResource Icons}" FontSize="24" HorizontalAlignment="Center"/>
-                    <TextBlock Text="Gönder" HorizontalAlignment="Center" Margin="0,5,0,0"/>
-                </StackPanel>
-            </Button>
+            <Grid Grid.RowSpan="3" Margin="0,2,12,2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="20"/>
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" x:Name="SendButton" Click="OnSend" Style="{StaticResource MsPrimaryButtonStyle}" Padding="2,4" ToolTip="Gönder (Ctrl+Enter)">
+                    <StackPanel>
+                        <TextBlock Text="&#xE724;" FontFamily="{StaticResource Icons}" FontSize="24" HorizontalAlignment="Center"/>
+                        <TextBlock Text="Gönder" HorizontalAlignment="Center" Margin="0,5,0,0"/>
+                    </StackPanel>
+                </Button>
+                <Button Grid.Column="1" x:Name="SendMenuButton" Click="OnSendMenuClick" Style="{StaticResource MsPrimaryButtonStyle}" Margin="1,0,0,0" Padding="0" ToolTip="Gönderme seçenekleri (Zamanlanmış gönder)">
+                    <TextBlock Text="&#xE70D;" FontFamily="{StaticResource Icons}" FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Button>
+            </Grid>
             <TextBlock Grid.Column="1" Text="Kimden" VerticalAlignment="Center" Margin="0,0,10,0" Width="62" Foreground="{DynamicResource TextSecondaryBrush}"/>
             <ComboBox Grid.Column="2" x:Name="FromBox" MinHeight="26" Margin="0,2" DisplayMemberPath="Email"/>
             <Button Grid.Row="1" Grid.Column="1" Content="Kime…" Style="{StaticResource HeaderBtn}" Click="OnPickTo"/>

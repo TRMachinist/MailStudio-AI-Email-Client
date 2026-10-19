@@ -60,6 +60,8 @@ public partial class ComposeWindow : Window
     readonly LocalDraftStore _drafts = new();
     readonly System.Windows.Threading.DispatcherTimer _autosave = new();
     public SendResult? LastSendResult { get; private set; }
+    public Action<AccountConfig, ComposeRequest, int>? UndoSendAction { get; set; }
+    public Action<AccountConfig, ComposeRequest, DateTimeOffset>? ScheduleSendAction { get; set; }
     public int FollowUpDays => FollowUpCheck?.IsChecked == true && FollowUpDaysBox?.SelectedItem is ComboBoxItem item && int.TryParse(item.Tag as string, out var d) ? d : 0;
     public string SubjectText => SubjectBox?.Text ?? "";
     public string ToAddressText => ToBox?.Text ?? "";
@@ -73,7 +75,7 @@ public partial class ComposeWindow : Window
     {
         ComposeRibbon.IsEnabled = !busy;
         ComposeTools.IsEnabled = !busy;
-        SendButton.IsEnabled = !busy && _editorReady && !_uncertain;
+        SendButton.IsEnabled = SendMenuButton.IsEnabled = !busy && _editorReady && !_uncertain;
         FromBox.IsEnabled = ToBox.IsEnabled = CcBox.IsEnabled = BccBox.IsEnabled = SubjectBox.IsEnabled = !busy;
         Editor.IsEnabled = !busy; AttachList.IsEnabled = !busy;
     }
@@ -136,7 +138,7 @@ public partial class ComposeWindow : Window
             catch (Exception ex) { StatusText.Text = L.T("Yerel kurtarma kopyası kaydedilemedi: ") + ex.Message; }
             finally { _state.End(); }
         };
-        SendButton.IsEnabled = false;
+        SendButton.IsEnabled = SendMenuButton.IsEnabled = false;
         Loaded += async (_, _) =>
         {
             try { await EnsureEditorAsync(); if (!_closed) _autosave.Start(); }
@@ -491,9 +493,19 @@ public partial class ComposeWindow : Window
             { StatusText.Text = L.T("En az bir alıcı girin."); return; }
             if (string.IsNullOrWhiteSpace(SubjectBox.Text) &&
                 MessageBox.Show(DialogOwner, L.T("Konu satırı boş. Yine de gönderilsin mi?"), L.T("İleti"), MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
-            StatusText.Text = L.T("Gönderiliyor...");
             request = await CollectAsync();
             _drafts.Save(acc.Id, request);
+
+            if (UndoSendAction != null && AppSettings.Shared.UndoSendSeconds > 0)
+            {
+                _sent = true;
+                UndoSendAction(acc, request, AppSettings.Shared.UndoSendSeconds);
+                _closingConfirmed = true;
+                Close();
+                return;
+            }
+
+            StatusText.Text = L.T("Gönderiliyor...");
             LastSendResult = await _mail.SendAsync(acc, request);
             _sent = true;
             if (LastSendResult.Warning != null)
@@ -512,6 +524,96 @@ public partial class ComposeWindow : Window
             try { Sent?.Invoke(this, EventArgs.Empty); }
             finally { Close(); }
         }
+    }
+
+    void OnSendMenuClick(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu { PlacementTarget = (UIElement)sender, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        var title = new MenuItem { Header = L.T("Zamanlanmış gönder:"), IsEnabled = false, FontWeight = FontWeights.SemiBold };
+        menu.Items.Add(title);
+        menu.Items.Add(new Separator());
+
+        var tomorrow = DateTime.Today.AddDays(1).AddHours(9);
+        var tomorrowItem = new MenuItem { Header = L.F("Yarın sabah ({0:dddd 09:00})", tomorrow) };
+        tomorrowItem.Click += async (_, _) => await ScheduleSendAsync(tomorrow);
+        menu.Items.Add(tomorrowItem);
+
+        var daysUntilMon = ((int)DayOfWeek.Monday - (int)DateTime.Today.DayOfWeek + 7) % 7;
+        if (daysUntilMon == 0) daysUntilMon = 7;
+        var monday = DateTime.Today.AddDays(daysUntilMon).AddHours(9);
+        var mondayItem = new MenuItem { Header = L.F("Pazartesi sabah ({0:d MMM 09:00})", monday) };
+        mondayItem.Click += async (_, _) => await ScheduleSendAsync(monday);
+        menu.Items.Add(mondayItem);
+
+        menu.Items.Add(new Separator());
+        var customItem = new MenuItem { Header = L.T("Özel tarih ve saat…") };
+        customItem.Click += async (_, _) =>
+        {
+            var picked = PickScheduleTime(DialogOwner, DateTime.Today.AddDays(1).AddHours(9));
+            if (picked.HasValue) await ScheduleSendAsync(picked.Value);
+        };
+        menu.Items.Add(customItem);
+        menu.IsOpen = true;
+    }
+
+    async Task ScheduleSendAsync(DateTime scheduledLocal)
+    {
+        if (_uncertain || !_contentReady || _aiCts != null || !_state.TryBegin()) return;
+        SetBusy(true);
+        ComposeRequest? request = null;
+        try
+        {
+            if (From is not { } acc) return;
+            if (string.IsNullOrWhiteSpace(ToBox.Text) && string.IsNullOrWhiteSpace(CcBox.Text) && string.IsNullOrWhiteSpace(BccBox.Text))
+            { StatusText.Text = L.T("En az bir alıcı girin."); return; }
+            if (string.IsNullOrWhiteSpace(SubjectBox.Text) &&
+                MessageBox.Show(DialogOwner, L.T("Konu satırı boş. Yine de zamanlansın mı?"), L.T("İleti"), MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+
+            request = await CollectAsync();
+            _drafts.Save(acc.Id, request);
+
+            if (ScheduleSendAction != null)
+            {
+                _sent = true;
+                ScheduleSendAction(acc, request, new DateTimeOffset(scheduledLocal));
+                _closingConfirmed = true;
+                Close();
+                return;
+            }
+            StatusText.Text = L.F("İleti zamanlandı: {0:g}", scheduledLocal);
+        }
+        catch (Exception ex) { StatusText.Text = L.T("Zamanlanamadı: ") + ex.Message; }
+        finally { if (request != null) RememberDraft(request); _state.End(); SetBusy(false); }
+    }
+
+    public static DateTime? PickScheduleTime(Window owner, DateTime initial)
+    {
+        var dlg = new Window
+        {
+            Title = L.T("Zamanlanmış Gönder"),
+            Width = 360,
+            Height = 180,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = owner,
+            ResizeMode = ResizeMode.NoResize,
+            Background = ThemeManager.Brush("BgSurfacePrimaryBrush"),
+            ShowInTaskbar = false
+        };
+        var sp = new StackPanel { Margin = new Thickness(20) };
+        sp.Children.Add(new TextBlock { Text = L.T("İletinin gönderileceği tarih ve saati seçin:"), FontSize = 12.5, Margin = new Thickness(0, 0, 0, 14), Foreground = ThemeManager.Brush("TextPrimaryBrush") });
+        var dt = new Calendar.DateTimeField(initial, showTime: true) { Margin = new Thickness(0, 0, 0, 20) };
+        sp.Children.Add(dt);
+        var bp = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        var ok = new Button { Content = L.T("Zamanla"), Style = (Style)dlg.FindResource("PrimaryButton"), Padding = new Thickness(14, 4, 14, 4), Margin = new Thickness(0, 0, 8, 0), IsDefault = true };
+        var cancel = new Button { Content = L.T("İptal"), Style = (Style)dlg.FindResource("FlatButton"), Padding = new Thickness(14, 4, 14, 4), IsCancel = true };
+        DateTime? result = null;
+        ok.Click += (_, _) => { result = dt.Value; dlg.DialogResult = true; dlg.Close(); };
+        cancel.Click += (_, _) => dlg.Close();
+        bp.Children.Add(ok); bp.Children.Add(cancel);
+        sp.Children.Add(bp);
+        dlg.Content = sp;
+        Services.UiTranslator.Apply(dlg);
+        return dlg.ShowDialog() == true ? result : null;
     }
 
     void RememberDraft(ComposeRequest r)
