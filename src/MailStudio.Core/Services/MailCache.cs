@@ -42,6 +42,7 @@ public class MailCache
         Directory.CreateDirectory(dir);
         var stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
         var target = Path.Combine(dir, $"cache-{stamp}.db");
+        for (var n = 2; File.Exists(target) || File.Exists(target + "-wal"); n++) { stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + n; target = Path.Combine(dir, $"cache-{stamp}.db"); }
         try
         {
             foreach (var suffix in new[] { "", "-wal", "-shm" })
