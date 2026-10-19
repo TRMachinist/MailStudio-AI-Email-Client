@@ -326,13 +326,19 @@ public sealed class MailService : IDisposable
                 }
             }
 
+            // Meeting invitation: text/calendar alternative (Outlook/Exchange/Google) or an attached .ics
+            var ics = "";
+            var calendarPart = s.BodyParts.OfType<BodyPartBasic>().FirstOrDefault(IsCalendarPart);
+            if (calendarPart != null && calendarPart.Octets < 2_000_000 && await folder.GetBodyPartAsync(uid, calendarPart, ct) is MimePart cp)
+                ics = CalendarText(cp);
+
             if (markRead && !h.IsRead) await folder.AddFlagsAsync(uid, MessageFlags.Seen, true, ct);
             await folder.CloseAsync(false, ct);
 
             if (html.Length == 0)
                 html = "<pre style=\"font-family:Segoe UI,Calibri,sans-serif;white-space:pre-wrap;font-size:14px\">" + WebUtility.HtmlEncode(text) + "</pre>";
             if (text.Length == 0) text = HtmlToText(html);
-            return new MailContent { Html = FixTurkish(html), Text = FixTurkish(text), Cc = FixTurkish(s.Envelope?.Cc?.ToString()), ReplyTo = s.Envelope?.ReplyTo?.ToString() ?? "", References = h.References, Attachments = AttachmentsOf(s) };
+            return new MailContent { Html = FixTurkish(html), Text = FixTurkish(text), Cc = FixTurkish(s.Envelope?.Cc?.ToString()), ReplyTo = s.Envelope?.ReplyTo?.ToString() ?? "", References = h.References, Attachments = AttachmentsOf(s), CalendarIcs = ics };
         }, ct, "read");
 
         _cache.SaveBody(a.Id, h.Folder, h.Uid, content);
@@ -416,7 +422,21 @@ public sealed class MailService : IDisposable
             Size = p is MimePart mp && mp.Content != null ? EstimateSize(mp) : 0
         }).ToList();
 
-        return new MailContent { Html = html, Text = text, Cc = msg.Cc.ToString(), ReplyTo = msg.ReplyTo.ToString(), References = msg.References.ToList(), Attachments = atts };
+        var calendar = msg.BodyParts.OfType<MimePart>().FirstOrDefault(p => p.ContentType.MimeType.Equals("text/calendar", StringComparison.OrdinalIgnoreCase) || p.ContentType.MimeType.Equals("application/ics", StringComparison.OrdinalIgnoreCase) || (p.FileName ?? "").EndsWith(".ics", StringComparison.OrdinalIgnoreCase));
+        return new MailContent { Html = html, Text = text, Cc = msg.Cc.ToString(), ReplyTo = msg.ReplyTo.ToString(), References = msg.References.ToList(), Attachments = atts, CalendarIcs = calendar == null ? "" : CalendarText(calendar) };
+    }
+
+    static bool IsCalendarPart(BodyPartBasic p) =>
+        p.ContentType.MimeType.Equals("text/calendar", StringComparison.OrdinalIgnoreCase) || p.ContentType.MimeType.Equals("application/ics", StringComparison.OrdinalIgnoreCase) ||
+        (p.FileName ?? "").EndsWith(".ics", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Decoded iCalendar text of a MIME part (charset honoured, UTF-8 default).</summary>
+    public static string CalendarText(MimePart part)
+    {
+        if (part is TextPart tp) return tp.Text ?? "";
+        using var ms = new MemoryStream();
+        part.Content?.DecodeTo(ms);
+        return System.Text.Encoding.UTF8.GetString(ms.ToArray());
     }
 
     static long EstimateSize(MimePart p)

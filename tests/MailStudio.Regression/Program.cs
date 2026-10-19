@@ -503,4 +503,91 @@ await Test("quoted Outlook mail keeps upper-case data: images and its <style> cl
     Check(Regex.IsMatch(clean, @"<p[^>]*style=""[^""]*margin:\s*0") && clean.Contains("Wingdings"), "class styles inlined: " + clean);
     Check(InlineImages.Replace("<img src=\"cid:a@b\">", "a@b", null, "IMAGE/PNG", new byte[] { 1 }).Contains("data:image/png;"), "inline image mime lower-cased");
 }));
+await Test("calendar: Outlook/Google invitations (time zones, RRULE, EXDATE, alarm), recurrence, store, reminders, round trip", () => Sync(() =>
+{
+    var outlook = string.Join("\r\n", new[] {
+        "BEGIN:VCALENDAR","METHOD:REQUEST","PRODID:Microsoft Exchange Server 2010","VERSION:2.0",
+        "BEGIN:VTIMEZONE","TZID:(UTC+03:00) Istanbul","BEGIN:STANDARD","DTSTART:16010101T000000","TZOFFSETFROM:+0300","TZOFFSETTO:+0300","END:STANDARD","END:VTIMEZONE",
+        "BEGIN:VEVENT","ORGANIZER;CN=\"Kalite, Ayşe\":mailto:ayse@ornek.test","ATTENDEE;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=Tom Becker:mailto:tom@contoso.example",
+        "DESCRIPTION;LANGUAGE=tr-TR:İlk numune\\, FAI ve 3.1 sertifika\\ngörüşmesi","UID:040000008200E00074C5B7101A82E00800000000ABCDEF","SUMMARY;LANGUAGE=tr-TR:NW-1042 ilk numune toplant",
+        " ısı","DTSTART;TZID=(UTC+03:00) Istanbul:20261026T100000","DTEND;TZID=(UTC+03:00) Istanbul:20261026T110000",
+        "RRULE:FREQ=WEEKLY;UNTIL=20261130T070000Z;INTERVAL=1;BYDAY=MO,WE;WKST=MO","EXDATE;TZID=(UTC+03:00) Istanbul:20261028T100000",
+        "LOCATION;LANGUAGE=tr-TR:Toplantı Odası 2","SEQUENCE:2","X-MICROSOFT-CDO-BUSYSTATUS:TENTATIVE",
+        "BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:REMINDER","TRIGGER;RELATED=START:-PT30M","END:VALARM","END:VEVENT","END:VCALENDAR" });
+    var cal = MailStudio.Services.Calendar.Ics.Parse(outlook);
+    var ev = cal.Events.Single();
+    var istanbul = TimeZoneInfo.FindSystemTimeZoneById("Europe/Istanbul");
+    DateTime Local(int y, int mo, int d, int h) => TimeZoneInfo.ConvertTime(new DateTimeOffset(new DateTime(y, mo, d, h, 0, 0), istanbul.GetUtcOffset(new DateTime(y, mo, d, h, 0, 0))), TimeZoneInfo.Local).DateTime;
+    Check(cal.IsInvitation && ev.Title == "NW-1042 ilk numune toplantısı" && ev.Location == "Toplantı Odası 2" && ev.Notes == "İlk numune, FAI ve 3.1 sertifika\ngörüşmesi", "Outlook text fields: " + ev.Title + "|" + ev.Notes);
+    Check(ev.Start == Local(2026, 10, 26, 10) && ev.End == Local(2026, 10, 26, 11), "Outlook custom TZID resolved: " + ev.Start);
+    Check(ev.Organizer == "Kalite, Ayşe <ayse@ornek.test>" && ev.Attendees.Single() == "Tom Becker <tom@contoso.example>" && ev.Sequence == 2 && ev.ReminderMinutes == 30 && ev.Busy == MailStudio.Services.Calendar.BusyStatus.Tentative, "organizer/attendee/alarm");
+    var occ = MailStudio.Services.Calendar.Recurrence.Expand(ev, new DateTime(2026, 10, 1), new DateTime(2027, 1, 1)).ToList();
+    Check(occ.Count == 10 && occ.All(o => o.Start.DayOfWeek is DayOfWeek.Monday or DayOfWeek.Wednesday) && !occ.Any(o => o.Start.Date == Local(2026, 10, 28, 10).Date), "weekly MO,WE until 30 Nov without the deleted Wednesday: " + occ.Count);
+
+    var google = "BEGIN:VCALENDAR\nMETHOD:REQUEST\nBEGIN:VEVENT\nDTSTART:20261103T080000Z\nDTEND:20261103T083000Z\nRRULE:FREQ=DAILY;COUNT=3\nUID:g1@google.com\nSUMMARY:Stand-up\nATTENDEE;CN=demo@mailstudio.example;PARTSTAT=NEEDS-ACTION:mailto:demo@mailstudio.example\nEND:VEVENT\nBEGIN:VEVENT\nDTSTART;VALUE=DATE:20261029\nDTEND;VALUE=DATE:20261030\nSUMMARY:Cumhuriyet Bayramı\nUID:allday-1\nEND:VEVENT\nEND:VCALENDAR";
+    var g = MailStudio.Services.Calendar.Ics.Parse(google);
+    var standup = g.Events.First(); var holiday = g.Events.Last();
+    Check(standup.Start == new DateTime(2026, 11, 3, 8, 0, 0, DateTimeKind.Utc).ToLocalTime() && MailStudio.Services.Calendar.Recurrence.Expand(standup, DateTime.MinValue.AddYears(1), DateTime.MaxValue.AddYears(-1)).Count() == 3, "Google UTC + COUNT");
+    Check(holiday.AllDay && holiday.Start == new DateTime(2026, 10, 29) && holiday.End == new DateTime(2026, 10, 30) && holiday.Attendees.Count == 0, "all-day date event");
+
+    var rule2 = MailStudio.Services.Calendar.Ics.ParseRule("FREQ=MONTHLY;BYDAY=2TU")!;
+    var secondTuesday = new MailStudio.Services.Calendar.CalendarEvent { Start = new DateTime(2026, 10, 13, 9, 0, 0), End = new DateTime(2026, 10, 13, 10, 0, 0), Repeat = rule2 };
+    var st = MailStudio.Services.Calendar.Recurrence.Expand(secondTuesday, new DateTime(2026, 10, 1), new DateTime(2027, 1, 1)).Select(o => o.Start.Day).ToList();
+    Check(st.SequenceEqual(new[] { 13, 10, 8 }), "2nd Tuesday monthly: " + string.Join(",", st));
+    var lastFriday = new MailStudio.Services.Calendar.CalendarEvent { Start = new DateTime(2026, 10, 30, 16, 0, 0), End = new DateTime(2026, 10, 30, 17, 0, 0), Repeat = MailStudio.Services.Calendar.Ics.ParseRule("FREQ=MONTHLY;BYDAY=FR;BYSETPOS=-1") };
+    Check(MailStudio.Services.Calendar.Recurrence.Expand(lastFriday, new DateTime(2026, 10, 1), new DateTime(2027, 1, 1)).Select(o => o.Start.Day).SequenceEqual(new[] { 30, 27, 25 }), "last Friday (BYSETPOS=-1)");
+    var day31 = new MailStudio.Services.Calendar.CalendarEvent { Start = new DateTime(2026, 10, 31, 9, 0, 0), End = new DateTime(2026, 10, 31, 9, 30, 0), Repeat = new() { Frequency = MailStudio.Services.Calendar.RepeatFrequency.Monthly } };
+    Check(MailStudio.Services.Calendar.Recurrence.Expand(day31, new DateTime(2026, 10, 1), new DateTime(2027, 3, 1)).Select(o => o.Start.Month).SequenceEqual(new[] { 10, 12, 1 }), "31st skips short months");
+    var biweekly = new MailStudio.Services.Calendar.CalendarEvent { Start = new DateTime(2026, 10, 19, 14, 0, 0), End = new DateTime(2026, 10, 19, 15, 0, 0), Repeat = MailStudio.Services.Calendar.Ics.ParseRule("FREQ=WEEKLY;INTERVAL=2;BYDAY=MO") };
+    Check(MailStudio.Services.Calendar.Recurrence.Expand(biweekly, new DateTime(2026, 10, 1), new DateTime(2026, 12, 1)).Select(o => o.Start.Day).SequenceEqual(new[] { 19, 2, 16, 30 }), "every 2 weeks");
+    var workdays = MailStudio.Services.Calendar.Ics.ParseRule("FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR")!;
+    Check(workdays.IsWorkdays, "DAILY;BYDAY=MO..FR is 'every weekday'");
+
+    var store = new MailStudio.Services.Calendar.CalendarStore(Path.Combine(root, "calendar.json"));
+    var applied = store.ApplyInvitation(cal, MailStudio.Services.Calendar.MeetingResponse.Accepted, "acc|INBOX|7");
+    Check(applied != null && store.Events.Count == 1 && applied.Response == MailStudio.Services.Calendar.MeetingResponse.Accepted, "invitation accepted into calendar");
+    var older = MailStudio.Services.Calendar.Ics.Parse(outlook.Replace("SEQUENCE:2", "SEQUENCE:1").Replace("Toplantı Odası 2", "Eski oda"));
+    store.ApplyInvitation(older, MailStudio.Services.Calendar.MeetingResponse.Accepted, null);
+    Check(store.Events.Single().Location == "Toplantı Odası 2", "older SEQUENCE does not overwrite");
+    store.ApplyInvitation(MailStudio.Services.Calendar.Ics.Parse(outlook.Replace("METHOD:REQUEST", "METHOD:CANCEL").Replace("SEQUENCE:2", "SEQUENCE:3")), MailStudio.Services.Calendar.MeetingResponse.None, null);
+    Check(store.Events.Single().Cancelled, "cancellation marks the meeting cancelled");
+    Check(store.Import(g.Events) == (2, 0) && store.Import(MailStudio.Services.Calendar.Ics.Parse(google).Events) == (0, 2) && store.Events.Count == 3, "re-import updates by UID");
+
+    var now = new DateTime(2026, 11, 3, 8, 0, 0, DateTimeKind.Utc).ToLocalTime().AddMinutes(-10);
+    var meeting = new MailStudio.Services.Calendar.CalendarEvent { Title = "Hatırlat", Start = now.AddMinutes(10), End = now.AddMinutes(40), ReminderMinutes = 15 };
+    store.Save(meeting);
+    var due = store.DueReminders(now);
+    Check(due.Any(o => o.Event.Id == meeting.Id), "reminder due 15 min before");
+    store.Snooze(due.Where(o => o.Event.Id == meeting.Id), now.AddMinutes(5));
+    Check(!store.DueReminders(now).Any(o => o.Event.Id == meeting.Id) && store.DueReminders(now.AddMinutes(6)).Any(o => o.Event.Id == meeting.Id), "snooze");
+    store.Dismiss(store.DueReminders(now.AddMinutes(6)).Where(o => o.Event.Id == meeting.Id));
+    Check(!store.DueReminders(now.AddMinutes(7)).Any(o => o.Event.Id == meeting.Id), "dismiss");
+    var series = store.Events.First(e => e.Title == "Stand-up");
+    store.DeleteOccurrence(series, MailStudio.Services.Calendar.Recurrence.Expand(series, DateTime.MinValue.AddYears(1), DateTime.MaxValue.AddYears(-1)).ElementAt(1).Start);
+    Check(MailStudio.Services.Calendar.Recurrence.Expand(store.Find(series.Id)!, DateTime.MinValue.AddYears(1), DateTime.MaxValue.AddYears(-1)).Count() == 2, "delete one occurrence");
+    Check(store.Conflicts(meeting.Start.AddMinutes(10), meeting.End.AddMinutes(10)).Any(o => o.Event.Id == meeting.Id), "conflict detection");
+    var reloaded = new MailStudio.Services.Calendar.CalendarStore(Path.Combine(root, "calendar.json"));
+    Check(reloaded.Events.Count == 4 && reloaded.Find(series.Id)!.Exceptions.Count == 1, "saved to disk");
+
+    var written = MailStudio.Services.Calendar.Ics.WriteCalendar(new[] { applied!, holiday, store.Find(series.Id)! });
+    Check(written.Split("\r\n").All(l => System.Text.Encoding.UTF8.GetByteCount(l) <= 75), "lines folded to 75 octets");
+    var back = MailStudio.Services.Calendar.Ics.Parse(written);
+    var b1 = back.Events.First(e => e.Uid == applied!.Uid);
+    Check(b1.Start == applied!.Start && b1.Title == applied.Title && b1.Notes == applied.Notes && b1.Repeat!.Days.Count == 2 && b1.Repeat.Until!.Value.Date == applied.Repeat!.Until!.Value.Date && b1.Exceptions.Count == 1, "round trip keeps times, text, RRULE and EXDATE");
+    Check(back.Events.Any(e => e.AllDay && e.Start == holiday.Start) && MailStudio.Services.Calendar.Recurrence.Expand(back.Events.First(e => e.Uid == series.Uid), DateTime.MinValue.AddYears(1), DateTime.MaxValue.AddYears(-1)).Count() == 2, "round trip all-day and exceptions");
+    var reply = MailStudio.Services.Calendar.Ics.WriteCalendar(new[] { applied }, "REPLY", replyFrom: "Demo <demo@mailstudio.example>", partStat: "TENTATIVE");
+    var rp = MailStudio.Services.Calendar.Ics.Parse(reply);
+    Check(rp.IsReply && rp.Replies["demo@mailstudio.example"] == "TENTATIVE" && !reply.Contains("DESCRIPTION"), "meeting reply");
+
+    var tasks = new MailStudio.Services.Calendar.TaskStore(Path.Combine(root, "tasks.json"));
+    var t1 = new MailStudio.Services.Calendar.TaskItem { Title = "Teklifi gönder", DueDate = DateTime.Today.AddDays(-1), ReminderAt = DateTime.Now.AddMinutes(-1), SourceMail = "acc|INBOX|1" };
+    tasks.Save(t1);
+    Check(t1.IsOverdue && tasks.DueReminders(DateTime.Now).Count == 1, "overdue + reminder");
+    var lines = MailStudio.Services.Calendar.TaskStore.ParseTaskLines("Görevler:\n- [ ] Teklifi gönder\n1. Resmi kontrol et (rev B)\n* **Malzeme sertifikası iste**\nNormal satır");
+    Check(lines.SequenceEqual(new[] { "Teklifi gönder", "Resmi kontrol et (rev B)", "Malzeme sertifikası iste" }), "AI task lines: " + string.Join("|", lines));
+    var added = tasks.AddRange(lines.Select(l => new MailStudio.Services.Calendar.TaskItem { Title = l, SourceMail = "acc|INBOX|1" }));
+    Check(added == 2 && tasks.Tasks.Count == 3, "duplicate open task skipped");
+    tasks.SetCompleted(t1, true);
+    Check(new MailStudio.Services.Calendar.TaskStore(Path.Combine(root, "tasks.json")).Find(t1.Id)!.CompletedAt != null && tasks.DueReminders(DateTime.Now).Count == 0, "completed task saved, no reminder");
+}));
 Console.WriteLine($"RESULT {passed} passed. Synthetic evidence: {root}");

@@ -185,6 +185,8 @@ public class MailContent
     public string ReplyTo { get; init; } = "";
     public List<string> References { get; init; } = new();
     public List<AttachmentInfo> Attachments { get; init; } = new();
+    /// <summary>Meeting invitation (text/calendar part or .ics attachment), raw iCalendar text; empty if none.</summary>
+    public string CalendarIcs { get; init; } = "";
 }
 
 public class AttachmentInfo

@@ -96,7 +96,7 @@ public class MailCache
         var names = new HashSet<string>();
         while (reader.Read()) names.Add(reader.GetString(1));
         reader.Close();
-        foreach (var (name, type) in new[] { ("is_draft", "INTEGER DEFAULT 0"), ("reply_to", "TEXT"), ("in_reply_to", "TEXT"), ("refs_json", "TEXT"), ("body_encoding_version", "INTEGER NOT NULL DEFAULT 0") })
+        foreach (var (name, type) in new[] { ("is_draft", "INTEGER DEFAULT 0"), ("reply_to", "TEXT"), ("in_reply_to", "TEXT"), ("refs_json", "TEXT"), ("body_encoding_version", "INTEGER NOT NULL DEFAULT 0"), ("calendar_ics", "TEXT") })
             if (!names.Contains(name)) Exec(c, L.F("ALTER TABLE messages ADD COLUMN {0} {1}", name, type));
     }
 
@@ -236,8 +236,8 @@ public class MailCache
     void SaveBodyCore(string account, string folder, uint uid, MailContent content)
     {
         using var c = Open();
-        Exec(c, "UPDATE messages SET body_html=$h, body_text=$t, cc=$cc, body_encoding_version=2 WHERE account=$a AND folder=$f AND uid=$u",
-            ("$h", content.Html), ("$t", content.Text), ("$cc", content.Cc), ("$a", account), ("$f", folder), ("$u", (long)uid));
+        Exec(c, "UPDATE messages SET body_html=$h, body_text=$t, cc=$cc, calendar_ics=$ics, body_encoding_version=2 WHERE account=$a AND folder=$f AND uid=$u",
+            ("$h", content.Html), ("$t", content.Text), ("$cc", content.Cc), ("$ics", string.IsNullOrEmpty(content.CalendarIcs) ? null : content.CalendarIcs), ("$a", account), ("$f", folder), ("$u", (long)uid));
         Exec(c, "UPDATE msg_fts SET body=$t WHERE account=$a AND folder=$f AND uid=$u",
             ("$t", content.Text), ("$a", account), ("$f", folder), ("$u", (long)uid));
     }
@@ -266,7 +266,7 @@ public class MailCache
     {
         using var c = Open();
         using var cmd = c.CreateCommand();
-        cmd.CommandText = "SELECT body_html, body_text, cc, body_encoding_version FROM messages WHERE account=$a AND folder=$f AND uid=$u AND (body_html IS NOT NULL OR body_text IS NOT NULL)";
+        cmd.CommandText = "SELECT body_html, body_text, cc, body_encoding_version, calendar_ics FROM messages WHERE account=$a AND folder=$f AND uid=$u AND (body_html IS NOT NULL OR body_text IS NOT NULL)";
         cmd.Parameters.AddWithValue("$a", account);
         cmd.Parameters.AddWithValue("$f", folder);
         cmd.Parameters.AddWithValue("$u", (long)uid);
@@ -277,7 +277,8 @@ public class MailCache
             Html = r.IsDBNull(0) ? "" : r.GetString(0),
             Text = r.IsDBNull(1) ? "" : r.GetString(1),
             Cc = r.IsDBNull(2) ? "" : r.GetString(2),
-            NeedsEncodingRefresh = r.GetInt32(3) < 2
+            NeedsEncodingRefresh = r.GetInt32(3) < 2,
+            CalendarIcs = r.IsDBNull(4) ? "" : r.GetString(4)
         };
         r.Close();
         content.Attachments.AddRange(GetAttachments(account, folder, uid));
@@ -293,6 +294,20 @@ public class MailCache
         cmd.Parameters.AddWithValue("$f", folder);
         cmd.Parameters.AddWithValue("$l", limit);
         return ReadHeaders(cmd);
+    }
+
+    /// <summary>Flagged mails of every account and folder (the "flagged mail" part of Tasks), newest first.</summary>
+    public List<MailHeader> GetFlagged(int limit = 2000)
+    {
+        try
+        {
+            using var c = Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT * FROM messages WHERE is_flagged=1 ORDER BY date DESC LIMIT $l";
+            cmd.Parameters.AddWithValue("$l", limit);
+            return ReadHeaders(cmd);
+        }
+        catch (SqliteException ex) when (IsCorrupt(ex)) { OnCorrupt(); return new(); }
     }
 
     public List<MailHeader> Search(string? account, string query, int limit = 300)
