@@ -4,18 +4,20 @@
 param(
     [string]$Repo = (Resolve-Path "$PSScriptRoot\..\..").Path,
     [string]$Out = "",
+    [string]$Work = "",
     [switch]$SkipUiTests,
     [string[]]$Languages = @('tr', 'en')
 )
 $ErrorActionPreference = 'Continue'
-if (-not $Out) { $Out = Join-Path $Repo 'work\selftest' }
+if (-not $Work) { $Work = if (Test-Path (Join-Path $Repo 'work\tech-fixtures')) { Join-Path $Repo 'work' } else { 'D:\MailStudio\work' } }
+if (-not $Out) { $Out = Join-Path $Work 'selftest' }
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $run = Join-Path $Out $stamp
 New-Item -ItemType Directory -Force $run | Out-Null
 $summary = Join-Path $run 'summary.txt'
 function S($text) { Add-Content -Path $summary -Value $text -Encoding UTF8; Write-Host $text }
 S "MailStudio full test run $stamp"
-S "repo: $Repo"
+S "repo: $Repo · fixtures: $Work"
 
 # ---------------------------------------------------------------- build
 Push-Location $Repo
@@ -39,17 +41,29 @@ $r = Select-String -Path $reg -Pattern '^RESULT' | Select-Object -First 1
 S ("[regression] " + $(if ($r) { $r.Line } else { 'FAILED' }))
 if (-not $r) { Select-String -Path $reg -Pattern 'Exception:' | Select-Object -First 5 | ForEach-Object { S ("  " + $_.Line.Trim()) } }
 
-# ---------------------------------------------------------------- WPF UI regression (needs the machine's fixture setup)
-$uiScript = Join-Path $Repo 'work\run-ui-tests.ps1'
-if (-not $SkipUiTests -and (Test-Path $uiScript)) {
+# ---------------------------------------------------------------- WPF UI regression (synthetic fixtures from $Work)
+if (-not $SkipUiTests) {
     foreach ($lang in $Languages) {
-        powershell -NoProfile -ExecutionPolicy Bypass -File $uiScript -Lang $lang *> (Join-Path $run "ui-$lang-console.log")
-        $full = Join-Path $Repo 'work\ui-test-out.txt'
-        if (Test-Path $full) { Copy-Item $full (Join-Path $run "ui-$lang.log") -Force }
+        $ui = Join-Path $run "ui-$lang"
+        New-Item -ItemType Directory -Force $ui | Out-Null
+        $env:MAILSTUDIO_LANG = $lang
+        $env:MAILSTUDIO_DATA_DIR = Join-Path $ui 'data'
+        $env:MAILSTUDIO_TECHNICAL_EXE = Join-Path $Work 'technical-dist\MailStudio.Technical\MailStudio.Technical.exe'
+        $env:MAILSTUDIO_TECHNICAL_FIXTURES = Join-Path $Work 'tech-fixtures'
+        $env:MAILSTUDIO_PDF_STUDIO_SAMPLE = Join-Path $Work 'pdftest\sample.pdf'
+        $env:MAILSTUDIO_PPTX_SAMPLE = Join-Path $Work 'viewtest\ornek.pptx'
+        $env:MAILSTUDIO_CAD_SAMPLE = Join-Path $Work 'cadtest\flans.dxf'
+        $env:MAILSTUDIO_DWG_SAMPLE = Join-Path $Work 'cadtest\example_2018.dwg'
+        $env:MAILSTUDIO_DWG2DXF = Join-Path $Work 'third-party\libredwg\dwg2dxf.exe'
+        $env:MAILSTUDIO_LIBREOFFICE = Join-Path $Work 'third-party\lo-portable'
+        $env:MAILSTUDIO_FORCE_LIBREOFFICE = '1'
+        $env:MAILSTUDIO_LEGACY_SAMPLES = Join-Path $Work 'viewtest\legacy'
         $log = Join-Path $run "ui-$lang.log"
-        $res = if (Test-Path $log) { Select-String -Path $log -Pattern '^RESULT' | Select-Object -First 1 } else { $null }
+        dotnet run --project tests\MailStudio.UiRegression -c Debug 2>&1 | Out-File $log -Encoding utf8
+        $res = Select-String -Path $log -Pattern '^RESULT' | Select-Object -First 1
         S ("[ui-$lang] " + $(if ($res) { $res.Line } else { 'FAILED' }))
-        if (Test-Path $log) { Select-String -Path $log -Pattern '^FAIL|UNTRANSLATED' | Select-Object -First 10 | ForEach-Object { S ("  " + $_.Line.Trim()) } }
+        Select-String -Path $log -Pattern '^FAIL|UNTRANSLATED|Unhandled' | Select-Object -First 10 | ForEach-Object { S ("  " + $_.Line.Trim()) }
+        foreach ($v in 'MAILSTUDIO_LANG','MAILSTUDIO_DATA_DIR','MAILSTUDIO_TECHNICAL_FIXTURES','MAILSTUDIO_PDF_STUDIO_SAMPLE','MAILSTUDIO_PPTX_SAMPLE','MAILSTUDIO_CAD_SAMPLE','MAILSTUDIO_DWG_SAMPLE','MAILSTUDIO_DWG2DXF','MAILSTUDIO_LIBREOFFICE','MAILSTUDIO_FORCE_LIBREOFFICE','MAILSTUDIO_LEGACY_SAMPLES') { Remove-Item "Env:$v" -ErrorAction SilentlyContinue }
     }
 }
 
@@ -61,7 +75,7 @@ foreach ($lang in $Languages) {
     New-Item -ItemType Directory -Force $dir, $data | Out-Null
     $env:MAILSTUDIO_DATA_DIR = $data
     $env:MAILSTUDIO_LANG = $lang
-    if (Test-Path (Join-Path $Repo 'work\technical-dist\MailStudio.Technical\MailStudio.Technical.exe')) { $env:MAILSTUDIO_TECHNICAL_EXE = Join-Path $Repo 'work\technical-dist\MailStudio.Technical\MailStudio.Technical.exe' }
+    if (Test-Path (Join-Path $Work 'technical-dist\MailStudio.Technical\MailStudio.Technical.exe')) { $env:MAILSTUDIO_TECHNICAL_EXE = Join-Path $Work 'technical-dist\MailStudio.Technical\MailStudio.Technical.exe' }
     $p = Start-Process $exe -ArgumentList '--demo', '--selftest', "`"$dir`"" -PassThru
     if (-not $p.WaitForExit(20 * 60 * 1000)) {
         S "[selftest-$lang] TIMEOUT after 20 min (process $($p.Id) stopped)"
