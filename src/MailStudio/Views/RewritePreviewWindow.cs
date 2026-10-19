@@ -10,7 +10,7 @@ namespace MailStudio.Views;
 /// <summary>Shows the AI suggestion side by side with the current text; numbers/dimensions are highlighted and Apply is disabled if they changed.</summary>
 public sealed class RewritePreviewWindow : Window
 {
-    static readonly Regex NumberRx = new(@"[-+]?\d+(?:[.,]\d+)*(?:\s*(?:mm|cm|m|kg|g|adet|pcs|dakika|dk|min|saat|hrs?|hours?|sn|usd|eur|tl|%|°))?(?!\p{L})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    static readonly Regex NumberRx = new(@"[-+]?\d+(?:[.,]\d+)*(?:\s*(?:mm|cm|m|kg|g|adet|pcs|dakika|dk|min|saat|hrs?|hours?|sn|usd|eur|tl|%|°))?(?!\p{L})", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     public RewritePreviewWindow(Window owner, string original, string suggestion, bool protectNumbers, bool allowUnitTranslation=false)
     {

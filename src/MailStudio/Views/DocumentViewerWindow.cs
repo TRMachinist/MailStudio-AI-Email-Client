@@ -388,7 +388,7 @@ public sealed class DocumentViewerWindow : Window
 
     static string NcSummary(string text)
     {
-        var tools = System.Text.RegularExpressions.Regex.Matches(text, @"\bT(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Select(m => m.Groups[1].Value.TrimStart('0')).Where(t => t.Length > 0).Distinct().ToList();
+        var tools = System.Text.RegularExpressions.Regex.Matches(text, @"\bT(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant).Select(m => m.Groups[1].Value.TrimStart('0')).Where(t => t.Length > 0).Distinct().ToList();
         var lines = text.Count(c => c == '\n') + 1;
         return L.F("{0:N0} satır", lines) + (tools.Count > 0 ? L.F(", takımlar: T{0}{1}", string.Join(", T", tools.Take(20)), (tools.Count > 20 ? "…" : "")) : "");
     }

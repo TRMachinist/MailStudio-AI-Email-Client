@@ -266,7 +266,7 @@ public sealed class MailService : IDisposable
     {
         if (string.IsNullOrEmpty(p)) return "";
         p = Regex.Replace(p, @"\[cid:[^\]]*\]", " ");
-        p = Regex.Replace(p, @"\[image[^\]]*\]", " ", RegexOptions.IgnoreCase);
+        p = Regex.Replace(p, @"\[image[^\]]*\]", " ", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         p = Regex.Replace(p, @"[_\-=]{4,}", " ");
         p = Regex.Replace(p, @"\s+", " ");
         return p.Trim();
@@ -426,8 +426,8 @@ public sealed class MailService : IDisposable
 
     public static string HtmlToText(string html)
     {
-        var t = Regex.Replace(html, "<(script|style)[^>]*>.*?</\\1>", "", RegexOptions.Singleline | RegexOptions.IgnoreCase);
-        t = Regex.Replace(t, "<br\\s*/?>|</p>|</div>|</tr>|</li>", "\n", RegexOptions.IgnoreCase);
+        var t = Regex.Replace(html, "<(script|style)[^>]*>.*?</\\1>", "", RegexOptions.Singleline | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        t = Regex.Replace(t, "<br\\s*/?>|</p>|</div>|</tr>|</li>", "\n", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         t = Regex.Replace(t, "<[^>]+>", "");
         t = WebUtility.HtmlDecode(t);
         t = Regex.Replace(t, "[ \\t]+", " ");

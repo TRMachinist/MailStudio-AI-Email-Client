@@ -26,11 +26,11 @@ public static class MailHtml
 
     public static string Wrap(string html)
     {
-        html=System.Text.RegularExpressions.Regex.Replace(html,@"(\bsrc\s*=\s*['""])(//)","$1https://",System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        html=System.Text.RegularExpressions.Regex.Replace(html,@"(\bsrc\s*=\s*['""])(//)","$1https://",System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
         // The text is already decoded to Unicode; if the mail's own charset label (e.g. windows-1254) stays,
         // the browser re-interprets it and breaks Turkish characters ("payla°lan").
         html = System.Text.RegularExpressions.Regex.Replace(html, "<meta[^>]*charset[^>]*>", "",
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
         if (!html.Contains("<html", StringComparison.OrdinalIgnoreCase))
             html = "<html><head><meta charset=\"utf-8\"></head><body>" + html + "</body></html>";
         if (html.Contains("<head>", StringComparison.OrdinalIgnoreCase))

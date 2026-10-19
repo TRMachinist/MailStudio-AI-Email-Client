@@ -6,7 +6,7 @@ public static class DraftRewrite
 {
     public static bool PreservesNumbers(string before, string after) => Numbers(before).SequenceEqual(Numbers(after));
     public static bool PreservesTechnicalValues(string before,string after)=>PreservesNumbers(before,after)&&Units(before).SequenceEqual(Units(after));
-    static IEnumerable<string> Units(string text)=>Regex.Matches(text,@"[-+]?\d+(?:[.,]\d+)*\s*(?:mm|cm|m|kg|g|adet|pcs|dakika|dk|min|saat|hrs?|hours?|sn|usd|eur|tl|%|°|eksen(?:de|li|den)?)(?!\p{L})",RegexOptions.IgnoreCase).Select(m=>Regex.Replace(m.Value,@"\s+","").ToLowerInvariant()).Order(StringComparer.Ordinal);
+    static IEnumerable<string> Units(string text)=>Regex.Matches(text,@"[-+]?\d+(?:[.,]\d+)*\s*(?:mm|cm|m|kg|g|adet|pcs|dakika|dk|min|saat|hrs?|hours?|sn|usd|eur|tl|%|°|eksen(?:de|li|den)?)(?!\p{L})",RegexOptions.IgnoreCase | RegexOptions.CultureInvariant).Select(m=>Regex.Replace(m.Value,@"\s+","").ToLowerInvariant()).Order(StringComparer.Ordinal);
     static IEnumerable<string> Numbers(string text) => Regex.Matches(text, @"[-+]?\d+(?:[.,]\d+)*").Select(m => m.Value).Order(StringComparer.Ordinal);
     public static string Prompt(string instruction, string draft, string? quote = null) => L.IsEnglish ? PromptEn(instruction, draft, quote) : $"""
         Görev: {instruction}

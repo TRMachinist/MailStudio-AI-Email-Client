@@ -137,7 +137,7 @@ public partial class MailHeader : ObservableObject
         {
             var s = System.Text.RegularExpressions.Regex.Replace(Subject ?? "",
                 @"^(\s*(re|fw|fwd|ynt|yanıt|ilt|i̇lt|İlt|ilet|aw|wg|sv|tr|cevap)\s*(\[\d+\])?\s*:\s*)+", "",
-                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
             return s.Trim().ToLowerInvariant();
         }
     }

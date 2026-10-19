@@ -25,10 +25,10 @@ public static class InlineImages
         foreach(var element in document.QuerySelectorAll("[style]"))
         {
             var original=element.GetAttribute("style")!;
-            var replacement=Regex.Replace(original,"url\\(\\s*['\"]?(?<uri>[^)'\"]+)['\"]?\\s*\\)",m=>Resolve(m.Groups["uri"].Value.Trim()) is {} resolved?"url('"+resolved+"')":m.Value,RegexOptions.IgnoreCase);
+            var replacement=Regex.Replace(original,"url\\(\\s*['\"]?(?<uri>[^)'\"]+)['\"]?\\s*\\)",m=>Resolve(m.Groups["uri"].Value.Trim()) is {} resolved?"url('"+resolved+"')":m.Value,RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
             if(replacement!=original){element.SetAttribute("style",replacement);changed=true;}
         }
         return changed?document.DocumentElement!.OuterHtml:html;
     }
-    public static bool HasRemote(string html)=>Regex.IsMatch(html,@"(?:src\s*=\s*['"" ]*(?:https?:)?//|url\(\s*['"" ]*(?:https?:)?//)",RegexOptions.IgnoreCase);
+    public static bool HasRemote(string html)=>Regex.IsMatch(html,@"(?:src\s*=\s*['"" ]*(?:https?:)?//|url\(\s*['"" ]*(?:https?:)?//)",RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 }

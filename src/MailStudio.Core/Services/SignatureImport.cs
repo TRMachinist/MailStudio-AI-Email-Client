@@ -42,7 +42,7 @@ public static class SignatureImport
         if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF) return Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3);
         if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE) return Encoding.Unicode.GetString(bytes, 2, bytes.Length - 2);
         var head = Encoding.ASCII.GetString(bytes, 0, Math.Min(bytes.Length, 4096));
-        var m = Regex.Match(head, @"charset\s*=\s*[""']?([\w\-]+)", RegexOptions.IgnoreCase);
+        var m = Regex.Match(head, @"charset\s*=\s*[""']?([\w\-]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         if (m.Success)
         {
             try { Encoding.RegisterProvider(CodePagesEncodingProvider.Instance); return Encoding.GetEncoding(m.Groups[1].Value).GetString(bytes); }
@@ -62,7 +62,7 @@ public static class SignatureImport
             var src = (img.GetAttribute("src") ?? "").Trim();
             if (src.StartsWith("data:", StringComparison.OrdinalIgnoreCase) || src.StartsWith("cid:", StringComparison.OrdinalIgnoreCase)) continue;
             byte[]? data = null; string? name = src;
-            if (Regex.IsMatch(src, "^https?://", RegexOptions.IgnoreCase))
+            if (Regex.IsMatch(src, "^https?://", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
             {
                 if (fetch != null) { try { data = await fetch(src); } catch { data = null; } }
                 if (data == null) continue; // keep the link
@@ -79,7 +79,7 @@ public static class SignatureImport
         var body = doc.Body?.InnerHtml ?? "";
         var clean = EditorContent.Sanitize(body).Trim();
         // Outlook ends signatures with empty paragraphs (<p>&nbsp;</p>): drop trailing blanks
-        clean = Regex.Replace(clean, @"(\s*<p[^>]*>(\s|&nbsp;|<o:p>|</o:p>|<span[^>]*>|</span>|<br>)*</p>)+\s*$", "", RegexOptions.IgnoreCase);
+        clean = Regex.Replace(clean, @"(\s*<p[^>]*>(\s|&nbsp;|<o:p>|</o:p>|<span[^>]*>|</span>|<br>)*</p>)+\s*$", "", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         return clean;
     }
 
@@ -118,7 +118,7 @@ public static class SignatureImport
         var rules = new List<(string Selector, string Decl)>();
         foreach (Match m in Regex.Matches(css, @"([^{}]+)\{([^{}]*)\}"))
         {
-            var decl = Regex.Replace(m.Groups[2].Value, @"\s*mso-[\w-]+\s*:[^;]*;?", "", RegexOptions.IgnoreCase).Trim().Trim(';').Trim();
+            var decl = Regex.Replace(m.Groups[2].Value, @"\s*mso-[\w-]+\s*:[^;]*;?", "", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant).Trim().Trim(';').Trim();
             if (decl.Length == 0) continue;
             foreach (var sel in m.Groups[1].Value.Split(','))
             {
