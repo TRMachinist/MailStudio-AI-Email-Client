@@ -359,6 +359,44 @@ public sealed class PimTools
             completed = t.Completed, overdue = t.IsOverdue, notes = t.Notes, sourceMail = t.SourceMail, sourceSubject = t.SourceSubject
         }));
     }
+
+    [McpServerTool(Name = "list_quotes", ReadOnly = true), Description("Lists quotes in the MailStudio Quote Desk (Teklif Masası).")]
+    public static string ListQuotes([Description("Quote filter: all, active (default), new, in_progress, sent, won, lost, overdue.")] string filter = "active")
+    {
+        var store = new MailStudio.Services.QuoteStore();
+        IEnumerable<MailStudio.Models.QuoteItem> quotes = store.Quotes;
+        quotes = filter.ToLowerInvariant() switch
+        {
+            "all" => quotes,
+            "new" => quotes.Where(q => q.Status == MailStudio.Models.QuoteStatus.New),
+            "in_progress" => quotes.Where(q => q.Status == MailStudio.Models.QuoteStatus.InProgress),
+            "sent" => quotes.Where(q => q.Status == MailStudio.Models.QuoteStatus.Sent),
+            "won" => quotes.Where(q => q.Status == MailStudio.Models.QuoteStatus.Won),
+            "lost" => quotes.Where(q => q.Status == MailStudio.Models.QuoteStatus.Lost),
+            "overdue" => quotes.Where(q => q.IsDeadlineOverdue),
+            _ => quotes.Where(q => q.Status is MailStudio.Models.QuoteStatus.New or MailStudio.Models.QuoteStatus.InProgress)
+        };
+        return Out.J(quotes.Select(q => new
+        {
+            id = q.Id,
+            customer = q.Customer,
+            contact = q.Contact,
+            contactEmail = q.ContactEmail,
+            partNumber = q.PartNumber,
+            revision = q.Revision,
+            quantity = q.Quantity,
+            material = q.Material,
+            requestedDelivery = q.RequestedDelivery?.ToString("yyyy-MM-dd"),
+            deadline = q.Deadline?.ToString("yyyy-MM-dd"),
+            status = q.Status.ToString().ToLowerInvariant(),
+            statusDisplay = q.StatusDisplayName,
+            isOverdue = q.IsDeadlineOverdue,
+            notes = q.Notes,
+            sourceMail = q.SourceMail,
+            sourceSubject = q.SourceSubject,
+            createdAt = q.CreatedAt.ToString("yyyy-MM-dd HH:mm")
+        }));
+    }
 }
 
 [McpServerToolType]
@@ -408,5 +446,32 @@ public sealed class PimWriteTools
         var conflicts = allDay ? new() : store.Conflicts(ev.Start, ev.End);
         store.Save(ev);
         return $"Added to the calendar: {ev.Title} {ev.Start:yyyy-MM-dd HH:mm}" + (conflicts.Count > 0 ? $". Note: overlaps {string.Join(", ", conflicts.Select(c => c.Event.Title))}." : ".");
+    }
+
+    [McpServerTool(Name = "update_quote_status", Destructive = false), Description("Updates the status of an RFQ quote in MailStudio Quote Desk.")]
+    public static string UpdateQuoteStatus(
+        [Description("Quote ID or Part Number.")] string idOrPart,
+        [Description("New status: new, in_progress, sent, won, lost.")] string status)
+    {
+        var store = new MailStudio.Services.QuoteStore();
+        var quote = store.Quotes.FirstOrDefault(q => q.Id.Equals(idOrPart, StringComparison.OrdinalIgnoreCase) ||
+                                                    q.PartNumber.Equals(idOrPart, StringComparison.OrdinalIgnoreCase))
+                    ?? throw new ModelContextProtocol.McpException($"Quote not found: {idOrPart}");
+
+        var norm = status.ToLowerInvariant().Replace("-", "").Replace("_", "").Replace(" ", "");
+        var st = norm switch
+        {
+            "new" or "yeni" => MailStudio.Models.QuoteStatus.New,
+            "inprogress" or "hazirlaniyor" or "hazırlanıyor" => MailStudio.Models.QuoteStatus.InProgress,
+            "sent" or "gonderildi" or "gönderildi" => MailStudio.Models.QuoteStatus.Sent,
+            "won" or "kazanildi" or "kazanıldı" => MailStudio.Models.QuoteStatus.Won,
+            "lost" or "kaybedildi" => MailStudio.Models.QuoteStatus.Lost,
+            _ => throw new ModelContextProtocol.McpException($"Invalid quote status: {status}. Allowed values: new, in_progress, sent, won, lost.")
+        };
+
+        quote.Status = st;
+        quote.UpdatedAt = DateTimeOffset.Now;
+        store.AddOrUpdate(quote);
+        return $"Quote status updated: {quote.PartNumber} ({quote.Customer}) -> {quote.StatusDisplayName}";
     }
 }

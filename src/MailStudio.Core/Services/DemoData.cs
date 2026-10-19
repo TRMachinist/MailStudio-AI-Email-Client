@@ -256,6 +256,85 @@ public static class DemoData
         }
     }
 
+    /// <summary>Demo quotes for Quote Desk (Teklif Masası).</summary>
+    public static void SeedQuotes(QuoteStore quoteStore)
+    {
+        if (quoteStore.Quotes.Count > 0) return;
+        var en = L.IsEnglish;
+        var today = DateTime.Today;
+        string T(string e, string t) => en ? e : t;
+
+        quoteStore.AddOrUpdate(new QuoteItem
+        {
+            Customer = "Northwind Machining",
+            Contact = "Anna Keller",
+            ContactEmail = "anna.keller@northwind-machining.example",
+            PartNumber = "NW-1042",
+            Revision = "C",
+            Quantity = 120,
+            Material = "S235JR, galvaniz",
+            RequestedDelivery = today.AddDays(14),
+            Deadline = today.AddDays(2),
+            Status = QuoteStatus.InProgress,
+            Notes = T("Enlarged bolt holes Ø20, thickness 26mm. 3.1 cert required.", "Büyütülmüş cıvata delikleri Ø20, kalınlık 26 mm. 3.1 sertifika gerekli."),
+            SourceMail = $"{AccountId}|INBOX|10",
+            SourceSubject = T("Revision update – NW-1042 rev C flange", "Revizyon güncellemesi – NW-1042 rev C flanş"),
+            CreatedAt = DateTimeOffset.Now.AddHours(-1)
+        });
+
+        quoteStore.AddOrUpdate(new QuoteItem
+        {
+            Customer = "Contoso Aerospace",
+            Contact = "Tom Becker",
+            ContactEmail = "t.becker@contoso-aero.example",
+            PartNumber = "bracket-revC",
+            Revision = "C",
+            Quantity = 250,
+            Material = "Alüminyum 7075-T6",
+            RequestedDelivery = today.AddDays(21),
+            Deadline = today.AddDays(1),
+            Status = QuoteStatus.New,
+            Notes = T("STEP AP214 file inspected. 5-axis CNC machining.", "STEP AP214 dosyası incelendi. 5 eksen CNC işleme."),
+            SourceMail = $"{AccountId}|INBOX|2",
+            SourceSubject = T("STEP model – bracket rev C", "STEP modeli – braket rev C"),
+            CreatedAt = DateTimeOffset.Now.AddHours(-3)
+        });
+
+        quoteStore.AddOrUpdate(new QuoteItem
+        {
+            Customer = "Schmidt Präzisionstechnik",
+            Contact = "Hans Weber",
+            ContactEmail = "h.weber@schmidt-pt.example",
+            PartNumber = "flange-DN100",
+            Revision = "B",
+            Quantity = 500,
+            Material = "Paslanmaz 1.4301 (AISI 304)",
+            RequestedDelivery = today.AddDays(30),
+            Deadline = today.AddDays(-2),
+            Status = QuoteStatus.InProgress,
+            Notes = T("Laser cut and CNC turned. Overdue reminder active.", "Lazer kesim ve CNC torna. Gecikme uyarısı aktif."),
+            SourceMail = $"{AccountId}|INBOX|1",
+            SourceSubject = T("Quotation request – 120× flange DN100 PN16", "Teklif talebi – 120 adet flanş DN100 PN16"),
+            CreatedAt = DateTimeOffset.Now.AddDays(-4)
+        });
+
+        quoteStore.AddOrUpdate(new QuoteItem
+        {
+            Customer = "Delta Otomotiv",
+            Contact = "Mustafa Yılmaz",
+            ContactEmail = "m.yilmaz@delta-oto.example",
+            PartNumber = "shaft-pin-M12",
+            Revision = "01",
+            Quantity = 5000,
+            Material = "Çelik St52-3",
+            RequestedDelivery = today.AddDays(10),
+            Deadline = today.AddDays(-5),
+            Status = QuoteStatus.Won,
+            Notes = T("Order confirmed. Production starts next week.", "Sipariş onaylandı. Üretim haftaya başlıyor."),
+            CreatedAt = DateTimeOffset.Now.AddDays(-7)
+        });
+    }
+
     static string WrapHtml(string body) => "<div style=\"font-family:Segoe UI,Calibri,sans-serif;font-size:14px\">" + body + "</div>";
 
     public static bool IsDemo(AccountConfig a) => a.ImapHost == Host;

@@ -12,6 +12,7 @@ using MailStudio.Models;
 using MailStudio.Services;
 using MailStudio.Services.Ai;
 using MailStudio.Views;
+using MailStudio.Views.Quotes;
 using Microsoft.Web.WebView2.Core;
 using MimeKit;
 
@@ -822,7 +823,7 @@ public partial class MainWindow : Window
         var ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
         var shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
-        if (ctrl && !shift && key is >= Key.D1 and <= Key.D4) { SwitchModule((PimModule)(key - Key.D1)); e.Handled = true; return; }
+        if (ctrl && !shift && key is >= Key.D1 and <= Key.D5) { SwitchModule((PimModule)(key - Key.D1)); e.Handled = true; return; }
         if (_module != PimModule.Mail) { if (key == Key.F9) { OnSyncAll(this, e); e.Handled = true; } return; } // the calendar / task view handles its own keys
         if (e.OriginalSource is TextBox && !ctrl && key != Key.F9) return; // do not interfere while typing
         bool h = true;
@@ -1202,6 +1203,11 @@ public partial class MainWindow : Window
                     DueDate = due
                 });
             }
+            if (w.AttachmentPaths.Count > 0)
+            {
+                if (_quoteStore.CheckSentMail(w.ToAddressText, req.InReplyTo, w.SubjectText, w.AttachmentPaths.Count))
+                    _quoteDeskView?.Refresh();
+            }
             var sent = _roots.SelectMany(r => r.Children).FirstOrDefault(f => f.AccountId == accId && f.SortOrder == 2);
             if (sent != null) await SyncFolderAsync(sent, silent: true);
         };
@@ -1236,6 +1242,12 @@ public partial class MainWindow : Window
                     DueDays = req.FollowUpDays,
                     DueDate = due
                 });
+            }
+            var attCount = req.AttachmentPaths?.Count ?? 0;
+            if (attCount > 0)
+            {
+                if (_quoteStore.CheckSentMail(req.To, req.InReplyTo, req.Subject, attCount))
+                    _quoteDeskView?.Refresh();
             }
             var sent = _roots.SelectMany(r => r.Children).FirstOrDefault(f => f.AccountId == acc.Id && f.SortOrder == 2);
             if (sent != null) await SyncFolderAsync(sent, silent: true);
@@ -1602,6 +1614,30 @@ public partial class MainWindow : Window
             return AiStream.CompleteAsync(token => provider.StreamAsync(prompt, model, token), ct);
         }, () => CurrentProvider.Name, newRule, RunRuleOnFolderAsync) { Owner = this };
         w.ShowDialog();
+    }
+
+    void OnMailAddToQuoteDesk(object sender, RoutedEventArgs e)
+    {
+        var m = _current;
+        if (m == null && MessageList.SelectedItem is MailHeader sel) m = sel;
+        if (m == null) { Status(L.T("Önce listeden bir ileti seçin.")); return; }
+
+        var content = _cache.GetBody(m.AccountId, m.Folder, m.Uid);
+        var body = content?.Text ?? "";
+        var atts = content?.Attachments?.Select(a => a.FileName).ToList() ?? new List<string>();
+
+        var (isRfq, item) = QuoteStore.DetectRfq(m.Subject, body, m.FromDisplay ?? m.FromAddress ?? "", atts);
+        item.SourceMail = $"{m.AccountId}|{m.Folder}|{m.Uid}";
+        item.SourceSubject = m.Subject;
+        item.SourceMessageId = m.MessageId;
+
+        var dlg = new QuoteEditDialog(item, isNew: true) { Owner = this };
+        if (dlg.ShowDialog() == true)
+        {
+            _quoteStore.AddOrUpdate(dlg.Item);
+            Status(L.F("Teklif masasına eklendi: {0}", dlg.Item.PartNumber.Length > 0 ? dlg.Item.PartNumber : dlg.Item.Customer));
+            _quoteDeskView?.Refresh();
+        }
     }
 
     async Task RunRuleOnFolderAsync(MailRule rule)

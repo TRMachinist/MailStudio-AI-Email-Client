@@ -1027,4 +1027,173 @@ await Test("revision comparison: PDF drawing diff and candidate discovery", () =
     Check(report.OldRevision == "B" && report.NewRevision == "C", "PDF revisions identified as B and C");
 }));
 
+await Test("teklif masası: RFQ detection and field extraction in Turkish and English", () => Sync(() =>
+{
+    // Turkish RFQ example
+    var trSub = "Teklif talebi – 120 adet flanş NW-1042";
+    var trBody = """
+    Merhabalar,
+    Ekteki NW-1042 rev C flanştan 120 adet için fiyat teklifi rica ediyoruz.
+    Malzeme: Alüminyum 6061-T6
+    Son teklif tarihi: 25.10.2026
+    İstenen Teslim: 15.11.2026
+    Firma: Schmidt Makina A.Ş.
+    """;
+    var (trIsRfq, trQuote) = QuoteStore.DetectRfq(trSub, trBody, "Anna Schmidt <anna@schmidt-makina.example>", new[] { "flange-DN100-revC.pdf" });
+    Check(trIsRfq, "Turkish RFQ email detected as RFQ");
+    Check(trQuote.PartNumber.Contains("1042") || trQuote.PartNumber.Contains("flange"), "TR part number extracted");
+    Check(trQuote.Revision == "C", "TR revision extracted");
+    Check(trQuote.Quantity == 120, "TR quantity extracted (120)");
+    Check(trQuote.Material.Contains("Alüminyum 6061"), "TR material extracted");
+    Check(trQuote.Deadline.HasValue && trQuote.Deadline.Value.Day == 25, "TR deadline extracted (25.10.2026)");
+    Check(trQuote.RequestedDelivery.HasValue && trQuote.RequestedDelivery.Value.Day == 15, "TR delivery date extracted (15.11.2026)");
+    Check(trQuote.Contact.Contains("Anna") || trQuote.Customer.Contains("Schmidt"), "TR contact/customer extracted");
+
+    // English RFQ example
+    var enSub = "Quotation Request: bracket-revC";
+    var enBody = """
+    Dear Sales Team,
+    Please provide your quotation for 250 pcs of bracket-revC.
+    Material: Stainless Steel 304
+    Deadline: 2026-10-24
+    Delivery: 2026-11-20
+    Company: Atlas Aerospace Ltd.
+    """;
+    var (enIsRfq, enQuote) = QuoteStore.DetectRfq(enSub, enBody, "Tom Becker <t.becker@atlas-aero.example>", new[] { "bracket-revC.stp" });
+    Check(enIsRfq, "English quotation email detected as RFQ");
+    Check(enQuote.PartNumber.Contains("bracket"), "EN part number extracted");
+    Check(enQuote.Revision == "C", "EN revision extracted");
+    Check(enQuote.Quantity == 250, "EN quantity extracted (250)");
+    Check(enQuote.Material.Contains("Stainless"), "EN material extracted");
+    Check(enQuote.Deadline.HasValue && enQuote.Deadline.Value.Day == 24, "EN deadline extracted");
+    Check(enQuote.Customer.Contains("Atlas Aerospace"), "EN company name extracted");
+
+    // Negative case (normal non-quote email)
+    var normalSub = "Haftalık proje koordinasyon toplantısı";
+    var normalBody = "Toplantı yarın saat 10:00'da odada yapılacaktır. Lütfen hazır bulunun.";
+    var (normIsRfq, _) = QuoteStore.DetectRfq(normalSub, normalBody, "Ali Veli <ali@example.com>");
+    Check(!normIsRfq, "Normal email is NOT detected as RFQ");
+}));
+
+await Test("teklif masası: QuoteStore persistence, CRUD and status transitions", () => Sync(() =>
+{
+    var qPath = Path.Combine(root, "test-quotes.json");
+    var store = new QuoteStore(qPath);
+    Check(store.Quotes.Count == 0, "Initial quotes empty");
+
+    var q1 = new QuoteItem
+    {
+        Customer = "Acme Corp",
+        Contact = "John Doe",
+        ContactEmail = "john@acme.example",
+        PartNumber = "NW-1042",
+        Revision = "B",
+        Quantity = 500,
+        Material = "St52-3",
+        Deadline = DateTime.Today.AddDays(3),
+        Status = QuoteStatus.New,
+        SourceMessageId = "<msg-101@acme.example>"
+    };
+
+    var changedFired = false;
+    store.Changed += () => changedFired = true;
+    store.AddOrUpdate(q1);
+
+    Check(changedFired, "Changed event fired on add");
+    Check(store.Quotes.Count == 1, "Quote added to store");
+
+    // Reload from disk
+    var reloaded = new QuoteStore(qPath);
+    Check(reloaded.Quotes.Count == 1, "Quotes persisted to disk");
+    Check(reloaded.Quotes[0].PartNumber == "NW-1042", "Persisted fields preserved");
+    Check(reloaded.Quotes[0].Quantity == 500, "Quantity preserved");
+
+    // Update status
+    q1.Status = QuoteStatus.InProgress;
+    store.AddOrUpdate(q1);
+    var reloaded2 = new QuoteStore(qPath);
+    Check(reloaded2.Quotes[0].Status == QuoteStatus.InProgress, "Status updated to InProgress");
+
+    // Delete
+    var deleted = store.Delete(q1.Id);
+    Check(deleted, "Quote deleted");
+    Check(store.Quotes.Count == 0, "Quotes list now empty");
+}));
+
+await Test("teklif masası: reply with attachment automatically updates quote status to Sent", () => Sync(() =>
+{
+    var qPath = Path.Combine(root, "test-quotes-auto.json");
+    var store = new QuoteStore(qPath);
+
+    var q = new QuoteItem
+    {
+        Customer = "Siemens Energy",
+        Contact = "Hans Weber",
+        ContactEmail = "hans.weber@siemens.example",
+        PartNumber = "flange-DN100",
+        Revision = "C",
+        Quantity = 1000,
+        Status = QuoteStatus.New,
+        SourceMessageId = "<rfq-siemens-999@siemens.example>"
+    };
+    store.AddOrUpdate(q);
+
+    // 1. Reply with NO attachments -> status should remain New
+    var updatedNoAtt = store.CheckSentMail("hans.weber@siemens.example", "<rfq-siemens-999@siemens.example>", "Re: RFQ", attachmentCount: 0);
+    Check(!updatedNoAtt, "Sending without attachment does not mark quote Sent");
+    Check(store.Get(q.Id)?.Status == QuoteStatus.New, "Quote remains New without attachment");
+
+    // 2. Reply WITH attachment -> status should become Sent
+    var updatedWithAtt = store.CheckSentMail("hans.weber@siemens.example", "<rfq-siemens-999@siemens.example>", "Re: RFQ", attachmentCount: 1);
+    Check(updatedWithAtt, "Sending with attachment marks quote Sent");
+    Check(store.Get(q.Id)?.Status == QuoteStatus.Sent, "Quote status updated to Sent");
+}));
+
+await Test("teklif masası: ClosedXML Excel export generation and structure", () => Sync(() =>
+{
+    var exportPath = Path.Combine(root, "teklif_masasi_export.xlsx");
+    if (File.Exists(exportPath)) File.Delete(exportPath);
+
+    var quotes = new List<QuoteItem>
+    {
+        new()
+        {
+            Customer = "Schmidt Präzision",
+            Contact = "Anna Schmidt",
+            PartNumber = "NW-1042",
+            Revision = "C",
+            Quantity = 120,
+            Material = "Alüminyum 6061-T6",
+            Deadline = DateTime.Today.AddDays(2),
+            RequestedDelivery = DateTime.Today.AddDays(15),
+            Status = QuoteStatus.InProgress,
+            Notes = "Toleranslar resme uygun"
+        },
+        new()
+        {
+            Customer = "Atlas Aero",
+            Contact = "Tom Becker",
+            PartNumber = "bracket-revC",
+            Revision = "C",
+            Quantity = 250,
+            Material = "7075-T6",
+            Deadline = DateTime.Today.AddDays(-1), // Overdue
+            Status = QuoteStatus.New,
+            Notes = "5 eksen işleme"
+        }
+    };
+
+    QuoteStore.ExportToExcel(quotes, exportPath);
+    Check(File.Exists(exportPath), "Excel export file generated on disk");
+
+    using var wb = new ClosedXML.Excel.XLWorkbook(exportPath);
+    Check(wb.Worksheets.Count >= 1, "Workbook contains worksheets");
+    var ws = wb.Worksheet("Teklif Masası");
+    Check(ws != null, "Worksheet 'Teklif Masası' found");
+    Check(ws.Cell(1, 1).GetString() == "Durum", "Header 1 is Durum");
+    Check(ws.Cell(1, 2).GetString() == "Parça No", "Header 2 is Parça No");
+    Check(ws.Cell(2, 2).GetString() == "NW-1042", "Row 1 Parça No is NW-1042");
+    Check(ws.Cell(3, 2).GetString() == "bracket-revC", "Row 2 Parça No is bracket-revC");
+}));
+
 Console.WriteLine($"RESULT {passed} passed. Synthetic evidence: {root}");

@@ -11,6 +11,7 @@ using MailStudio.Services;
 using MailStudio.Views;
 using MailStudio.Services.Calendar;
 using MailStudio.Views.Calendar;
+using MailStudio.Views.Quotes;
 using MailStudio.Regression;
 using Microsoft.Web.WebView2.Wpf;
 
@@ -677,6 +678,80 @@ internal static class Program
             diffWin.Close();
             Console.WriteLine("PASS revision comparison window UI and actions"); _passed++;
         }
+
+        // ---- 3.6 Teklif Masası UI Test
+        {
+            var testQuoteStore = new QuoteStore(Path.Combine(AppPaths.Root, "test-ui-quotes.json"));
+            testQuoteStore.Quotes.Clear();
+            testQuoteStore.AddOrUpdate(new QuoteItem
+            {
+                Customer = "Siemens Energy",
+                Contact = "Anna Keller",
+                PartNumber = "NW-1042",
+                Revision = "C",
+                Quantity = 120,
+                Material = "Alüminyum 6061-T6",
+                Status = QuoteStatus.InProgress,
+                Deadline = DateTime.Today.AddDays(2)
+            });
+            testQuoteStore.AddOrUpdate(new QuoteItem
+            {
+                Customer = "Contoso Aero",
+                Contact = "Tom Becker",
+                PartNumber = "bracket-revC",
+                Revision = "C",
+                Quantity = 250,
+                Material = "7075-T6",
+                Status = QuoteStatus.New,
+                Deadline = DateTime.Today.AddDays(1)
+            });
+            testQuoteStore.AddOrUpdate(new QuoteItem
+            {
+                Customer = "Delta Makina",
+                Contact = "Mustafa Yılmaz",
+                PartNumber = "shaft-pin-M12",
+                Revision = "01",
+                Quantity = 5000,
+                Material = "St52",
+                Status = QuoteStatus.Won,
+                Deadline = DateTime.Today.AddDays(-3)
+            });
+
+            var dummyHost = new DummyQuoteHost();
+            var quoteDesk = new QuoteDeskView(testQuoteStore, dummyHost);
+            var hostWin = new Window { Width = 900, Height = 600, Content = quoteDesk };
+            hostWin.Show(); await Task.Delay(300);
+
+            var list = Field<ListView>(quoteDesk, "_list");
+            Check(hostWin.IsVisible && list.Items.Count == 3, "QuoteDeskView displays 3 quote items");
+
+            // Filter test
+            Set(quoteDesk, "_filter", QuoteFilter.Won);
+            quoteDesk.Refresh();
+            Check(list.Items.Count == 1, "QuoteDeskView filters by status (Won -> 1 item)");
+
+            // Reset filter and search test
+            Set(quoteDesk, "_filter", QuoteFilter.All);
+            var searchBox = Field<TextBox>(quoteDesk, "_search");
+            searchBox.Text = "bracket";
+            Check(list.Items.Count == 1, "QuoteDeskView live search filters by part name");
+            searchBox.Text = "";
+
+            Audit(hostWin, "QuoteDeskView");
+            Capture(hostWin, "quote-desk-view.png");
+            hostWin.Close();
+
+            // QuoteEditDialog test
+            var sampleQuote = testQuoteStore.Quotes[0];
+            var editDlg = new QuoteEditDialog(sampleQuote, isNew: false);
+            editDlg.Show(); await Task.Delay(200);
+            Check(editDlg.IsVisible && Field<TextBox>(editDlg, "_customer").Text == sampleQuote.Customer, "QuoteEditDialog opens with pre-filled fields");
+            Audit(editDlg, "QuoteEditDialog");
+            editDlg.Close();
+
+            Console.WriteLine("PASS Teklif Masası (Quote Desk) UI views and interactions"); _passed++;
+        }
+
         if (L.IsEnglish)
         {
             foreach (var w in Application.Current.Windows.OfType<Window>().Where(w => w.IsVisible).ToList()) Audit(w, w.GetType().Name);
@@ -713,6 +788,15 @@ internal static class Program
             auditMissingWin.Content = sp;
             auditMissingWin.Show(); await Task.Delay(200); Audit(auditMissingWin, "MissingAttachmentDialog"); auditMissingWin.Close();
 
+            var auditQuoteStore = new QuoteStore(Path.Combine(AppPaths.Root, "audit-quotes-en.json"));
+            var auditQuoteHost = new DummyQuoteHost();
+            var auditQuoteDesk = new QuoteDeskView(auditQuoteStore, auditQuoteHost);
+            var auditQuoteWin = new Window { Content = auditQuoteDesk, Width = 900, Height = 600 };
+            auditQuoteWin.Show(); await Task.Delay(300); Audit(auditQuoteWin, "QuoteDeskView(en)"); auditQuoteWin.Close();
+
+            var auditQuoteDlg = new QuoteEditDialog(new QuoteItem { Customer = "Test Corp", PartNumber = "NW-1042" }, isNew: true);
+            auditQuoteDlg.Show(); await Task.Delay(200); Audit(auditQuoteDlg, "QuoteEditDialog(en)"); auditQuoteDlg.Close();
+
             foreach (var t in TurkishLooking) Console.WriteLine("REVIEW " + t);
             foreach (var t in Untranslated) Console.WriteLine("UNTRANSLATED " + t);
             Check(Untranslated.Count == 0, "English UI: every visible UI string is translated");
@@ -721,4 +805,16 @@ internal static class Program
         Console.Out.Flush(); Environment.Exit(0);   // all checks passed; do not wait for leftover windows/threads
     }
 }
+
+sealed class DummyQuoteHost : IQuoteHost
+{
+    public Window HostWindow => new();
+    public string? PickAttendees(Window owner) => null;
+    public bool IsOwnAddress(string address) => false;
+    public void ComposeMeetingMail(CalendarEvent e, string method, string? partStat = null, IEnumerable<string>? to = null) { }
+    public void OpenSourceMail(string source) { }
+    public void Status(string text) { }
+    public void ComposeQuoteReply(QuoteItem quote) { }
+}
+
 

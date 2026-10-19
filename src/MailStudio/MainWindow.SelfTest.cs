@@ -14,6 +14,7 @@ using MailStudio.Services;
 using MailStudio.Services.Calendar;
 using MailStudio.Views;
 using MailStudio.Views.Calendar;
+using MailStudio.Views.Quotes;
 
 namespace MailStudio;
 
@@ -60,6 +61,7 @@ public partial class MainWindow
             ("calendar: every view, overlap with the mail view", StepCalendar),
             ("calendar: appointment form", StepEventForm),
             ("tasks: list, quick add, mail to task", StepTasks),
+            ("quote desk: list, search, filters, dialog, airspace", StepQuoteDesk),
             ("reminders window", StepReminders),
             ("other windows: accounts, signatures, rules, skills, agents", StepOtherWindows),
             ("dark theme screenshots", StepDarkTheme),
@@ -524,6 +526,27 @@ public partial class MainWindow
         Check(_tasks.Tasks.Any(t => t.SourceMail == $"{m.AccountId}|{m.Folder}|{m.Uid}"), "mail → task");
     }
 
+    async Task StepQuoteDesk()
+    {
+        SwitchModule(PimModule.Quotes); await Wait(800);
+        Check(PimHost.Visibility == Visibility.Visible, "quote desk module visible");
+        Check(ReadingPane.Visibility != Visibility.Visible, "mail reading pane hidden behind quote desk");
+        CheckAirspace(this, "quotes");
+        Check(_quoteDeskView != null, "quote desk view initialized");
+        Check(_quoteStore.Quotes.Count >= 3, $"quote desk has quotes ({_quoteStore.Quotes.Count})");
+        Shot(this, "quotes-desk");
+        CheckTexts(this, "quotes-desk");
+
+        var sampleQuote = _quoteStore.Quotes.FirstOrDefault() ?? new QuoteItem { Customer = "Test", PartNumber = "NW-1042" };
+        var editDlg = new QuoteEditDialog(sampleQuote, isNew: false) { Owner = this };
+        editDlg.Show(); await Wait(400);
+        Shot(editDlg, "quote-edit-dialog");
+        CheckTexts(editDlg, "quote-edit-dialog");
+        editDlg.Close();
+
+        SwitchModule(PimModule.Mail); await Wait(300);
+    }
+
     async Task StepReminders()
     {
         _calendar.Save(new CalendarEvent { Title = "Self-test reminder", Start = DateTime.Now.AddMinutes(3), End = DateTime.Now.AddMinutes(30), ReminderMinutes = 10 });
@@ -555,6 +578,7 @@ public partial class MainWindow
         Shot(this, "dark-mail");
         SwitchModule(PimModule.Calendar); await Wait(700); Shot(this, "dark-calendar");
         SwitchModule(PimModule.Tasks); await Wait(700); Shot(this, "dark-tasks");
+        SwitchModule(PimModule.Quotes); await Wait(700); Shot(this, "dark-quotes");
         SwitchModule(PimModule.Mail);
         ThemeManager.Apply(ThemeManager.Parse(old ? "Dark" : "Light")); await Wait(500);
         Pass("theme switch");

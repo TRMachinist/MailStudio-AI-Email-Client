@@ -66,6 +66,7 @@ public partial class ComposeWindow : Window
     public int FollowUpDays => FollowUpCheck?.IsChecked == true && FollowUpDaysBox?.SelectedItem is ComboBoxItem item && int.TryParse(item.Tag as string, out var d) ? d : 0;
     public string SubjectText => SubjectBox?.Text ?? "";
     public string ToAddressText => ToBox?.Text ?? "";
+    public IReadOnlyList<string> AttachmentPaths => _attachments;
     void OnFollowUpCheckChanged(object sender, RoutedEventArgs e)
     {
         if (FollowUpDaysBox != null) FollowUpDaysBox.IsEnabled = FollowUpCheck?.IsChecked == true;

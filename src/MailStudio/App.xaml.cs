@@ -80,7 +80,7 @@ public partial class App : Application
             Shutdown(); return;
         }
         base.OnStartup(e);
-        if (demo) { var demoStore = new Services.AccountStore(); demoStore.Load(); var demoCache = new Services.MailCache(); demoCache.Init(); Services.DemoData.Seed(demoStore, demoCache); Services.DemoData.SeedPim(new Services.Calendar.CalendarStore(), new Services.Calendar.TaskStore()); }
+        if (demo) { var demoStore = new Services.AccountStore(); demoStore.Load(); var demoCache = new Services.MailCache(); demoCache.Init(); Services.DemoData.Seed(demoStore, demoCache); Services.DemoData.SeedPim(new Services.Calendar.CalendarStore(), new Services.Calendar.TaskStore()); Services.DemoData.SeedQuotes(new Services.QuoteStore()); }
         var window = new MainWindow(startInTray: e.Args.Contains("--background"));
         MainWindow = window;
         _instance.Listen(Dispatcher, window.ShowFromTray);

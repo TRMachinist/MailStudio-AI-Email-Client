@@ -279,6 +279,7 @@
                         <Button Style="{StaticResource NavIcon}" x:Name="NavCalendar" Content="&#xE787;" ToolTip="Takvim (Ctrl+2)" Click="OnNavCalendar"/>
                         <Button Style="{StaticResource NavIcon}" x:Name="NavPeople" Content="&#xE77B;" ToolTip="Kişiler (Ctrl+3)" Tag="Kişiler" Click="OnNavSoon"/>
                         <Button Style="{StaticResource NavIcon}" x:Name="NavTasks" Content="&#xE762;" ToolTip="Görevler (Ctrl+4)" Click="OnNavTasks"/>
+                        <Button Style="{StaticResource NavIcon}" x:Name="NavQuotes" Content="&#xE8A1;" ToolTip="Teklif Masası (Ctrl+5)" Click="OnNavQuotes"/>
                     </UniformGrid>
                 </Border>
             </Grid>
@@ -324,6 +325,7 @@
                             <MenuItem Header="Görev olarak ekle" Icon="&#xE762;" InputGestureText="Ctrl+Shift+K" Click="OnMailToTask"/>
                             <MenuItem Header="Toplantı ayarla" Icon="&#xE787;" Click="OnMailToMeeting"/>
                             <MenuItem Header="Bunun gibi mailler için kural oluştur…" Icon="&#xE71E;" Click="OnCreateRuleFromMail"/>
+                            <MenuItem Header="Teklif masasına ekle" Icon="&#xE8A1;" Click="OnMailAddToQuoteDesk"/>
                             <Separator/>
                             <MenuItem Header="AI ile özetle" Icon="&#xE8BD;" Click="OnAiSummarize"/>
                             <MenuItem Header="AI ile cevap yazdır" Icon="&#xE70F;" Click="OnAiDraftReply"/>
