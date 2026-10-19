@@ -230,4 +230,6 @@ public class ComposeRequest
     public string? CalendarIcs { get; set; }
     /// <summary>iCalendar METHOD of <see cref="CalendarIcs"/>: REQUEST, REPLY or CANCEL.</summary>
     public string? CalendarMethod { get; set; }
+    /// <summary>Follow-up reminder: if no reply is received within this many days (0 = no follow-up).</summary>
+    public int FollowUpDays { get; set; }
 }

@@ -60,6 +60,14 @@ public partial class ComposeWindow : Window
     readonly LocalDraftStore _drafts = new();
     readonly System.Windows.Threading.DispatcherTimer _autosave = new();
     public SendResult? LastSendResult { get; private set; }
+    public int FollowUpDays => FollowUpCheck?.IsChecked == true && FollowUpDaysBox?.SelectedItem is ComboBoxItem item && int.TryParse(item.Tag as string, out var d) ? d : 0;
+    public string SubjectText => SubjectBox?.Text ?? "";
+    public string ToAddressText => ToBox?.Text ?? "";
+    void OnFollowUpCheckChanged(object sender, RoutedEventArgs e)
+    {
+        if (FollowUpDaysBox != null) FollowUpDaysBox.IsEnabled = FollowUpCheck?.IsChecked == true;
+        Changed();
+    }
     void Changed() { if (!_initializing) _state.Changed(); }
     void SetBusy(bool busy)
     {
@@ -100,6 +108,19 @@ public partial class ComposeWindow : Window
         ComposeModelBox.Text=req.AiModel??aiOptions?.Model ?? "";
         FontBox.SelectedIndex = 0;
         SizeBox.Text = "11";
+        if (req.FollowUpDays > 0)
+        {
+            FollowUpCheck.IsChecked = true;
+            FollowUpDaysBox.IsEnabled = true;
+            foreach (ComboBoxItem item in FollowUpDaysBox.Items)
+            {
+                if (item.Tag is string s && int.TryParse(s, out var d) && d == req.FollowUpDays)
+                {
+                    FollowUpDaysBox.SelectedItem = item;
+                    break;
+                }
+            }
+        }
 
         _initializing = false;
         ToBox.AddHandler(System.Windows.Controls.Primitives.TextBoxBase.TextChangedEvent, new TextChangedEventHandler((_, _) => Changed()));
@@ -445,6 +466,7 @@ public partial class ComposeWindow : Window
             To = ToBox.Text.Trim().TrimEnd(';'),
             Cc = CcBox.Text.Trim().TrimEnd(';'),
             Subject = SubjectBox.Text,
+            FollowUpDays = FollowUpDays,
             EditableHtml=EditorContent.Sanitize(snapshot.RootElement.GetProperty("editable").GetString()),
             SignatureHtml=EditorContent.Sanitize(snapshot.RootElement.GetProperty("signature").GetString()),
             QuotedHtml=EditorContent.Sanitize(snapshot.RootElement.GetProperty("quote").GetString()),

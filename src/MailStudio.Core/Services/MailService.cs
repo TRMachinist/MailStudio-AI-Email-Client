@@ -676,7 +676,7 @@ public sealed class MailService : IDisposable
         try { _submissions.Set(id, a.Id, msg.MessageId!, copyWarning == null ? "Completed" : "SentCopyPending", warning); }
         catch (Exception ex) { warning = (warning == null ? "" : warning + "\n") + L.T("Yerel durum kaydedilemedi: ") + ex.Message; }
         r.SubmissionState = "Completed";
-        return new SendResult(id, warning);
+        return new SendResult(id, warning, msg.MessageId);
     }
 
     async Task RemoveSentDraftAsync(AccountConfig a, ComposeRequest r)

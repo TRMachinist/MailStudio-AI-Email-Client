@@ -78,6 +78,20 @@ if __name__ == '__main__':
         'Bunun gibi mailler için kural oluştur…': 'Create rule for messages like this…',
         'Kurallar: {0} kural kayıtlı.': 'Rules: {0} rules saved.',
         '{0} iletileri için kural': 'Rule for {0} messages',
-        'Kural çalıştırıldı: {0} ileti etkilendi.': 'Rule executed: {0} messages affected.'
+        'Kural çalıştırıldı: {0} ileti etkilendi.': 'Rule executed: {0} messages affected.',
+        'Cevap gelmezse hatırlat': 'Remind if no reply',
+        'Cevap gelmezse hatırlat:': 'Remind if no reply:',
+        'Cevap bekleniyor': 'Awaiting reply',
+        'Cevap bekleniyor: {0}': 'Awaiting reply: {0}',
+        '2 gün': '2 days',
+        '3 gün': '3 days',
+        '5 gün': '5 days',
+        '1 hafta': '1 week',
+        '2 hafta': '2 weeks',
+        'Hatırlatma maili yaz': 'Compose reminder',
+        "Hatırlatma maili hazır; kontrol edip Gönder'e basın.": 'Reminder email ready; review and click Send.',
+        'Merhaba,\n\nAşağıdaki konuda geri dönüşünüzü rica ederim.\n\nİyi çalışmalar.': 'Hello,\n\nI kindly ask for your feedback on the matter below.\n\nBest regards.',
+        'Alıcılar: {0}\nGönderim tarihi: {1:dd.MM.yyyy HH:mm}\nSon tarih: {2:dd.MM.yyyy}': 'Recipients: {0}\nSent date: {1:dd.MM.yyyy HH:mm}\nDue date: {2:dd.MM.yyyy}',
+        'Önceki İleti': 'Previous Message',
     }
     update_en(keys)

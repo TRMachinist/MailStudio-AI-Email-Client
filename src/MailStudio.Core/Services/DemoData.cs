@@ -77,6 +77,11 @@ public static class DemoData
             "<p>Hi Anna,</p><p>thanks for the request, our offer follows tomorrow.</p>",
             "<p>Merhaba Anna,</p><p>talebiniz için teşekkürler, teklifimiz yarın gelecek.</p>",
             0.2),
+        new(21, "Sent", "Demo User", "demo@mailstudio.example",
+            "Quote: 250x custom flange NW-1042", "Teklif: 250 adet özel flanş NW-1042",
+            "<p>Dear Anna,</p><p>please find our quotation attached for 250 pcs flange NW-1042.</p>",
+            "<p>Sayın Anna,</p><p>250 adet NW-1042 flanş için teklifimiz ektedir.</p>",
+            96, Files: new[] { "flange-DN100.pdf" }),
     };
 
     /// <summary>Creates the demo account, mails and attachment files (idempotent).</summary>
@@ -139,6 +144,27 @@ public static class DemoData
                 }
             });
             ruleStore.Save();
+        }
+        var followUpStore = new FollowUpStore();
+        if (followUpStore.FollowUps.Count == 0)
+        {
+            var sentDate = DateTimeOffset.Now.AddDays(-4);
+            var dueDate = sentDate.AddDays(3);
+            var item = new FollowUpItem
+            {
+                AccountId = AccountId,
+                MessageId = "demo-21@mailstudio.example",
+                Subject = en ? "Quote: 250x custom flange NW-1042" : "Teklif: 250 adet özel flanş NW-1042",
+                Recipients = "anna.keller@northwind-machining.example",
+                SentDate = sentDate,
+                DueDays = 3,
+                DueDate = dueDate,
+                IsResolved = false,
+                TaskCreated = false
+            };
+            followUpStore.Add(item);
+            var taskStore = new Calendar.TaskStore();
+            followUpStore.CheckExpired(taskStore, DateTimeOffset.Now);
         }
         var files = Path.Combine(AppPaths.Root, "demo-files");
         Directory.CreateDirectory(files);

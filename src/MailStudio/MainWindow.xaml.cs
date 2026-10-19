@@ -25,6 +25,8 @@ public partial class MainWindow : Window
     readonly OAuthService _oauth;
     readonly ContactBook _contacts;
     readonly RuleStore _ruleStore = new();
+    readonly FollowUpStore _followUpStore = new();
+    public FollowUpStore FollowUpStore => _followUpStore;
     readonly Dictionary<string, InboxWatcher> _watchers = new();
     readonly HashSet<string> _alertReady = new();
     readonly AppSettings _settings = AppSettings.Shared;
@@ -459,6 +461,14 @@ public partial class MainWindow : Window
                         ShowDesktopAlert(node, fresh);
                         _ = AutoRunSkillsAsync(fresh);
                         _ = RunRulesOnFreshAsync(acc, fresh);
+                    }
+                }
+                if (added > 0)
+                {
+                    var freshAll = _cache.GetHeaders(acc.Id, node.FullName, 50).Where(m => before == null || !before.Contains(m.Uid)).ToList();
+                    if (freshAll.Count > 0 && _followUpStore.CheckReplies(freshAll, _tasks) > 0)
+                    {
+                        _tasksView?.Refresh();
                     }
                 }
                 _alertReady.Add(acc.Id);
@@ -1087,6 +1097,20 @@ public partial class MainWindow : Window
         w.Sent += async (_, _) =>
         {
             Status(w.LastSendResult?.Warning ?? L.T("İleti sunucu tarafından kabul edildi."));
+            if (w.LastSendResult != null && w.FollowUpDays > 0)
+            {
+                var due = DateTimeOffset.Now.AddDays(w.FollowUpDays);
+                _followUpStore.Add(new FollowUpItem
+                {
+                    AccountId = accId,
+                    MessageId = w.LastSendResult.MessageId ?? "",
+                    Subject = w.SubjectText,
+                    Recipients = w.ToAddressText,
+                    SentDate = DateTimeOffset.Now,
+                    DueDays = w.FollowUpDays,
+                    DueDate = due
+                });
+            }
             var sent = _roots.SelectMany(r => r.Children).FirstOrDefault(f => f.AccountId == accId && f.SortOrder == 2);
             if (sent != null) await SyncFolderAsync(sent, silent: true);
         };

@@ -111,6 +111,8 @@ public partial class MainWindow : ITaskHost
     {
         // Items an agent added through the MCP server appear without a restart
         _calendar.ReloadIfChanged(); _tasks.ReloadIfChanged();
+        var expiredCount = _followUpStore.CheckExpired(_tasks);
+        if (expiredCount > 0) _tasksView?.Refresh();
         var now = DateTime.Now;
         var due = _calendar.DueReminders(now).Select(o => "e" + o.Key).Concat(_tasks.DueReminders(now).Select(t => "t" + t.Id)).ToHashSet();
         if (due.Count > 0)
@@ -367,5 +369,46 @@ public partial class MainWindow : ITaskHost
                 openAttachment: att => OpenAttachmentAsync(h, att)) { Owner = this }.Also(FileViewers.ReturnFocusOnClose).Show();
         }
         catch (Exception ex) { Status(L.T("İleti yüklenemedi: ") + ex.Message); }
+    }
+
+    void ITaskHost.ComposeReminder(TaskItem task)
+    {
+        if (_store.Accounts.Count == 0) { MessageBox.Show(this, L.T("Önce bir hesap ekleyin."), "MailStudio"); return; }
+        var account = (_store.Accounts.FirstOrDefault(a => task.SourceMail != null && task.SourceMail.StartsWith(a.Id + "|")))
+                      ?? (_current != null ? Acc(_current.AccountId) : null)
+                      ?? _store.Accounts[0];
+
+        var to = task.SourceFrom;
+        var subj = task.SourceSubject.Length > 0 ? task.SourceSubject : task.Title;
+        if (!subj.StartsWith("Re:", StringComparison.OrdinalIgnoreCase) &&
+            !subj.StartsWith("Ynt:", StringComparison.OrdinalIgnoreCase) &&
+            !subj.StartsWith("Hatırlatma:", StringComparison.OrdinalIgnoreCase) &&
+            !subj.StartsWith("Reminder:", StringComparison.OrdinalIgnoreCase))
+        {
+            subj = (L.IsEnglish ? "Reminder: " : "Hatırlatma: ") + subj;
+        }
+
+        var body = L.T("Merhaba,\n\nAşağıdaki konuda geri dönüşünüzü rica ederim.\n\nİyi çalışmalar.");
+        if (task.SourceMail != null)
+        {
+            var parts = task.SourceMail.Split('|');
+            if (parts.Length >= 3 && uint.TryParse(parts[2], out var uid))
+            {
+                var content = _cache.GetBody(parts[0], parts[1], uid);
+                if (content != null && !string.IsNullOrWhiteSpace(content.Text))
+                {
+                    body += "\n\n--- " + L.T("Önceki İleti") + " ---\n" + content.Text;
+                }
+            }
+        }
+
+        var req = new ComposeRequest
+        {
+            To = to,
+            Subject = subj,
+            Body = body
+        };
+        OpenCompose(req, account.Id);
+        Status(L.T("Hatırlatma maili hazır; kontrol edip Gönder'e basın."));
     }
 }

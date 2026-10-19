@@ -4,7 +4,7 @@ using MimeKit;
 namespace MailStudio.Services;
 
 public record SubmissionRecord(string Id, string AccountId, string MessageId, string State, string? Detail, DateTimeOffset Updated);
-public record SendResult(string SubmissionId, string? Warning);
+public record SendResult(string SubmissionId, string? Warning, string? MessageId = null);
 public sealed class SubmissionUncertainException(string message, Exception inner) : Exception(message, inner);
 
 /// <summary>Durable audit/recovery record. No automatic replay: SMTP acceptance may be unknown after a disconnect.</summary>

@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using MailStudio;
 using MailStudio.Models;
 using MailStudio.Services;
 using MailStudio.Regression;
@@ -729,4 +730,88 @@ await Test("rules: condition and action matrix, order/stop, FakeImap move/flag, 
     Check(parsed.Name == "Anna'dan gelen teklifler" && parsed.Conditions.Count == 2 && parsed.Actions.Count == 2 && parsed.StopProcessing, "AI rule parsed successfully");
     Check(RuleEngine.AiPrompt("test prompt").Contains("JSON"), "AI prompt generated");
 });
+await Test("follow-up: reply clears follow-up; expired deadline creates task", () => Sync(() =>
+{
+    var storePath = Path.Combine(root, "test-followups.json");
+    var fuStore = new FollowUpStore(storePath);
+    var taskStore = new MailStudio.Services.Calendar.TaskStore(Path.Combine(root, "test-tasks.json"));
+
+    var item1 = new FollowUpItem
+    {
+        AccountId = "acc1",
+        MessageId = "msg-101@test.example",
+        Subject = "Teklif talebi flanş",
+        Recipients = "customer@example.com",
+        SentDate = DateTimeOffset.Now.AddDays(-5),
+        DueDays = 3,
+        DueDate = DateTimeOffset.Now.AddDays(-2),
+        IsResolved = false
+    };
+
+    var item2 = new FollowUpItem
+    {
+        AccountId = "acc1",
+        MessageId = "msg-102@test.example",
+        Subject = "Braket revizyonu",
+        Recipients = "supplier@example.com",
+        SentDate = DateTimeOffset.Now.AddDays(-1),
+        DueDays = 3,
+        DueDate = DateTimeOffset.Now.AddDays(2),
+        IsResolved = false
+    };
+
+    fuStore.Add(item1);
+    fuStore.Add(item2);
+    Check(fuStore.FollowUps.Count == 2, "2 follow-up items added");
+
+    // 1. CheckExpired creates a task for item1, but not for item2
+    var createdCount = fuStore.CheckExpired(taskStore, DateTimeOffset.Now);
+    Check(createdCount == 1, "1 expired follow-up task created");
+    Check(item1.TaskCreated && !string.IsNullOrEmpty(item1.TaskId), "item1 marked TaskCreated with TaskId");
+    Check(!item2.TaskCreated, "item2 not expired, no task created");
+
+    var task = taskStore.Find(item1.TaskId!);
+    Check(task != null, "task found in TaskStore");
+    Check(task!.Title.Contains("Teklif talebi flanş"), "task title contains subject: " + task.Title);
+    Check(task.Category == L.T("Cevap bekleniyor"), "task category is Cevap bekleniyor: " + task.Category);
+    Check(task.IsOverdue, "task is overdue");
+    Check(!task.Completed, "task is not completed yet");
+
+    // 2. Incoming reply for item1 clears the follow-up and auto-completes the linked task
+    var reply1 = new MailHeader
+    {
+        AccountId = "acc1",
+        Folder = "INBOX",
+        Uid = 991,
+        MessageId = "reply-991@example.com",
+        InReplyTo = "<msg-101@test.example>",
+        Subject = "Ynt: Teklif talebi flanş",
+        FromAddress = "customer@example.com"
+    };
+
+    var resolvedCount = fuStore.CheckReplies(new[] { reply1 }, taskStore);
+    Check(resolvedCount == 1, "reply resolved item1");
+    Check(item1.IsResolved, "item1 IsResolved == true");
+    Check(task.Completed, "linked task automatically marked completed");
+
+    // 3. Incoming reply for item2 clears follow-up via References match
+    var reply2 = new MailHeader
+    {
+        AccountId = "acc1",
+        Folder = "INBOX",
+        Uid = 992,
+        MessageId = "reply-992@example.com",
+        References = new List<string> { "<other@example.com>", "<msg-102@test.example>" },
+        Subject = "Re: Braket revizyonu",
+        FromAddress = "supplier@example.com"
+    };
+
+    var resolvedCount2 = fuStore.CheckReplies(new[] { reply2 }, taskStore);
+    Check(resolvedCount2 == 1, "reply with References resolved item2");
+    Check(item2.IsResolved, "item2 IsResolved == true");
+
+    // 4. Persistence round-trip
+    var reloadedStore = new FollowUpStore(storePath);
+    Check(reloadedStore.FollowUps.Count == 2 && reloadedStore.FollowUps.All(f => f.IsResolved), "follow-ups saved and reloaded with resolved status");
+}));
 Console.WriteLine($"RESULT {passed} passed. Synthetic evidence: {root}");
