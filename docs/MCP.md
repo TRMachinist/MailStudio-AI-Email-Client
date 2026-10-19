@@ -32,8 +32,8 @@ Restart the agent (or open a new session) after connecting. If you move the Mail
 
 | Level | `--permission` | Tools |
 |---|---|---|
-| Read | `read` | `list_accounts`, `list_folders`, `list_messages`, `search_messages`, `read_message`, `read_attachment`, `list_skills`, `get_skill` |
-| Draft (default) | `draft` | + `create_draft` (saved to Drafts, you send it yourself) |
+| Read | `read` | `list_accounts`, `list_folders`, `list_messages`, `search_messages`, `read_message`, `read_attachment`, `list_skills`, `get_skill`, `list_events`, `find_free_time`, `list_tasks` |
+| Draft (default) | `draft` | + `create_draft` (saved to Drafts, you send it yourself), `add_task`, `add_event` (no invitations are sent) |
 | Organize | `organize` | + `flag_message`, `mark_read`, `move_message` (never to Deleted Items, never deletes) |
 
 ## Tools
@@ -47,7 +47,11 @@ Restart the agent (or open a new session) after connecting. If you move the Mail
 | `read_message` | The whole mail; does **not** change the read state |
 | `read_attachment` | Attachment as text: PDF (OCR for scans), STEP sizes/volumes/PMI, DXF/DWG texts and dimensions, Excel cells, Word, PowerPoint, CSV, CNC |
 | `list_skills`, `get_skill` | Your [skills](SKILLS.md) – the agent loads the instructions and follows them |
+| `list_events` | Appointments and meetings between two dates (recurring items expanded) |
+| `find_free_time` | Free slots on working days (08:00–18:00) for a meeting of a given length |
+| `list_tasks` | Your task list (open, overdue, completed or all) |
 | `create_draft` | Saves a draft to Drafts (never sends) |
+| `add_task`, `add_event` | Adds a task or an appointment (draft level; invitations are never sent by an agent) |
 | `flag_message`, `mark_read`, `move_message` | Organize level only |
 
 ## Manual setup

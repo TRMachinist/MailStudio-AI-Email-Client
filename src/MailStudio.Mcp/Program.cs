@@ -30,11 +30,12 @@ builder.Logging.ClearProviders();
 builder.Logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace); // stdout is reserved for the MCP protocol
 builder.Logging.SetMinimumLevel(LogLevel.Warning);
 builder.Services.AddSingleton(new MailContext(permission));
-var mcp = builder.Services.AddMcpServer(o => o.ServerInfo = new() { Name = "mailstudio", Version = "1.6.2" })
+var mcp = builder.Services.AddMcpServer(o => o.ServerInfo = new() { Name = "mailstudio", Version = "1.7.0" })
     .WithStdioServerTransport()
     .WithTools<MailTools>()
-    .WithTools<SkillTools>();
-if (permission >= AgentPermission.Draft) mcp.WithTools<DraftTools>();
+    .WithTools<SkillTools>()
+    .WithTools<PimTools>();
+if (permission >= AgentPermission.Draft) mcp.WithTools<DraftTools>().WithTools<PimWriteTools>();
 if (permission >= AgentPermission.Organize) mcp.WithTools<OrganizeTools>();
 await builder.Build().RunAsync();
 
@@ -293,4 +294,119 @@ public sealed class OrganizeTools
         await ctx.Mail.MoveAsync(acc, h, target.FullName);
         return $"Moved to {target.FullName}.";
     });
+}
+
+[McpServerToolType]
+public sealed class PimTools
+{
+    static object Ev(MailStudio.Services.Calendar.Occurrence o) => new
+    {
+        id = o.Event.Id, title = o.Event.Title,
+        start = o.Event.AllDay ? o.Start.ToString("yyyy-MM-dd") : o.Start.ToString("yyyy-MM-dd HH:mm"),
+        end = o.Event.AllDay ? o.End.AddDays(-1).ToString("yyyy-MM-dd") : o.End.ToString("yyyy-MM-dd HH:mm"),
+        allDay = o.Event.AllDay, location = o.Event.Location, organizer = o.Event.Organizer, attendees = o.Event.Attendees,
+        response = o.Event.Response.ToString().ToLowerInvariant(), recurring = o.Event.Repeat != null, cancelled = o.Event.Cancelled,
+        category = o.Event.Category, notes = o.Event.Notes.Length > 500 ? o.Event.Notes[..500] + "…" : o.Event.Notes
+    };
+
+    [McpServerTool(Name = "list_events", ReadOnly = true),
+     Description("Lists the appointments and meetings in the user's MailStudio calendar between two dates (recurring items are expanded). Local time.")]
+    public static string ListEvents(
+        [Description("First day, yyyy-MM-dd. Today if empty.")] string? from = null,
+        [Description("Number of days (1-366). Default 7.")] int days = 7)
+    {
+        var start = DateTime.TryParse(from, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d) ? d.Date : DateTime.Today;
+        var store = new MailStudio.Services.Calendar.CalendarStore();
+        return Out.J(store.Occurrences(start, start.AddDays(Math.Clamp(days, 1, 366))).Select(Ev));
+    }
+
+    [McpServerTool(Name = "find_free_time", ReadOnly = true),
+     Description("Finds free slots in the user's calendar on working days (08:00-18:00) for a meeting of the given length.")]
+    public static string FindFreeTime(
+        [Description("Meeting length in minutes (15-480).")] int minutes = 60,
+        [Description("First day, yyyy-MM-dd. Tomorrow if empty.")] string? from = null,
+        [Description("Number of days to search (1-30). Default 5.")] int days = 5)
+    {
+        var start = DateTime.TryParse(from, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d) ? d.Date : DateTime.Today.AddDays(1);
+        var store = new MailStudio.Services.Calendar.CalendarStore();
+        var len = TimeSpan.FromMinutes(Math.Clamp(minutes, 15, 480));
+        var slots = new List<object>();
+        for (var day = start; day < start.AddDays(Math.Clamp(days, 1, 30)) && slots.Count < 12; day = day.AddDays(1))
+        {
+            if (day.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday) continue;
+            var busy = store.Conflicts(day.AddHours(8), day.AddHours(18)).OrderBy(o => o.Start).ToList();
+            var t = day.AddHours(8);
+            if (day == DateTime.Today && DateTime.Now > t) t = DateTime.Now.Date.AddHours(DateTime.Now.Hour + 1);
+            foreach (var b in busy.Append(new MailStudio.Services.Calendar.Occurrence(null!, day.AddHours(18), day.AddHours(18))))
+            {
+                if (b.Start - t >= len) slots.Add(new { start = t.ToString("yyyy-MM-dd HH:mm"), end = b.Start.ToString("yyyy-MM-dd HH:mm") });
+                if (b.End > t) t = b.End;
+            }
+        }
+        return Out.J(slots);
+    }
+
+    [McpServerTool(Name = "list_tasks", ReadOnly = true), Description("Lists the user's MailStudio tasks (to-do list).")]
+    public static string ListTasks([Description("open (default), overdue, completed or all.")] string filter = "open")
+    {
+        var tasks = new MailStudio.Services.Calendar.TaskStore().Tasks.Where(t => filter.ToLowerInvariant() switch
+        {
+            "all" => true, "completed" => t.Completed, "overdue" => t.IsOverdue, _ => !t.Completed
+        });
+        return Out.J(tasks.Select(t => new
+        {
+            id = t.Id, title = t.Title, due = t.DueDate?.ToString("yyyy-MM-dd"), priority = t.Priority.ToString().ToLowerInvariant(),
+            completed = t.Completed, overdue = t.IsOverdue, notes = t.Notes, sourceMail = t.SourceMail, sourceSubject = t.SourceSubject
+        }));
+    }
+}
+
+[McpServerToolType]
+public sealed class PimWriteTools
+{
+    [McpServerTool(Name = "add_task", Destructive = false), Description("Adds a task to the user's MailStudio task list (optionally linked to a mail).")]
+    public static string AddTask(
+        [Description("Task title.")] string title,
+        [Description("Due date yyyy-MM-dd, optional.")] string? due = null,
+        [Description("Notes, optional.")] string? notes = null,
+        [Description("low, normal or high.")] string priority = "normal",
+        [Description("Account of the source mail, optional (from list/search results).")] string? account = null,
+        [Description("Folder of the source mail, optional.")] string? folder = null,
+        [Description("Uid of the source mail, optional.")] uint? uid = null)
+    {
+        var t = new MailStudio.Services.Calendar.TaskItem
+        {
+            Title = title.Trim(), Notes = notes ?? "",
+            DueDate = DateTime.TryParse(due, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d) ? d.Date : null,
+            Priority = priority.ToLowerInvariant() switch { "high" => MailStudio.Services.Calendar.TaskPriority.High, "low" => MailStudio.Services.Calendar.TaskPriority.Low, _ => MailStudio.Services.Calendar.TaskPriority.Normal },
+            SourceMail = account != null && folder != null && uid != null ? $"{account}|{folder}|{uid}" : null,
+        };
+        if (t.Title.Length == 0) throw new ModelContextProtocol.McpException("Empty title.");
+        new MailStudio.Services.Calendar.TaskStore().Save(t);
+        return $"Task added: {t.Title}" + (t.DueDate is { } dd ? $" (due {dd:yyyy-MM-dd})" : "");
+    }
+
+    [McpServerTool(Name = "add_event", Destructive = false),
+     Description("Adds an appointment to the user's MailStudio calendar. It does NOT send invitations; the user can invite people from MailStudio.")]
+    public static string AddEvent(
+        [Description("Title.")] string title,
+        [Description("Start, local time 'yyyy-MM-dd HH:mm' (or 'yyyy-MM-dd' for an all-day event).")] string start,
+        [Description("End, same format. Default: 30 minutes after start (one day for all-day).")] string? end = null,
+        [Description("Location, optional.")] string? location = null,
+        [Description("Notes, optional.")] string? notes = null)
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var allDay = System.Text.RegularExpressions.Regex.IsMatch(start.Trim(), @"^\d{4}-\d{2}-\d{2}$");
+        if (!DateTime.TryParse(start, inv, System.Globalization.DateTimeStyles.None, out var s)) throw new ModelContextProtocol.McpException("Start must be 'yyyy-MM-dd HH:mm'.");
+        var e = DateTime.TryParse(end, inv, System.Globalization.DateTimeStyles.None, out var en) ? en : allDay ? s : s.AddMinutes(30);
+        var ev = new MailStudio.Services.Calendar.CalendarEvent
+        {
+            Title = title.Trim(), Start = allDay ? s.Date : s, End = allDay ? e.Date.AddDays(1) : (e > s ? e : s.AddMinutes(30)), AllDay = allDay,
+            Location = location ?? "", Notes = notes ?? "", Busy = allDay ? MailStudio.Services.Calendar.BusyStatus.Free : MailStudio.Services.Calendar.BusyStatus.Busy,
+        };
+        var store = new MailStudio.Services.Calendar.CalendarStore();
+        var conflicts = allDay ? new() : store.Conflicts(ev.Start, ev.End);
+        store.Save(ev);
+        return $"Added to the calendar: {ev.Title} {ev.Start:yyyy-MM-dd HH:mm}" + (conflicts.Count > 0 ? $". Note: overlaps {string.Join(", ", conflicts.Select(c => c.Event.Title))}." : ".");
+    }
 }

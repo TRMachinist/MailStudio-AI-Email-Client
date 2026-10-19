@@ -24,16 +24,47 @@ public sealed class CalendarStore
     Data _data = new();
     public event Action? Changed;
 
+    DateTime _stamp;
+
     public CalendarStore(string? path = null)
     {
         _path = path ?? Path.Combine(AppPaths.Root, "calendar.json");
-        try { if (File.Exists(_path)) _data = JsonSerializer.Deserialize<Data>(File.ReadAllText(_path)) ?? new(); }
-        catch (Exception ex) when (ex is JsonException or IOException)
+        Load();
+    }
+
+    void Load()
+    {
+        try
+        {
+            if (File.Exists(_path)) { _data = JsonSerializer.Deserialize<Data>(File.ReadAllText(_path)) ?? new(); _stamp = File.GetLastWriteTimeUtc(_path); }
+        }
+        catch (JsonException)
         {
             // A damaged file is kept next to it instead of being overwritten with an empty calendar
             try { File.Copy(_path, _path + ".bozuk-" + DateTime.Now.ToString("yyyyMMdd-HHmmss"), true); } catch (IOException) { }
             _data = new();
         }
+        catch (IOException) { }
+    }
+
+    /// <summary>Picks up changes another process wrote before this one writes (no lost agent edits).</summary>
+    void Sync()
+    {
+        try { if (File.Exists(_path) && File.GetLastWriteTimeUtc(_path) != _stamp) lock (_lock) Load(); }
+        catch (IOException) { }
+    }
+
+    /// <summary>Re-reads the file when another process (the MCP agent server) changed it. Returns true if reloaded.</summary>
+    public bool ReloadIfChanged()
+    {
+        try
+        {
+            if (!File.Exists(_path) || File.GetLastWriteTimeUtc(_path) == _stamp) return false;
+            lock (_lock) Load();
+        }
+        catch (IOException) { return false; }
+        Changed?.Invoke();
+        return true;
     }
 
     public IReadOnlyList<CalendarEvent> Events { get { lock (_lock) return _data.Events.ToList(); } }
@@ -42,7 +73,7 @@ public sealed class CalendarStore
     public CalendarEvent? FindByUid(string uid) { lock (_lock) return _data.Events.FirstOrDefault(e => e.Uid.Equals(uid, StringComparison.OrdinalIgnoreCase)); }
 
     public void Save(CalendarEvent e)
-    {
+    { Sync();
         lock (_lock)
         {
             if (e.End < e.Start) e.End = e.Start;
@@ -57,11 +88,11 @@ public sealed class CalendarStore
 
     static bool IsPastKey(string key) => long.TryParse(key[(key.IndexOf('|') + 1)..], out var t) && new DateTime(t) < DateTime.Now.AddHours(-1);
 
-    public void Delete(CalendarEvent e) { lock (_lock) _data.Events.RemoveAll(x => x.Id == e.Id); Write(); }
+    public void Delete(CalendarEvent e) { Sync(); lock (_lock) _data.Events.RemoveAll(x => x.Id == e.Id); Write(); }
 
     /// <summary>Deletes one occurrence of a series (Outlook "delete this occurrence").</summary>
     public void DeleteOccurrence(CalendarEvent e, DateTime start)
-    {
+    { Sync();
         lock (_lock)
         {
             var stored = _data.Events.FirstOrDefault(x => x.Id == e.Id);
@@ -109,13 +140,13 @@ public sealed class CalendarStore
     }
 
     public void Dismiss(IEnumerable<Occurrence> items)
-    {
+    { Sync();
         lock (_lock) foreach (var o in items) { _data.Dismissed.Add(o.Key); _data.Snoozed.Remove(o.Key); }
         Prune(); Write();
     }
 
     public void Snooze(IEnumerable<Occurrence> items, DateTime until)
-    {
+    { Sync();
         lock (_lock) foreach (var o in items) _data.Snoozed[o.Key] = until;
         Write();
     }
@@ -135,7 +166,7 @@ public sealed class CalendarStore
     public (int added, int updated) ImportIcs(string path) => Import(Ics.Parse(ReadText(path)).Events);
 
     public (int added, int updated) Import(IEnumerable<CalendarEvent> events)
-    {
+    { Sync();
         int added = 0, updated = 0;
         lock (_lock)
         {
@@ -193,6 +224,7 @@ public sealed class CalendarStore
         var tmp = _path + ".tmp";
         File.WriteAllText(tmp, json, new UTF8Encoding(false));
         File.Move(tmp, _path, true);
+        _stamp = File.GetLastWriteTimeUtc(_path);
         Changed?.Invoke();
     }
 }

@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.7.0 – Calendar and tasks (2026-10-19)
+
+- **Calendar** (bottom bar or Ctrl+2): day, work week, week and month views, date navigator and upcoming list,
+  drag to move or resize, double-click or select a range to create, all-day and multi-day items, colour categories,
+  busy / tentative / free / out of office, conflict warnings.
+- Recurring appointments: daily, every weekday, weekly on chosen days, every 2 weeks, monthly by date or
+  "2nd Tuesday" / "last Friday", yearly; end date; edit or delete one occurrence or the whole series.
+- **Meetings**: invitations in mail (Outlook, Exchange, Google, Teams/Zoom) show *Accept / Tentative / Decline*
+  in the reading pane; updates and cancellations are recognised. Send invitations, updates and cancellations –
+  the mail opens as a draft and you send it. Time zones (IANA, Windows and Outlook names) are converted.
+- **Reminders** window with snooze and dismiss, for appointments and tasks (also as a tray balloon).
+- **Tasks** (Ctrl+4): quick add with "today / tomorrow / weekday / 25.10", due-date groups, overdue, completed,
+  priority, category, notes, reminder; flagged mails appear in the list; "Add as task" on any mail (Ctrl+Shift+K),
+  "Schedule meeting" from a mail, and "Add to tasks" on AI answers (e.g. after *Extract tasks*).
+- Import / export **.ics** (Outlook, Google Calendar).
+- Agents (MCP): `list_events`, `find_free_time`, `list_tasks`; with the draft level `add_task` and `add_event`.
+  An agent still cannot send anything.
+- Calendar and tasks are stored only on this computer (`calendar.json`, `tasks.json` in the data folder).
+- Start option `--open calendar|tasks`.
+
 ## 1.6.2 – Signature images and cache repair (2026-10-19)
 
 - Fixed: images in Outlook/Exchange signatures (logos, banners) showed as empty boxes in replies and forwards.

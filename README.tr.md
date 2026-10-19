@@ -52,6 +52,8 @@ zeka asla kendi başına mail gönderemez.
 - Mail **ve eklerin** çevrimdışı kopyası, anında açılış, anlık bildirim (IMAP IDLE), masaüstü uyarıları, tepsi modu
 - İmzalı zengin HTML düzenleyici, satır içi yanıt, ayrı pencere, kişi otomatik tamamlama, güvenli taslak ve kurtarma
 - **Adres defteri**: kişiler, gruplar, Outlook/Gmail CSV ve vCard içe/dışa aktarma, Kime/Bilgi/Gizli seçici; maildeki her adres tıklanabilir (kopyala, yeni mail, kişilere ekle, maillerini bul)
+- **Takvim** (gün / iş haftası / hafta / ay, sürükle-bırak, yinelenen öğeler, anımsatıcılar, renk kategorileri) ve toplantı davetleri: maildeki daveti tek tıkla Kabul et / Belki / Reddet, davet ve güncelleme gönderme, .ics içe/dışa aktarma (Outlook, Google)
+- **Görevler**: hızlı ekleme ("teklifi gönder yarın"), son tarih grupları, bayraklı mailler, mailden görev, yapay zekanın çıkardığı görevleri listeye ekleme, anımsatıcılar
 - Outlook'taki gibi **koşullu biçimlendirme** — kuralları yapay zekaya düz cümleyle de yazdırabilirsiniz
 - Gmail / Outlook.com / Microsoft 365 (OAuth veya uygulama parolası), Yandex ve her IMAP/SMTP sunucusu
 - Açık ve koyu tema

@@ -57,6 +57,8 @@ never send mail on its own.
 - Offline copy of mail **and attachments**, instant opening, push notifications (IMAP IDLE), desktop alerts, tray mode
 - Rich HTML composer with signatures, inline replies, pop-out windows, contact auto-complete, safe drafts and recovery
 - **Address book**: contacts, groups, Outlook/Gmail CSV and vCard import/export, To/Cc/Bcc picker; every address in a mail is clickable (copy, new mail, add to contacts, find mails)
+- **Calendar** (day / work week / week / month, drag to move, recurring items, reminders, colour categories) with meeting invitations: Accept / Tentative / Decline right in the mail, send invitations and updates, import/export .ics (Outlook, Google)
+- **Tasks**: quick add ("send the quote tomorrow"), due-date groups, flagged mails, mail → task, AI "extract tasks" → task list, reminders
 - **Conditional formatting** like Outlook — and you can create the rules in plain language with AI
 - Gmail / Outlook.com / Microsoft 365 (OAuth or app password), Yandex and any IMAP/SMTP server
 - Light and dark theme

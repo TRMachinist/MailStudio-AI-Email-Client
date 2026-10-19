@@ -107,6 +107,8 @@ public partial class MainWindow : ITaskHost
 
     void PimTick()
     {
+        // Items an agent added through the MCP server appear without a restart
+        _calendar.ReloadIfChanged(); _tasks.ReloadIfChanged();
         var now = DateTime.Now;
         var due = _calendar.DueReminders(now).Select(o => "e" + o.Key).Concat(_tasks.DueReminders(now).Select(t => "t" + t.Id)).ToHashSet();
         if (due.Count > 0)

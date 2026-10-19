@@ -42,15 +42,46 @@ public sealed class TaskStore
     List<TaskItem> _tasks = new();
     public event Action? Changed;
 
+    DateTime _stamp;
+
     public TaskStore(string? path = null)
     {
         _path = path ?? Path.Combine(AppPaths.Root, "tasks.json");
-        try { if (File.Exists(_path)) _tasks = JsonSerializer.Deserialize<List<TaskItem>>(File.ReadAllText(_path)) ?? new(); }
-        catch (Exception ex) when (ex is JsonException or IOException)
+        Load();
+    }
+
+    void Load()
+    {
+        try
+        {
+            if (File.Exists(_path)) { _tasks = JsonSerializer.Deserialize<List<TaskItem>>(File.ReadAllText(_path)) ?? new(); _stamp = File.GetLastWriteTimeUtc(_path); }
+        }
+        catch (JsonException)
         {
             try { File.Copy(_path, _path + ".bozuk-" + DateTime.Now.ToString("yyyyMMdd-HHmmss"), true); } catch (IOException) { }
             _tasks = new();
         }
+        catch (IOException) { }
+    }
+
+    /// <summary>Picks up changes another process wrote before this one writes (no lost agent edits).</summary>
+    void Sync()
+    {
+        try { if (File.Exists(_path) && File.GetLastWriteTimeUtc(_path) != _stamp) lock (_lock) Load(); }
+        catch (IOException) { }
+    }
+
+    /// <summary>Re-reads the file when another process (the MCP agent server) changed it. Returns true if reloaded.</summary>
+    public bool ReloadIfChanged()
+    {
+        try
+        {
+            if (!File.Exists(_path) || File.GetLastWriteTimeUtc(_path) == _stamp) return false;
+            lock (_lock) Load();
+        }
+        catch (IOException) { return false; }
+        Changed?.Invoke();
+        return true;
     }
 
     public IReadOnlyList<TaskItem> Tasks { get { lock (_lock) return _tasks.ToList(); } }
@@ -59,7 +90,7 @@ public sealed class TaskStore
     public TaskItem? FindBySource(string source) { lock (_lock) return _tasks.FirstOrDefault(t => t.SourceMail == source); }
 
     public void Save(TaskItem t)
-    {
+    { Sync();
         lock (_lock)
         {
             t.Modified = DateTime.Now;
@@ -71,13 +102,13 @@ public sealed class TaskStore
         Write();
     }
 
-    public void Delete(TaskItem t) { lock (_lock) _tasks.RemoveAll(x => x.Id == t.Id); Write(); }
+    public void Delete(TaskItem t) { Sync(); lock (_lock) _tasks.RemoveAll(x => x.Id == t.Id); Write(); }
 
     public void SetCompleted(TaskItem t, bool done) { t.Completed = done; Save(t); }
 
     /// <summary>Adds several tasks at once (e.g. "AI: extract tasks"); titles already open in the list are skipped.</summary>
     public int AddRange(IEnumerable<TaskItem> items)
-    {
+    { Sync();
         var n = 0;
         lock (_lock)
             foreach (var t in items)
@@ -121,6 +152,7 @@ public sealed class TaskStore
         var tmp = _path + ".tmp";
         File.WriteAllText(tmp, json, new UTF8Encoding(false));
         File.Move(tmp, _path, true);
+        _stamp = File.GetLastWriteTimeUtc(_path);
         Changed?.Invoke();
     }
 }
