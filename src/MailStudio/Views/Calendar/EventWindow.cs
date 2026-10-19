@@ -30,6 +30,7 @@ public sealed class EventWindow : Window
     readonly TextBlock _repeatText = new() { Margin = new Thickness(0, 4, 0, 0), FontSize = 11.5, TextWrapping = TextWrapping.Wrap };
     readonly Button _send;
     readonly bool _isNew;
+    readonly bool _meetingMode;
 
     /// <summary>The user pressed Send: the caller mails the invitation (or update) to the attendees.</summary>
     public bool SendInvitations { get; private set; }
@@ -41,7 +42,7 @@ public sealed class EventWindow : Window
 
     public EventWindow(CalendarEvent e, CalendarStore store, bool isNew, bool meeting)
     {
-        _e = e; _store = store; _isNew = isNew;
+        _e = e; _store = store; _isNew = isNew; _meetingMode = meeting && isNew;
         UiTranslator.SetSkip(this, true);
         Title = (isNew ? (meeting ? L.T("Yeni toplantı") : L.T("Yeni randevu")) : e.Title.Length > 0 ? e.Title : L.T("Randevu")) + " - MailStudio";
         Width = 760; Height = 640; MinWidth = 600; MinHeight = 480; WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -179,7 +180,7 @@ public sealed class EventWindow : Window
 
     void UpdateMeetingUi()
     {
-        var meeting = Attendees().Count > 0;
+        var meeting = Attendees().Count > 0 || _meetingMode;
         _send.Visibility = meeting && (_e.Organizer.Length == 0 || _isNew || IsOrganizer) ? Visibility.Visible : Visibility.Collapsed;
         _send.Content = _isNew ? L.T("Gönder") : L.T("Güncelleme gönder");
     }

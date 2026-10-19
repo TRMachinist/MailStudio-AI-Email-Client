@@ -54,7 +54,8 @@ public sealed class MiniMonth : UserControl
         var first = MailStudio.Services.Calendar.Recurrence.WeekStart(_month);
         for (var i = 0; i < 7; i++)
         {
-            var dn = PimUi.Text(L.Culture.DateTimeFormat.GetShortestDayName((DayOfWeek)((i + 1) % 7)), 11, brush: "TextSecondaryBrush");
+            var abbr = L.Culture.DateTimeFormat.GetAbbreviatedDayName((DayOfWeek)((i + 1) % 7));
+            var dn = PimUi.Text(abbr.Length > 2 ? abbr[..2] : abbr, 11, brush: "TextSecondaryBrush");
             dn.HorizontalAlignment = HorizontalAlignment.Center;
             _days.Children.Add(dn);
         }

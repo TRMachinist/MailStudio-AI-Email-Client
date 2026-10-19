@@ -362,7 +362,8 @@ public partial class MainWindow : Window
         _currentFolder = node;
         _searchQuery = "";
         SearchBox.Text = "";
-        Title = $"{node.Name} - {Acc(node.AccountId)?.Email} - {L.ProductName}";
+        var folderTitle = $"{node.Name} - {Acc(node.AccountId)?.Email} - {L.ProductName}";
+        if (_module == PimModule.Mail) Title = folderTitle; else _mailTitle = folderTitle;
         LoadMessagesFromCache();
         if (node.FullName.StartsWith("[Gmail]/", StringComparison.OrdinalIgnoreCase) && node.SortOrder == 50)
             Status(L.F("Gmail \"{0}\" bir etikettir: bu etiketi taşıyan tüm iletileri (okunmuşlar dahil) listeler. Klasördeki sayı yalnızca okunmamışları gösterir; yalnız onlar için Okunmamış filtresini kullanın.", node.Name));
