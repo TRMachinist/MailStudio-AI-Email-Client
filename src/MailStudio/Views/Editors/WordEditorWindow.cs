@@ -63,7 +63,7 @@ public sealed class WordEditorWindow : Window
         }
         void Sep() => w.Children.Add(new Border { Width = 1, Height = 22, Margin = new Thickness(6, 0, 6, 0), Background = ThemeManager.Brush("BorderSubtleBrush"), VerticalAlignment = VerticalAlignment.Center });
         void Cmd(string glyph, string tip, string command, string? arg = null) => B(glyph, tip, () => Exec($"cmd({JsonSerializer.Serialize(command)},{(arg == null ? "null" : JsonSerializer.Serialize(arg))})"));
-        B("", "Kaydet (Ctrl+S)", () => _ = SaveAsync(false), L.T("Kaydet"));
+        B("", L.T("Kaydet (Ctrl+S)"), () => _ = SaveAsync(false), L.T("Kaydet"));
         B("", L.T("Farklı kaydet (Ctrl+Shift+S)"), () => _ = SaveAsync(true));
         Sep();
         Cmd("", L.T("Geri al (Ctrl+Z)"), "undo"); Cmd("", "Yinele (Ctrl+Y)", "redo");

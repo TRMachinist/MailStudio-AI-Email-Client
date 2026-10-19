@@ -74,7 +74,7 @@ public sealed class SlideEditorWindow : Window
             b.Click += (_, _) => a(); w.Children.Add(b);
         }
         void Sep() => w.Children.Add(new Border { Width = 1, Height = 22, Margin = new Thickness(6, 0, 6, 0), Background = ThemeManager.Brush("BorderSubtleBrush"), VerticalAlignment = VerticalAlignment.Center });
-        B("", "Kaydet (Ctrl+S)", () => _ = SaveAsync(false), L.T("Kaydet"));
+        B("", L.T("Kaydet (Ctrl+S)"), () => _ = SaveAsync(false), L.T("Kaydet"));
         B("", L.T("Farklı kaydet"), () => _ = SaveAsync(true));
         Sep();
         B("", L.T("Slaydı yukarı taşı"), () => Move(-1), L.T("Yukarı"));

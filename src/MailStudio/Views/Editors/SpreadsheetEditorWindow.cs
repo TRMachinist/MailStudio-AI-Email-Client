@@ -114,7 +114,7 @@ public sealed class SpreadsheetEditorWindow : Window
             b.Click += (_, _) => { CommitEditor(); a(); _view.Focus(); }; w.Children.Add(b); return b;
         }
         Border Sep() { var s = new Border { Width = 1, Height = 22, Margin = new Thickness(6, 0, 6, 0), Background = ThemeManager.Brush("BorderSubtleBrush"), VerticalAlignment = VerticalAlignment.Center }; w.Children.Add(s); return s; }
-        B("", "Kaydet (Ctrl+S)", () => _ = SaveAsync(false), L.T("Kaydet"));
+        B("", L.T("Kaydet (Ctrl+S)"), () => _ = SaveAsync(false), L.T("Kaydet"));
         B("", L.T("Farklı kaydet (Ctrl+Shift+S)"), () => _ = SaveAsync(true));
         Sep();
         B("", L.T("Geri al (Ctrl+Z)"), Undo); B("", "Yinele (Ctrl+Y)", Redo);
