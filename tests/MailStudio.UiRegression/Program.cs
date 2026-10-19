@@ -9,6 +9,8 @@ using MailStudio;
 using MailStudio.Models;
 using MailStudio.Services;
 using MailStudio.Views;
+using MailStudio.Services.Calendar;
+using MailStudio.Views.Calendar;
 using MailStudio.Regression;
 using Microsoft.Web.WebView2.Wpf;
 
@@ -202,6 +204,81 @@ internal static class Program
         toolbar=((Grid)message2.Content).Children.OfType<WrapPanel>().First();((Button)toolbar.Children[3]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         await Until(()=>!message2.IsVisible);
         Check(imap.Commands.Any(c=>c.StartsWith("UID MOVE 2 ")) && !imap.Commands.Any(c=>c.StartsWith("UID MOVE 3 ")),"separate Message A window deletes A after main selection changes to B");
+
+        // ---- Calendar and tasks modules (synthetic items only)
+        {
+            var today = DateTime.Today;
+            var cal = main.CalendarStore;
+            var single = new CalendarEvent { Title = "Synthetic review", Start = today.AddHours(10), End = today.AddHours(11), Category = "Mavi" };
+            var series = new CalendarEvent { Title = "Synthetic stand-up", Start = today.AddDays(-7).AddHours(8.5), End = today.AddDays(-7).AddHours(8.75), Repeat = new RepeatRule { Frequency = RepeatFrequency.Daily } };
+            var fair = new CalendarEvent { Title = "Synthetic fair", Start = today.AddDays(1), End = today.AddDays(3), AllDay = true, Category = "Mor" };
+            cal.Save(single); cal.Save(series); cal.Save(fair);
+            main.SwitchModule(PimModule.Calendar); await Task.Delay(500);
+            var view = main.CalendarViewForTests!;
+            Check(((ContentControl)main.FindName("PimHost")).Visibility == Visibility.Visible && ((Grid)main.FindName("RibbonGrid")).Children.Contains(view.Ribbon) &&
+                  ((UIElement)main.FindName("RibbonHome")).Visibility == Visibility.Collapsed && ((UIElement)main.FindName("FolderTree")).Visibility == Visibility.Collapsed,
+                  "calendar module replaces the mail view, folder pane and ribbon");
+            int Chips() => Descendants(view).OfType<Border>().Count(b => b.Tag is Occurrence);
+            foreach (var mode in new[] { CalendarMode.Day, CalendarMode.WorkWeek, CalendarMode.Week, CalendarMode.Month })
+            {
+                view.SetMode(mode); main.UpdateLayout(); await Task.Delay(250);
+                Check(Chips() >= (mode == CalendarMode.Day ? 2 : 3), $"calendar {mode} view shows the items ({Chips()})");
+                if (mode == CalendarMode.Week) { Audit(main, "MainWindow(calendar)"); Capture(main, "calendar-week.png"); }
+                if (mode == CalendarMode.Month) Capture(main, "calendar-month.png");
+            }
+            view.SetMode(CalendarMode.Day); main.UpdateLayout(); await Task.Delay(250);
+            var block = Descendants(view).OfType<Border>().First(b => b.Tag is Occurrence o && o.Event.Id == single.Id);
+            Check(Math.Abs(Canvas.GetTop(block) - (10 * CalendarView.HourHeight + 1)) < 0.5, "timed item is placed at its hour");
+            Invoke(view, "ApplyMove", new Occurrence(single, single.Start, single.End), single.Start.AddHours(2), single.End.AddHours(2));
+            Check(cal.Find(single.Id)!.Start == today.AddHours(12), "drag move updates the appointment");
+            Invoke(view, "ApplyMove", new Occurrence(series, today.AddHours(8.5), today.AddHours(8.75)), today.AddHours(9), today.AddHours(9.25));
+            Check(cal.Find(series.Id)!.Exceptions.Contains(today.AddHours(8.5)) && cal.Events.Any(e => e.Uid.StartsWith(series.Uid + "#") && e.Start == today.AddHours(9) && e.Repeat == null),
+                  "moving one occurrence detaches it from the series");
+
+            var draft = new CalendarEvent { Start = today.AddHours(12.25), End = today.AddHours(12.75) };
+            var form = new EventWindow(draft, cal, isNew: true, meeting: false) { Owner = main };
+            var conflictShown = false;
+            form.Loaded += (_, _) => form.Dispatcher.BeginInvoke(() =>
+            {
+                Field<TextBox>(form, "_title").Text = "Dialog event";
+                conflictShown = Field<TextBlock>(form, "_conflict").Visibility == Visibility.Visible;
+                Field<ComboBox>(form, "_repeat").SelectedIndex = 1;
+                Audit(form, "EventWindow");
+                Invoke(form, "Finish", false);
+            }, DispatcherPriority.Background);
+            Check(form.ShowDialog() == true && draft.Title == "Dialog event" && draft.Repeat?.Frequency == RepeatFrequency.Daily && conflictShown, "event form saves title and repeat and warns about the conflict");
+
+            var invite = new CalendarEvent { Uid = "ui-invite@example.test", Title = "Synthetic invite", Start = today.AddDays(2).AddHours(15), End = today.AddDays(2).AddHours(16), Attendees = { "owner@example.test" } };
+            var inviteContent = new MailContent { Html = "<p>Invite</p>", Text = "Invite", CalendarIcs = Ics.WriteCalendar(new[] { invite }, "REQUEST") };
+            Set(main, "_current", a); Invoke(main, "RenderBody", a, inviteContent);
+            var bar = (Border)main.FindName("InviteBar");
+            Check(bar.Visibility == Visibility.Visible && Descendants(bar).OfType<Button>().Any(x => (string)x.Content == L.T("Kabul et")), "meeting invitation shows Accept / Tentative / Decline in the reading pane");
+            Invoke(main, "RespondInvitation", a, inviteContent, Ics.Parse(inviteContent.CalendarIcs), MeetingResponse.Accepted, "ui-test|INBOX|2");
+            Check(cal.FindByUid("ui-invite@example.test") is { Response: MeetingResponse.Accepted, SourceMail: "ui-test|INBOX|2" }, "accepting adds the meeting to the calendar");
+
+            main.SwitchModule(PimModule.Tasks); await Task.Delay(400);
+            var tasksView = main.TasksViewForTests!;
+            Invoke(tasksView, "QuickAdd", "Synthetic quote " + L.T("yarın"));
+            Check(main.TaskStore.Tasks.Any(t => t.Title == "Synthetic quote" && t.DueDate == today.AddDays(1)), "quick add understands 'tomorrow'");
+            Set(main, "_current", a); Invoke(main, "OnMailToTask", main, new RoutedEventArgs());
+            Check(main.TaskStore.Tasks.Any(t => t.SourceMail == "ui-test|INBOX|2" && t.DueDate == today), "mail becomes a task due today");
+            Invoke(main, "OnChatToTasks", new Button { Tag = new ChatMessage { Text = "- [ ] Synthetic AI task one\n2. Synthetic AI task two" } }, new RoutedEventArgs());
+            Check(main.TaskStore.Tasks.Count(t => t.Title.StartsWith("Synthetic AI task")) == 2, "AI answer lines become tasks");
+            main.UpdateLayout(); await Task.Delay(300);
+            Check(Descendants(tasksView).OfType<ListBoxItem>().Count(i => i.Tag is TaskItem) >= 4, "task list shows the tasks");
+            Audit(main, "MainWindow(tasks)"); Capture(main, "tasks.png");
+
+            cal.Save(new CalendarEvent { Title = "Synthetic reminder", Start = DateTime.Now.AddMinutes(5), End = DateTime.Now.AddMinutes(35), ReminderMinutes = 15 });
+            Invoke(main, "PimTick"); await Task.Delay(300);
+            var reminders = Field<ReminderWindow?>(main, "_reminderWindow");
+            Check(reminders is { IsVisible: true }, "reminder window opens for a due reminder");
+            Audit(reminders!, "ReminderWindow"); Capture(reminders!, "reminders.png");
+            Invoke(reminders!, "Dismiss", true);
+            Check(!reminders!.IsVisible && cal.DueReminders(DateTime.Now).Count == 0, "dismiss all closes the reminders");
+            main.SwitchModule(PimModule.Mail);
+            Check(((ContentControl)main.FindName("PimHost")).Visibility == Visibility.Collapsed && ((UIElement)main.FindName("RibbonHome")).Visibility == Visibility.Visible, "back to mail restores the ribbon");
+            Console.WriteLine("PASS calendar, tasks, invitations and reminders"); _passed++;
+        }
         main.Close();
         var recovery=new ComposeWindow(new[]{account},account.Id,new(){Subject="Uncertain recovery",SubmissionId=Guid.NewGuid().ToString("N"),SubmissionState="Uncertain"},mail,(_,_)=>Task.FromResult(""),()=>"Test");
         recovery.Show();await Until(()=>recovery.IsEditorInitialized);

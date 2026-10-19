@@ -25,6 +25,8 @@ public static class AddressChips
         if (people.Count == 0) { panel.Visibility = Visibility.Collapsed; return; }
         panel.Visibility = Visibility.Visible;
         var text = new TextBlock { FontSize = fontSize, TextWrapping = TextWrapping.Wrap, Foreground = foreground ?? ThemeManager.Brush("TextSecondaryBrush") };
+        UiTranslator.SetSkip(text, true);
+        if (!string.IsNullOrEmpty(label)) label = L.T(label);
         if (!string.IsNullOrEmpty(label)) text.Inlines.Add(new Run(label));
         for (int i = 0; i < people.Count; i++)
         {

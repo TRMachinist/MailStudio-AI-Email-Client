@@ -712,7 +712,7 @@ public sealed partial class PdfAttachmentWindow
                 var firstBaseline = e.Baseline ?? (e.Rect.Y + 2 + e.Size * .92);
                 for (int i = 0; i < lines.Length; i++)
                 {
-                    var t = new TextBlock { Text = lines[i], FontFamily = new FontFamily("Arial"), FontSize = e.Size, Foreground = color, IsHitTestVisible = true };
+                    var t = new TextBlock { Text = lines[i], FontFamily = new FontFamily("Arial"), FontSize = e.Size, Foreground = color, IsHitTestVisible = true }; Services.UiTranslator.SetSkip(t, true);
                     TextOptions.SetTextFormattingMode(t, TextFormattingMode.Ideal);
                     Canvas.SetLeft(t, e.Rect.X + (e.Kind == "correct" ? .8 : 2)); Canvas.SetTop(t, firstBaseline + i * e.Size * 1.18 - e.Size * .905);
                     yield return t;

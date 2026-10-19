@@ -55,6 +55,7 @@ public sealed class CalendarView : UserControl
     {
         _store = store; _host = host;
         Focusable = true;
+        UiTranslator.SetSkip(this, true); UiTranslator.SetSkip(Ribbon, true);
         // ---- ribbon
         Ribbon.Children.Add(PimUi.Group(L.T("Yeni"),
             PimUi.Cmd("", L.T("Yeni Randevu"), (_, _) => NewEvent(meeting: false), L.T("Yeni randevu (Ctrl+N)"), primary: true),
@@ -83,6 +84,7 @@ public sealed class CalendarView : UserControl
         side.Children.Add(upTitle);
         side.Children.Add(_upcoming);
         SidePanel = new ScrollViewer { Content = side, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        UiTranslator.SetSkip(SidePanel, true);
 
         // ---- view
         var root = new DockPanel();

@@ -13,6 +13,13 @@ public static class UiTranslator
 {
     static bool _global;
 
+    /// <summary>Marks user content (mail text, PDF words, calendar items, task titles) and code-built views whose texts
+    /// are already translated: nothing inside is looked up again. Inherited, so set it on a container.</summary>
+    public static readonly DependencyProperty SkipProperty = DependencyProperty.RegisterAttached(
+        "Skip", typeof(bool), typeof(UiTranslator), new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.Inherits));
+    public static void SetSkip(DependencyObject o, bool value) => o.SetValue(SkipProperty, value);
+    public static bool GetSkip(DependencyObject o) => (bool)o.GetValue(SkipProperty);
+
     /// <summary>
     /// Static texts inside DataTemplates / ControlTemplates (e.g. buttons in chat bubbles) are created later than the window;
     /// they are translated when they load. Bound values and user-entered text are never touched.
@@ -38,7 +45,7 @@ public static class UiTranslator
 
     static void Walk(DependencyObject o, HashSet<DependencyObject> seen)
     {
-        if (!seen.Add(o)) return;
+        if (!seen.Add(o) || GetSkip(o)) return;
         Translate(o);
         if (o is FrameworkElement fe)
         {
@@ -74,6 +81,7 @@ public static class UiTranslator
 
     static void Translate(DependencyObject o)
     {
+        if (GetSkip(o)) return;
         switch (o)
         {
             case Window: Set(o, Window.TitleProperty); break;

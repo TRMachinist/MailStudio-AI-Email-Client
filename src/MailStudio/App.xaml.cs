@@ -74,7 +74,7 @@ public partial class App : Application
             Shutdown(); return;
         }
         base.OnStartup(e);
-        if (demo) { var demoStore = new Services.AccountStore(); demoStore.Load(); var demoCache = new Services.MailCache(); demoCache.Init(); Services.DemoData.Seed(demoStore, demoCache); }
+        if (demo) { var demoStore = new Services.AccountStore(); demoStore.Load(); var demoCache = new Services.MailCache(); demoCache.Init(); Services.DemoData.Seed(demoStore, demoCache); Services.DemoData.SeedPim(new Services.Calendar.CalendarStore(), new Services.Calendar.TaskStore()); }
         var window = new MainWindow(startInTray: e.Args.Contains("--background"));
         MainWindow = window;
         _instance.Listen(Dispatcher, window.ShowFromTray);

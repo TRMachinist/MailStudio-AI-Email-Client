@@ -197,6 +197,7 @@ public partial class MainWindow : ITaskHost
     {
         InviteBar.Visibility = Visibility.Collapsed;
         InviteBar.Child = null;
+        UiTranslator.SetSkip(InviteBar, true);
         if (string.IsNullOrWhiteSpace(c.CalendarIcs)) return;
         IcsCalendar cal;
         try { cal = Ics.Parse(c.CalendarIcs); } catch { return; }

@@ -43,6 +43,7 @@ public sealed class TasksView : UserControl
     public TasksView(TaskStore store, ITaskHost host)
     {
         _store = store; _host = host;
+        UiTranslator.SetSkip(this, true); UiTranslator.SetSkip(Ribbon, true);
         Ribbon.Children.Add(PimUi.Group(L.T("Yeni"), PimUi.Cmd("", L.T("Yeni Görev"), (_, _) => { _quick.Focus(); }, L.T("Yeni görev (Ctrl+N)"), primary: true)));
         Ribbon.Children.Add(PimUi.Group(L.T("Yönet"),
             PimUi.Cmd("", L.T("Tamamlandı"), (_, _) => ToggleSelected(), L.T("Tamamlandı olarak işaretle (Ctrl+Enter)")),
@@ -60,6 +61,7 @@ public sealed class TasksView : UserControl
         var sideTitle = PimUi.Text(L.T("Yapılacaklar"), 13, bold: true); sideTitle.Margin = new Thickness(12, 10, 8, 6);
         var side = new StackPanel(); side.Children.Add(sideTitle); side.Children.Add(_filters);
         SidePanel = new ScrollViewer { Content = side, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        UiTranslator.SetSkip(SidePanel, true);
 
         var root = new Grid();
         root.ColumnDefinitions.Add(new() { Width = new GridLength(3, GridUnitType.Star), MinWidth = 320 });

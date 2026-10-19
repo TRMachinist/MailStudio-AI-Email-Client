@@ -91,8 +91,8 @@ public sealed class CalendarStore
 
     // ------------------------------------------------------------------ reminders
 
-    /// <summary>Reminders that should be shown now (Outlook keeps them until dismissed). Only occurrences that start
-    /// at most 12 hours ago are reminded, so importing an old calendar does not flood the window.</summary>
+    /// <summary>Reminders that should be shown now (kept until dismissed or until the item has ended), so importing
+    /// an old calendar or opening MailStudio in the evening does not flood the window with past items.</summary>
     public List<Occurrence> DueReminders(DateTime now)
     {
         var list = new List<Occurrence>();
@@ -100,7 +100,7 @@ public sealed class CalendarStore
         lock (_lock) { dismissed = new(_data.Dismissed); snoozed = new(_data.Snoozed); }
         foreach (var o in Occurrences(now.AddHours(-12), now.AddDays(15), includeCancelled: false))
         {
-            if (o.Event.ReminderMinutes < 0 || o.Event.Response == MeetingResponse.Declined) continue;
+            if (o.Event.ReminderMinutes < 0 || o.Event.Response == MeetingResponse.Declined || o.End <= now) continue; // nothing to remind after it ended
             if (dismissed.Contains(o.Key)) continue;
             var at = snoozed.TryGetValue(o.Key, out var s) ? s : o.Start.AddMinutes(-o.Event.ReminderMinutes);
             if (at <= now) list.Add(o);

@@ -23,7 +23,7 @@ public static class DemoData
     }
 
     record Demo(uint Uid, string Folder, string FromName, string FromAddress, string SubjectEn, string SubjectTr, string BodyEn, string BodyTr,
-                double HoursAgo, bool Read = true, bool Flagged = false, string[]? Files = null);
+                double HoursAgo, bool Read = true, bool Flagged = false, string[]? Files = null, bool Invitation = false);
 
     static readonly Demo[] Mails =
     {
@@ -67,6 +67,11 @@ public static class DemoData
             "<p>Please find the 3.1 certificate for heat 52817 in our portal.</p>",
             "<p>52817 numaralı dökümün 3.1 sertifikası portalımızdadır.</p>",
             200),
+        new(9, "INBOX", "Quality Lab", "qa@contoso-aero.example",
+            "Invitation: FAI review NW-1042", "Davet: NW-1042 ilk numune değerlendirmesi",
+            "<p>Hello,</p><p>let's go through the first article inspection of NW-1042 together (bore Ø110 H7, 3.1 certificate).</p><p>Microsoft Teams / Meeting room 2</p>",
+            "<p>Merhaba,</p><p>NW-1042 ilk numune muayenesini birlikte değerlendirelim (Ø110 H7 delik, 3.1 sertifika).</p><p>Microsoft Teams / Toplantı odası 2</p>",
+            3.5, Read: false, Invitation: true),
         new(20, "Sent", "Demo User", "demo@mailstudio.example",
             "Re: Quotation request – flange DN100", "Ynt: Teklif talebi – flanş DN100",
             "<p>Hi Anna,</p><p>thanks for the request, our offer follows tomorrow.</p>",
@@ -131,10 +136,60 @@ public static class DemoData
             {
                 FileName = f, Part = f, Size = File.Exists(Path.Combine(files, f)) ? new FileInfo(Path.Combine(files, f)).Length : 1024,
             }).ToList();
-            cache.SaveBody(AccountId, m.Folder, m.Uid, new MailContent { Html = WrapHtml(L.IsEnglish ? m.BodyEn : m.BodyTr), Text = MailService.HtmlToText(L.IsEnglish ? m.BodyEn : m.BodyTr), Attachments = atts });
+            cache.SaveBody(AccountId, m.Folder, m.Uid, new MailContent { Html = WrapHtml(L.IsEnglish ? m.BodyEn : m.BodyTr), Text = MailService.HtmlToText(L.IsEnglish ? m.BodyEn : m.BodyTr), Attachments = atts,
+                CalendarIcs = m.Invitation ? InvitationIcs(en) : "" });
             cache.SaveAttachments(AccountId, m.Folder, m.Uid, atts);
         }
         return acc;
+    }
+
+    /// <summary>A meeting request like Outlook sends it: tomorrow 10:00–11:00 (local), Quality Lab organises.</summary>
+    static string InvitationIcs(bool en)
+    {
+        var start = DateTime.Today.AddDays(1).AddHours(10);
+        var e = new Calendar.CalendarEvent
+        {
+            Uid = "demo-fai-review@contoso-aero.example", Title = en ? "FAI review NW-1042" : "NW-1042 ilk numune değerlendirmesi",
+            Location = en ? "Microsoft Teams / Meeting room 2" : "Microsoft Teams / Toplantı odası 2", Start = start, End = start.AddHours(1),
+            Organizer = "Quality Lab <qa@contoso-aero.example>", Attendees = { (en ? "Demo User" : "Demo Kullanıcı") + " <demo@mailstudio.example>", "Tom Becker <t.becker@contoso-aero.example>" },
+            Notes = en ? "First article inspection NW-1042: bore Ø110 H7, 3.1 certificate." : "NW-1042 ilk numune: Ø110 H7 delik, 3.1 sertifika.", ReminderMinutes = 15,
+        };
+        return Calendar.Ics.WriteCalendar(new[] { e }, "REQUEST");
+    }
+
+    /// <summary>Demo appointments and tasks around today (only when the demo calendar is empty).</summary>
+    public static void SeedPim(Calendar.CalendarStore calendar, Calendar.TaskStore tasks)
+    {
+        var en = L.IsEnglish;
+        var today = DateTime.Today;
+        string T(string e, string t) => en ? e : t;
+        if (calendar.Events.Count == 0)
+        {
+            var monday = Calendar.Recurrence.WeekStart(today);
+            void Add(Calendar.CalendarEvent ev) => calendar.Save(ev);
+            Add(new() { Title = T("Daily production stand-up", "Günlük üretim toplantısı"), Location = T("Shop floor", "Atölye"), Start = monday.AddDays(-7).AddHours(8.5), End = monday.AddDays(-7).AddHours(8.75),
+                Category = "Mavi", ReminderMinutes = 5, Repeat = new() { Frequency = Calendar.RepeatFrequency.Weekly, Days = { DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday } } });
+            Add(new() { Title = T("Customer visit – Northwind", "Müşteri ziyareti – Northwind"), Location = T("Meeting room 1", "Toplantı odası 1"), Start = today.AddHours(14), End = today.AddHours(15), Category = "Turuncu",
+                Notes = T("Flange NW-1042 quotation, delivery week 46.", "NW-1042 flanş teklifi, 46. hafta teslim.") });
+            Add(new() { Title = T("CAM review – bracket rev C", "CAM gözden geçirme – braket rev C"), Location = "Teams", Start = today.AddDays(1).AddHours(13.5), End = today.AddDays(1).AddHours(14.5), Category = "Mavi",
+                Organizer = (en ? "Demo User" : "Demo Kullanıcı") + " <demo@mailstudio.example>", Response = Calendar.MeetingResponse.Organizer,
+                Attendees = { "CNC Programming <cam@northwind-machining.example>", "Tom Becker <t.becker@contoso-aero.example>" } });
+            Add(new() { Title = T("Trade fair: WIN Eurasia", "Fuar: WIN Eurasia"), Location = T("Istanbul Expo Center", "İstanbul Fuar Merkezi"), Start = today.AddDays(2), End = today.AddDays(5), AllDay = true, Busy = Calendar.BusyStatus.OutOfOffice, Category = "Mor", ReminderMinutes = 1440 });
+            Add(new() { Title = T("Supplier call – tooling order", "Tedarikçi görüşmesi – takım siparişi"), Start = today.AddDays(3).AddHours(10), End = today.AddDays(3).AddHours(10.5), Category = "Yeşil" });
+            Add(new() { Title = T("Monthly quality review", "Aylık kalite değerlendirmesi"), Start = today.AddDays(-20).AddHours(16), End = today.AddDays(-20).AddHours(17), Category = "Kırmızı",
+                Repeat = new() { Frequency = Calendar.RepeatFrequency.Monthly, WeekOfMonth = -1, Days = { DayOfWeek.Friday } } });
+        }
+        if (tasks.Tasks.Count == 0)
+        {
+            tasks.Save(new() { Title = T("Prepare flange quotation NW-1042", "Flanş teklifini hazırla (NW-1042)"), DueDate = today, Priority = Calendar.TaskPriority.High, SourceMail = $"{AccountId}|INBOX|1",
+                SourceSubject = T("Quotation request – 120× flange DN100 PN16", "Teklif talebi – 120 adet flanş DN100 PN16"), SourceFrom = "Anna Keller", ReminderAt = today.AddDays(1).AddHours(9) });
+            tasks.Save(new() { Title = T("Check raw stock for bracket rev C", "Braket rev C ham malzeme kontrolü"), DueDate = today.AddDays(1), SourceMail = $"{AccountId}|INBOX|2",
+                SourceSubject = T("STEP model – bracket rev C", "STEP modeli – braket rev C"), SourceFrom = "Tom Becker", Category = "Mavi" });
+            tasks.Save(new() { Title = T("Download 3.1 certificate heat 52817", "52817 dökümünün 3.1 sertifikasını indir"), DueDate = today.AddDays(-1), Category = "Kırmızı" });
+            tasks.Save(new() { Title = T("Confirm tooling order", "Takım siparişini onayla"), DueDate = today.AddDays(3) });
+            tasks.Save(new() { Title = T("Trade fair booth materials", "Fuar standı malzemeleri"), Notes = T("Brochures, sample parts, laptop with the STEP viewer.", "Broşürler, numune parçalar, STEP görüntüleyicili dizüstü.") });
+            tasks.Save(new() { Title = T("Review OP20 feeds", "OP20 ilerlemelerini kontrol et"), DueDate = today.AddDays(-2), Completed = true });
+        }
     }
 
     static string WrapHtml(string body) => "<div style=\"font-family:Segoe UI,Calibri,sans-serif;font-size:14px\">" + body + "</div>";

@@ -42,6 +42,7 @@ public sealed class EventWindow : Window
     public EventWindow(CalendarEvent e, CalendarStore store, bool isNew, bool meeting)
     {
         _e = e; _store = store; _isNew = isNew;
+        UiTranslator.SetSkip(this, true);
         Title = (isNew ? (meeting ? L.T("Yeni toplantı") : L.T("Yeni randevu")) : e.Title.Length > 0 ? e.Title : L.T("Randevu")) + " - MailStudio";
         Width = 760; Height = 640; MinWidth = 600; MinHeight = 480; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         SetResourceReference(BackgroundProperty, "BgSurfacePrimaryBrush");

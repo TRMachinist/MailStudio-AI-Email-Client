@@ -20,6 +20,7 @@ public sealed class ReminderWindow : Window
     public ReminderWindow(CalendarStore calendar, TaskStore tasks)
     {
         _calendar = calendar; _tasks = tasks;
+        UiTranslator.SetSkip(this, true);
         Title = L.T("Anımsatıcılar") + " - MailStudio";
         Width = 520; Height = 380; MinWidth = 420; MinHeight = 300; Topmost = true; ShowInTaskbar = true;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
