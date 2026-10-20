@@ -32,8 +32,8 @@ Restart the agent (or open a new session) after connecting. If you move the Mail
 
 | Level | `--permission` | Tools |
 |---|---|---|
-| Read | `read` | `list_accounts`, `list_folders`, `list_messages`, `search_messages`, `read_message`, `read_attachment`, `list_skills`, `get_skill`, `list_events`, `find_free_time`, `list_tasks` |
-| Draft (default) | `draft` | + `create_draft` (saved to Drafts, you send it yourself), `add_task`, `add_event` (no invitations are sent) |
+| Read | `read` | `list_accounts`, `list_folders`, `list_messages`, `search_messages`, `read_message`, `read_attachment`, `compare_revisions`, `list_skills`, `get_skill`, `list_events`, `find_free_time`, `list_tasks`, `list_quotes`, `list_rules`, `list_followups` |
+| Draft (default) | `draft` | + `create_draft` (saved to Drafts, you send it yourself), `add_task`, `add_event` (no invitations are sent), `add_rule` (disabled by default, user enables it), `update_quote_status` |
 | Organize | `organize` | + `flag_message`, `mark_read`, `move_message` (never to Deleted Items, never deletes) |
 
 ## Tools
@@ -46,12 +46,18 @@ Restart the agent (or open a new session) after connecting. If you move the Mail
 | `search_messages` | Full-text search in the local cache (subject / sender / body) |
 | `read_message` | The whole mail; does **not** change the read state |
 | `read_attachment` | Attachment as text: PDF (OCR for scans), STEP sizes/volumes/PMI, DXF/DWG texts and dimensions, Excel cells, Word, PowerPoint, CSV, CNC |
+| `compare_revisions` | Compares two revisions of an engineering drawing or schedule (PDF, STEP, DXF, Excel) and returns the detailed diff |
 | `list_skills`, `get_skill` | Your [skills](SKILLS.md) – the agent loads the instructions and follows them |
 | `list_events` | Appointments and meetings between two dates (recurring items expanded) |
 | `find_free_time` | Free slots on working days (08:00–18:00) for a meeting of a given length |
 | `list_tasks` | Your task list (open, overdue, completed or all) |
+| `list_quotes` | Quotes in the MailStudio Quote Desk (Teklif Masası) |
+| `list_rules` | Email filtering rules configured in MailStudio |
+| `list_followups` | Email follow-up reminders awaiting replies |
 | `create_draft` | Saves a draft to Drafts (never sends) |
 | `add_task`, `add_event` | Adds a task or an appointment (draft level; invitations are never sent by an agent) |
+| `add_rule` | Adds an email rule (created disabled; user reviews and enables it in MailStudio) |
+| `update_quote_status` | Updates quote status in the Quote Desk (new, in_progress, sent, won, lost) |
 | `flag_message`, `mark_read`, `move_message` | Organize level only |
 
 ## Manual setup

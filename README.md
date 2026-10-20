@@ -57,8 +57,15 @@ never send mail on its own.
 - Offline copy of mail **and attachments**, instant opening, push notifications (IMAP IDLE), desktop alerts, tray mode
 - Rich HTML composer with signatures, inline replies, pop-out windows, contact auto-complete, safe drafts and recovery
 - **Address book**: contacts, groups, Outlook/Gmail CSV and vCard import/export, To/Cc/Bcc picker; every address in a mail is clickable (copy, new mail, add to contacts, find mails)
-- **Calendar** (day / work week / week / month, drag to move, recurring items, reminders, colour categories) with meeting invitations: Accept / Tentative / Decline right in the mail, send invitations and updates, import/export .ics (Outlook, Google)
-- **Tasks**: quick add ("send the quote tomorrow"), due-date groups, flagged mails, mail → task, AI "extract tasks" → task list, reminders
+- **Calendar & Sync** (day / work week / week / month, drag to move, recurring items, reminders, colour categories) with meeting invitations (Accept / Tentative / Decline), .ics import/export, and two-way cloud sync (Microsoft 365, Google, CalDAV)
+- **Tasks & Follow-up**: quick add, due-date groups, reminders, and automatic follow-up tracking that converts expired deadlines into tasks
+- **Revision Comparison**: engineering diff engine comparing PDF technical drawings, STEP 3D models, DXF/DWG 2D CAD, and Excel schedules
+- **Quote Desk (Teklif Masası)**: automated RFQ extraction from incoming emails, quotation lifecycle (New/In Progress/Sent/Won/Lost), and Excel export
+- **Rules, Templates & Quick Steps**: condition-action email rules, macro chains with shortcuts (Ctrl+Shift+1..9), and variable templates
+- **Mail Snooze, Undo Send & Scheduled Delivery**: 10-second undo banner, scheduled delivery, and snoozing emails with auto-return
+- **Unified Inbox & Search Folders**: All Inboxes node with account color coding, saved search folders (Unread, Flagged, Attachments)
+- **Newsletters & Unsubscribe**: RFC 2369 / RFC 8058 one-click unsubscribe, reading pane notice bar, and automatic folder routing
+- **Editor Polish**: @ mentions with recipient auto-add, contact card in reading pane, and >20MB attachment compression warning
 - **Conditional formatting** like Outlook — and you can create the rules in plain language with AI
 - Gmail / Outlook.com / Microsoft 365 (OAuth or app password), Yandex and any IMAP/SMTP server
 - Light and dark theme

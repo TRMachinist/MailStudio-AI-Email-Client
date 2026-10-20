@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.8.0 – Manufacturing & Productivity Suite (2026-10-20)
+
+- **Revision Comparison (Revizyon Karşılaştırma)**: Detects part revisions across email attachments and compares engineering drawings and documents side by side:
+  - PDF technical drawings: text, title block, and OCR diff.
+  - STEP 3D models: bounding box, raw stock, volume, center of mass, faces, and PMI tolerances.
+  - DXF/DWG 2D CAD: layers, text labels, and dimension values.
+  - Excel production & delivery schedules: cell-by-cell values, formulas, and visual formatting.
+  - Summary report with visual color-coded table (modified, added, removed) and manufacturing impact assessment.
+- **Quote Desk (Teklif Masası)**: Dedicated quotation workspace with automated RFQ detection from incoming emails, field extraction (part number, revision, quantity, material, delivery date), full CRUD, status lifecycle (New, In Progress, Sent, Won, Lost), reply tracking, and Excel export via ClosedXML.
+- **Email Rules Engine (Kural Sistemi)**: Outlook-style condition-action rule engine with ordered execution, stop-processing flag, actions (move to folder, mark read, set flag, categories), and AI natural language rule generation.
+- **Follow-up Tracking (Cevap Takibi)**: Automated reminder on sent emails awaiting replies; if no reply is received by the deadline, automatically converts into an actionable task in the task list.
+- **Undo Send & Scheduled Send (Geri Al & Zamanlanmış Gönderim)**: 10-second undo grace period banner with instant cancel, plus scheduled delivery at custom future dates/times.
+- **Missing Attachment Warning (Ek Unutma Uyarısı)**: Turkish and English keyword detection in draft body (e.g. "ektedir", "ekli dosyada", "attached", "enclosed") with prompt before sending without attachments.
+- **Email Templates & Quick Steps (Şablonlar & Hızlı Adımlar)**:
+  - Variable replacement in reusable templates (`{Ad}`, `{Firma}`, `{ParçaNo}`, `{İmza}`, etc.).
+  - Macro chains for repetitive actions with hotkeys (Ctrl+Shift+1..9).
+- **Mail Snooze (E-posta Erteleme)**: Temporarily snooze emails from inbox with presets ("Bu akşam", "Yarın sabah", "Haftaya", or custom date/time), returning unread to inbox when due.
+- **Unified Inbox & Search Folders (Birleşik Gelen Kutusu & Kayıtlı Aramalar)**:
+  - "Tüm Gelen Kutuları" node at folder tree top with account color badges.
+  - Saved search folders ("Okunmamış", "Bayraklı", "Bu haftanın ekli mailleri") and custom search folder dialog.
+- **Newsletters & Unsubscribe (Bültenler & Abonelikten Çıkma)**: RFC 2369 and RFC 8058 `List-Unsubscribe` header parsing, reading pane unsubscribe bar, browser/compose approval, and automatic folder routing.
+- **Two-Way Calendar Synchronization (Takvim Eşitlemesi)**: Microsoft 365 / Graph API, Google Calendar API v3, and CalDAV synchronization with deterministic conflict resolution.
+- **Small Polish**:
+  - Attachment compression prompt for sets > 20 MB with one-click ZIP archive creation.
+  - Contact Card in reading pane: sender avatar, details, recent emails, attachments, open tasks, and quotes.
+  - `@` mentions in email composer: autocomplete popup with keyboard navigation and automatic recipient addition to "To".
+- **MCP Server Tools**: Added `list_rules`, `list_followups`, `list_quotes`, `compare_revisions`, `add_rule` (disabled by default), and `update_quote_status`. (Still strictly no send tool).
+
 ## 1.7.1 – Fixes found by the new self-test (2026-10-19)
 
 - Fixed: closing a new mail with "don't save" on a fresh installation raised an error and kept the window open.
