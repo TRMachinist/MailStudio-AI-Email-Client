@@ -441,11 +441,11 @@ public static class RevisionService
     // =========================================================================
 
     static readonly Regex DimToken = new(
-        @"(?<tok>(?:\d+\s*[x×]\s*)?(?:[Ø⌀R]\s?\d+(?:[.,]\d+)?|M\d+(?:[x×]\d+(?:[.,]\d+)?)?)(?:\s*[A-Za-z]\d{1,2})?(?:\s*±\s*\d+(?:[.,]\d+)?)?" +
-        @"|\d+(?:[.,]\d+)?\s*±\s*\d+(?:[.,]\d+)?" +
-        @"|\d+(?:[.,]\d+)?\s*[hHgGfF]\d{1,2}\b" +
-        @"|Ra\s*\d+(?:[.,]\d+)?" +
-        @"|\d+(?:[.,]\d+)?\s*°)", RegexOptions.CultureInvariant | RegexOptions.Compiled);
+        @"(?<tok>(?:\d+[ ]*[x×][ ]*)?(?:[Ø⌀][ ]?\d+(?:[.,]\d+)?|(?<![A-WYZa-wyz])R[ ]?\d+(?:[.,]\d+)?|(?<![A-WYZa-wyz])M\d+(?:[x×]\d+(?:[.,]\d+)?)?)(?:[ ]*[A-Za-z]\d{1,2}\b)?(?:[ ]*±[ ]*\d+(?:[.,]\d+)?)?" +
+        @"|\d+(?:[.,]\d+)?[ ]*±[ ]*\d+(?:[.,]\d+)?" +
+        @"|\b\d+(?:[.,]\d+)?[ ]*[hHgGfF]\d{1,2}\b" +
+        @"|\bRa[ ]*\d+(?:[.,]\d+)?" +
+        @"|\b\d+(?:[.,]\d+)?[ ]*°)", RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     static readonly Regex TitleKey = new(@"^(?<key>DWG\.?\s*NO\.?|DRAWING\s*NO\.?|RESİM\s*NO|RESIM\s*NO|PART\s*NO\.?|REV(?:ISION)?|MAT(?:ERIAL)?\.?|MALZEME|SCALE|ÖLÇEK|OLCEK|WEIGHT|AĞIRLIK|AGIRLIK|SHEET|PAFTA)\b\s*[:.]?\s*(?<val>.*)$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
