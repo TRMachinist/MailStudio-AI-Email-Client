@@ -1040,10 +1040,14 @@ JsonElement J(string json) { using var d = JsonDocument.Parse(json); return d.Ro
 
 await Test("revision comparison: STEP compares exact worker values and real holes (no estimates)", () => Sync(() =>
 {
-    var a = J("""{"overall_size_xyz_mm":[120,80,40],"total_volume_mm3":150000,"total_surface_mm2":42000,"body_count":1,
-               "bodies":[{"cylindrical_faces":14,"holes":[{"diameter_mm":6.8,"count":4},{"diameter_mm":20,"count":1}]}],"pmi":[]}""");
-    var b = J("""{"overall_size_xyz_mm":[120,80,42.5],"total_volume_mm3":148500,"total_surface_mm2":42000,"body_count":1,
-               "bodies":[{"cylindrical_faces":14,"holes":[{"diameter_mm":6.8,"count":4},{"diameter_mm":25,"count":1}]}],"pmi":[{"kind":"dimension","value":"Ø25 H7"}]}""");
+    var a = J("""
+{"overall_size_xyz_mm":[120,80,40],"total_volume_mm3":150000,"total_surface_mm2":42000,"body_count":1,
+               "bodies":[{"cylindrical_faces":14,"holes":[{"diameter_mm":6.8,"count":4},{"diameter_mm":20,"count":1}]}],"pmi":[]}
+""");
+    var b = J("""
+{"overall_size_xyz_mm":[120,80,42.5],"total_volume_mm3":148500,"total_surface_mm2":42000,"body_count":1,
+               "bodies":[{"cylindrical_faces":14,"holes":[{"diameter_mm":6.8,"count":4},{"diameter_mm":25,"count":1}]}],"pmi":[{"kind":"dimension","value":"Ø25 H7"}]}
+""");
     var r = RevisionService.CompareStep("bracket-revB.stp", "bracket-revC.stp", a, b);
     Check(r.OldRevision == "B" && r.NewRevision == "C", "revisions from file names");
     Check(r.Items.Any(i => i.Property == "Yükseklik (Z)" && i.Description.Contains("+2.5")), "height +2.5 mm");
@@ -1062,10 +1066,14 @@ await Test("revision comparison: STEP compares exact worker values and real hole
 
 await Test("revision comparison: DXF dimensions and texts as multisets (insertions do not shift)", () => Sync(() =>
 {
-    var a = J("""{"layers":["0","OUTLINE","DIMS"],"dimensions":[{"measurement":220},{"measurement":110},{"measurement":24},{"measurement":60}],
-               "texts":[{"text":"8x Ø18 THRU EQ. SP. ON PCD 180"},{"text":"Ra 3.2"},{"text":"DWG NO. NW-1042 REV B"},{"text":"MAT. S235JR"},{"text":"SECTION A-A"}]}""");
-    var b = J("""{"layers":["0","OUTLINE","DIMS","NOTES"],"dimensions":[{"measurement":5},{"measurement":220},{"measurement":110},{"measurement":26},{"measurement":60}],
-               "texts":[{"text":"8x Ø20 THRU EQ. SP. ON PCD 180"},{"text":"Ra 1.6"},{"text":"DWG NO. NW-1042 REV C"},{"text":"MAT. S235JR"},{"text":"SECTION A-A"},{"text":"DEBURR ALL EDGES"}]}""");
+    var a = J("""
+{"layers":["0","OUTLINE","DIMS"],"dimensions":[{"measurement":220},{"measurement":110},{"measurement":24},{"measurement":60}],
+               "texts":[{"text":"8x Ø18 THRU EQ. SP. ON PCD 180"},{"text":"Ra 3.2"},{"text":"DWG NO. NW-1042 REV B"},{"text":"MAT. S235JR"},{"text":"SECTION A-A"}]}
+""");
+    var b = J("""
+{"layers":["0","OUTLINE","DIMS","NOTES"],"dimensions":[{"measurement":5},{"measurement":220},{"measurement":110},{"measurement":26},{"measurement":60}],
+               "texts":[{"text":"8x Ø20 THRU EQ. SP. ON PCD 180"},{"text":"Ra 1.6"},{"text":"DWG NO. NW-1042 REV C"},{"text":"MAT. S235JR"},{"text":"SECTION A-A"},{"text":"DEBURR ALL EDGES"}]}
+""");
     var r = RevisionService.CompareDxf("flange-DN100-revB.dxf", "flange-DN100-revC.dxf", a, b);
     Check(r.Items.Any(i => i.Category == "Katman" && i.NewValue == "NOTES"), "layer added");
     Check(r.Items.Any(i => i.Category == "Ölçü" && i.Kind == RevisionDiffKind.Added && i.NewValue == "5"), "new dimension 5");
