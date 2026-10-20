@@ -481,6 +481,16 @@ public sealed class QuoteDeskView : UserControl
 
     QuoteItem? SelectedQuote => (_list.SelectedItem as QuoteRowVm)?.Item;
 
+    // used by the self-test (the same paths the ribbon and the search box use)
+    public string SearchText { get => _search.Text; set { _search.Text = value; Refresh(); } }
+    public int RowCount => (_list.ItemsSource as System.Collections.ICollection)?.Count ?? 0;
+    public bool SelectQuote(string id)
+    {
+        _list.SelectedItem = (_list.ItemsSource as IEnumerable<QuoteRowVm>)?.FirstOrDefault(r => r.Item.Id == id);
+        return _list.SelectedItem != null;
+    }
+    public void SetStatusOfSelected(QuoteStatus status) => SetSelectedStatus(status);
+
     void OnNewQuote()
     {
         var item = new QuoteItem { Deadline = DateTime.Today.AddDays(3) };
