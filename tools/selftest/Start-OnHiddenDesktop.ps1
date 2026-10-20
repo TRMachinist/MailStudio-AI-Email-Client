@@ -8,6 +8,13 @@ param(
     [string]$Desktop = 'MailStudioTest',
     [switch]$Wait
 )
+# Without -Wait this script restarts itself detached and returns at once (the detached copy holds the desktop open).
+if (-not $Wait) {
+    $self = $MyInvocation.MyCommand.Path
+    $p = Start-Process powershell -WindowStyle Hidden -PassThru -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', "`"$self`"", '-Command', "`"$($Command -replace '"', '\"')`"", '-Desktop', $Desktop, '-Wait')
+    "started on desktop '$Desktop' (launcher pid $($p.Id))"
+    return
+}
 $ErrorActionPreference = 'Stop'
 if (-not ('MailStudioHiddenDesktop' -as [type])) {
     Add-Type -TypeDefinition @'
@@ -40,7 +47,8 @@ public static class MailStudioHiddenDesktop
             if (!CreateProcess(null, command, IntPtr.Zero, IntPtr.Zero, false, CREATE_NO_WINDOW, IntPtr.Zero, dir, ref si, out pi))
                 throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "CreateProcess");
             CloseHandle(pi.hThread);
-            if (!wait) { CloseHandle(pi.hProcess); return pi.dwProcessId; }
+            // Keep the desktop handle until the process ends: a desktop with no handle left is destroyed
+            // and a process that has not attached yet fails to start.
             WaitForSingleObject(pi.hProcess, 0xFFFFFFFF);
             uint code; GetExitCodeProcess(pi.hProcess, out code);
             CloseHandle(pi.hProcess);
@@ -51,5 +59,5 @@ public static class MailStudioHiddenDesktop
 }
 '@
 }
-$r = [MailStudioHiddenDesktop]::Run($Desktop, $Command, (Get-Location).Path, [bool]$Wait)
-if ($Wait) { "exit $r"; exit $r } else { "started pid $r on desktop '$Desktop'" }
+$r = [MailStudioHiddenDesktop]::Run($Desktop, $Command, (Get-Location).Path, $true)
+"exit $r"; exit $r
