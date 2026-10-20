@@ -939,6 +939,17 @@ public partial class MainWindow
 
         // Restore to inbox
         if (unifiedNode != null) { SelectFolder(unifiedNode); await Wait(400); }
+
+        // Folder pane "<" button: shrinks to a strip with the folder name and modules, ">" brings it back
+        var widthBefore = ColFolders.ActualWidth;
+        FolderPaneMinBtn.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent)); await Wait(400);
+        Check(FolderStrip.IsVisible && ColFolders.ActualWidth < 50, $"folder pane minimizes to a strip ({ColFolders.ActualWidth:0} px)");
+        Check(FolderStripText.Text.Length > 0, $"minimized folder pane shows the folder name '{FolderStripText.Text}'");
+        Shot(this, "folder-pane-minimized");
+        CheckTexts(this, "folder-pane-minimized");
+        OnRestoreFolderPane(this, new RoutedEventArgs()); await Wait(400);
+        Check(!FolderStrip.IsVisible && Math.Abs(ColFolders.ActualWidth - widthBefore) < 2, $"folder pane restores to {widthBefore:0} px ({ColFolders.ActualWidth:0})");
+        CheckFolderBadges("folder-pane-restored");
         Pass("unified inbox and search folders");
     }
 

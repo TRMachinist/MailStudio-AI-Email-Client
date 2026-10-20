@@ -286,6 +286,7 @@ public partial class MainWindow : Window
         MailboxAccessCheck.IsChecked = _settings.AiMailboxAccess;
         if (_settings.ListPaneWidth >= 260) ColList.Width = new GridLength(_settings.ListPaneWidth);
         SetFolderPaneVisible(_settings.ShowFolderPane);
+        if (_settings.ShowFolderPane && _settings.FolderPaneMinimized) SetFolderPaneMinimized(true);
         SetAiPaneVisible(_settings.ShowAiPane);
         ApplyPaneThresholds();
         PopulateQuickStepButtons();
@@ -494,6 +495,7 @@ public partial class MainWindow : Window
     async Task OpenFolderAsync(FolderNode node)
     {
         _currentFolder = node;
+        UpdateFolderStripText();
         _searchQuery = "";
         SearchBox.Text = "";
         string folderTitle;
@@ -1863,11 +1865,45 @@ public partial class MainWindow : Window
 
     // ---------------- View ----------------
 
-    void OnToggleFolderPane(object sender, RoutedEventArgs e) => SetFolderPaneVisible(ColFolders.Width.Value == 0);
+    void OnToggleFolderPane(object sender, RoutedEventArgs e)
+    {
+        if (_settings.FolderPaneMinimized) SetFolderPaneMinimized(false);
+        else SetFolderPaneVisible(ColFolders.Width.Value == 0);
+    }
+
+    void OnMinimizeFolderPane(object sender, RoutedEventArgs e) => SetFolderPaneMinimized(true);
+    void OnRestoreFolderPane(object sender, RoutedEventArgs e) => SetFolderPaneMinimized(false);
+
+    /// <summary>Classic Outlook "minimize the folder pane": a narrow strip with the current folder and the modules stays visible.</summary>
+    void SetFolderPaneMinimized(bool minimized)
+    {
+        _settings.FolderPaneMinimized = minimized;
+        _settings.ShowFolderPane = true;
+        _autoCollapsedFolders = false;
+        FolderStrip.Visibility = minimized ? Visibility.Visible : Visibility.Collapsed;
+        SplitFolders.Visibility = minimized ? Visibility.Collapsed : Visibility.Visible;
+        ColFolders.Width = minimized ? new GridLength(36) : new GridLength(Math.Max(160, _settings.FolderPaneWidth));
+        UpdateFolderStripText();
+        ApplyPaneThresholds();
+    }
+
+    void UpdateFolderStripText()
+    {
+        if (FolderStripText == null) return;
+        FolderStripText.Text = _module switch
+        {
+            PimModule.Calendar => L.T("Takvim"),
+            PimModule.Tasks => L.T("Görevler"),
+            PimModule.Quotes => L.T("Teklif Masası"),
+            _ => _currentFolder?.Name ?? L.T("Posta")
+        };
+    }
 
     void SetFolderPaneVisible(bool visible)
     {
         if (visible && ColFolders.Width.Value > 0 && SplitFolders.Visibility == Visibility.Visible) return;
+        _settings.FolderPaneMinimized = false;
+        FolderStrip.Visibility = Visibility.Collapsed;
         ColFolders.Width = visible ? new GridLength(Math.Max(160, _settings.FolderPaneWidth)) : new GridLength(0);
         SplitFolders.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         _settings.ShowFolderPane = visible;
@@ -1883,11 +1919,11 @@ public partial class MainWindow : Window
         const double minReading = 360;
         double Needed() => (ColFolders.Width.Value > 0 ? ColFolders.Width.Value : 0) + ColList.Width.Value + (ColAi.Width.Value > 0 ? ColAi.Width.Value : 0) + (ColReading.Width.IsStar ? minReading : 0) + 6;
         if (Needed() > width && ColAi.Width.Value > 0 && _settings.ShowAiPane) { ColAi.Width = new GridLength(0); SplitAi.Visibility = Visibility.Collapsed; _autoCollapsedAi = true; }
-        if (Needed() > width && ColFolders.Width.Value > 0 && _settings.ShowFolderPane) { ColFolders.Width = new GridLength(0); SplitFolders.Visibility = Visibility.Collapsed; _autoCollapsedFolders = true; }
+        if (Needed() > width && ColFolders.Width.Value > 0 && _settings.ShowFolderPane && !_settings.FolderPaneMinimized) { ColFolders.Width = new GridLength(0); SplitFolders.Visibility = Visibility.Collapsed; _autoCollapsedFolders = true; }
         if (Needed() > width && ColList.Width.Value > 260) ColList.Width = new GridLength(Math.Max(260, ColList.Width.Value - (Needed() - width)));
-        if (_autoCollapsedFolders && _settings.ShowFolderPane && Needed() + Math.Max(160, _settings.FolderPaneWidth) <= width) { _autoCollapsedFolders = false; ColFolders.Width = new GridLength(Math.Max(160, _settings.FolderPaneWidth)); SplitFolders.Visibility = Visibility.Visible; }
+        if (_autoCollapsedFolders && _settings.ShowFolderPane && !_settings.FolderPaneMinimized && Needed() + Math.Max(160, _settings.FolderPaneWidth) <= width) { _autoCollapsedFolders = false; ColFolders.Width = new GridLength(Math.Max(160, _settings.FolderPaneWidth)); SplitFolders.Visibility = Visibility.Visible; }
         if (_autoCollapsedAi && _settings.ShowAiPane && Needed() + Math.Max(260, _settings.AiPaneWidth) <= width) { _autoCollapsedAi = false; ColAi.Width = new GridLength(Math.Max(260, _settings.AiPaneWidth)); SplitAi.Visibility = Visibility.Visible; }
-        if (ColFolders.Width.Value > 0) _settings.FolderPaneWidth = ColFolders.Width.Value;
+        if (ColFolders.Width.Value > 0 && !_settings.FolderPaneMinimized) _settings.FolderPaneWidth = ColFolders.Width.Value;
         if (ColAi.Width.Value > 0) _settings.AiPaneWidth = ColAi.Width.Value;
         _settings.ListPaneWidth = ColList.Width.Value;
         if (WindowState == WindowState.Normal) { _settings.WindowWidth = ActualWidth; _settings.WindowHeight = ActualHeight; }

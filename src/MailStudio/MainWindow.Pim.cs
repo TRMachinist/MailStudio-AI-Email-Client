@@ -78,6 +78,7 @@ public partial class MainWindow : ITaskHost, IQuoteHost
         _module = m;
         var mail = m == PimModule.Mail;
         PimHost.Visibility = PimSide.Visibility = mail ? Visibility.Collapsed : Visibility.Visible;
+        UpdateFolderStripText();
         // The mail WebView is a native window drawn above all WPF content ("airspace"): hide it, an overlay cannot cover it
         ReadingPane.Visibility = mail ? Visibility.Visible : Visibility.Hidden;
         FolderTree.Visibility = mail ? Visibility.Visible : Visibility.Collapsed;

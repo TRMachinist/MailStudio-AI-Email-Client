@@ -83,6 +83,8 @@ public class AppSettings
     /// <summary>System | Light | Dark</summary>
     public string Theme { get; set; } = "Light";
     public bool ShowFolderPane { get; set; } = true;
+    /// <summary>Folder pane shrunk to a narrow strip (the "&lt;" button at its top, as in classic Outlook).</summary>
+    public bool FolderPaneMinimized { get; set; } = false;
     public double FolderPaneWidth { get; set; } = 230;
     public double ListPaneWidth { get; set; } = 380;
     public double AiPaneWidth { get; set; } = 340;
