@@ -11,6 +11,7 @@ param(
     [switch]$Hidden
 )
 $ErrorActionPreference = 'Continue'
+$Languages = @($Languages | ForEach-Object { $_ -split ',' } | Where-Object { $_ })   # 'tr,en' arrives as one string through -File
 if ($Hidden) {
     $a = @("-Repo `"$Repo`"")
     if ($Out) { $a += "-Out `"$Out`"" }
