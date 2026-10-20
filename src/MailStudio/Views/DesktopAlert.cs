@@ -71,8 +71,12 @@ public class DesktopAlert : Window
         Closed += (_, _) => { Open.Remove(this); Restack(); };
     }
 
+    /// <summary>At most this many cards are stacked; older ones make room so the stack never runs off the screen.</summary>
+    const int MaxOpen = 3;
+
     public void ShowAlert()
     {
+        while (Open.Count >= MaxOpen) { var oldest = Open[0]; Open.RemoveAt(0); oldest._timer.Stop(); oldest.Close(); }
         Open.Add(this);
         Opacity = 0;
         Show();
@@ -87,7 +91,7 @@ public class DesktopAlert : Window
         var idx = Open.IndexOf(this);
         double bottom = wa.Bottom;
         for (int i = 0; i < idx; i++) bottom -= Open[i].ActualHeight;
-        Top = bottom - ActualHeight;
+        Top = Math.Max(wa.Top, bottom - ActualHeight);
     }
 
     static void Restack() { foreach (var a in Open) a.Position(); }

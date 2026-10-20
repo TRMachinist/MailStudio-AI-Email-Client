@@ -18,9 +18,9 @@ Open STEP, DXF/DWG, PDF drawings, Office files and CNC programs right from your 
 
 **English** · [Türkçe](README.tr.md)
 
-<a href="https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.6.0/MailStudio_Demo_EN_1920x1080.mp4"><img src="docs/media/demo-video.jpg" alt="Watch the 90-second demo" width="100%"></a>
+<a href="https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.8.0/MailStudio_Demo_EN_1920x1080.mp4"><img src="docs/media/demo-video.jpg" alt="Watch the 2½-minute demo" width="100%"></a>
 
-**▶ [Watch the 90-second demo](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.6.0/MailStudio_Demo_EN_1920x1080.mp4)** · [vertical](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.6.0/MailStudio_Demo_EN_1080x1920.mp4) · [Türkçe](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.6.0/MailStudio_Demo_TR_1920x1080.mp4)
+**▶ [Watch the 2½-minute demo](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.8.0/MailStudio_Demo_EN_1920x1080.mp4)** · [vertical](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.8.0/MailStudio_Demo_EN_1080x1920.mp4) · [Türkçe](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.8.0/MailStudio_Demo_TR_1920x1080.mp4)
 
 </div>
 
@@ -62,6 +62,10 @@ never send mail on its own.
 - **Revision comparison** for manufacturers: finds the earlier revision in the same customer's mails and lists what changed – STEP (sizes, volume, holes by diameter, PMI), DXF/DWG (dimensions, texts), PDF drawings (dimensions, tolerances, title block, notes) and Excel schedules
 - **Quote desk**: requests for quotation from mail with part, revision, quantity, material and dates filled in; statuses, reminders, Excel export
 - **Rules, templates and quick steps**, **undo send / send later**, **snooze**, **all inboxes and search folders**, newsletter **unsubscribe** (always with your confirmation), missing-attachment warning
+
+<a href="https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.8.0/MailStudio_1.8_EN_1920x1080.mp4"><img src="docs/media/new18-video.jpg" alt="70-second video: what is new in 1.8" width="100%"></a>
+
+**▶ [What is new in 1.8 (70 s)](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.8.0/MailStudio_1.8_EN_1920x1080.mp4)** · [vertical](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.8.0/MailStudio_1.8_EN_1080x1920.mp4)
 - **Conditional formatting** like Outlook — and you can create the rules in plain language with AI
 - Gmail / Outlook.com / Microsoft 365 (OAuth or app password), Yandex and any IMAP/SMTP server
 - Light and dark theme

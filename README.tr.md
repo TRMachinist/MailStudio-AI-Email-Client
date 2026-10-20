@@ -16,9 +16,9 @@ STEP, DXF/DWG, PDF teknik resim, Office dosyaları ve CNC programlarını doğru
 
 [English](README.md) · **Türkçe**
 
-<a href="https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.6.0/MailStudio_Demo_TR_1920x1080.mp4"><img src="docs/media/tr/demo-video.jpg" alt="90 saniyelik tanıtım videosu" width="100%"></a>
+<a href="https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.8.0/MailStudio_Demo_TR_1920x1080.mp4"><img src="docs/media/tr/demo-video.jpg" alt="2,5 dakikalık tanıtım videosu" width="100%"></a>
 
-**▶ [90 saniyelik tanıtım videosunu izleyin](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.6.0/MailStudio_Demo_TR_1920x1080.mp4)** · [dikey](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.6.0/MailStudio_Demo_TR_1080x1920.mp4) · [English](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.6.0/MailStudio_Demo_EN_1920x1080.mp4)
+**▶ [2,5 dakikalık tanıtım videosunu izleyin](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.8.0/MailStudio_Demo_TR_1920x1080.mp4)** · [dikey](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.8.0/MailStudio_Demo_TR_1080x1920.mp4) · [English](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.8.0/MailStudio_Demo_EN_1920x1080.mp4)
 
 </div>
 
@@ -57,6 +57,10 @@ zeka asla kendi başına mail gönderemez.
 - İmalatçılar için **revizyon karşılaştırma**: eski revizyonu aynı müşterinin maillerinde bulur ve neyin değiştiğini listeler – STEP (ölçüler, hacim, çapa göre delikler, PMI), DXF/DWG (ölçüler, yazılar), PDF teknik resim (ölçü, tolerans, antet, notlar) ve Excel planları
 - **Teklif masası**: mailden gelen teklif talepleri; parça, revizyon, adet, malzeme ve tarihler kendiliğinden dolar; durumlar, hatırlatma, Excel'e aktarma
 - **Kurallar, şablonlar ve hızlı adımlar**, **göndermeyi geri al / sonra gönder**, **erteleme**, **tüm gelen kutuları ve arama klasörleri**, bültenlerden **abonelikten çıkma** (her zaman senin onayınla), ek unutma uyarısı
+
+<a href="https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.8.0/MailStudio_1.8_TR_1920x1080.mp4"><img src="docs/media/tr/new18-video.jpg" alt="70 saniyelik video: 1.8 yenilikleri" width="100%"></a>
+
+**▶ [1.8 yenilikleri (70 sn)](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.8.0/MailStudio_1.8_TR_1920x1080.mp4)** · [dikey](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.8.0/MailStudio_1.8_TR_1080x1920.mp4)
 - Outlook'taki gibi **koşullu biçimlendirme** — kuralları yapay zekaya düz cümleyle de yazdırabilirsiniz
 - Gmail / Outlook.com / Microsoft 365 (OAuth veya uygulama parolası), Yandex ve her IMAP/SMTP sunucusu
 - Açık ve koyu tema
