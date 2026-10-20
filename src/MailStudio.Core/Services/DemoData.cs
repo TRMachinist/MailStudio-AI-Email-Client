@@ -293,7 +293,7 @@ public static class DemoData
             Customer = "Contoso Aerospace",
             Contact = "Tom Becker",
             ContactEmail = "t.becker@contoso-aero.example",
-            PartNumber = "bracket-revC",
+            PartNumber = "bracket",
             Revision = "C",
             Quantity = 250,
             Material = "Alüminyum 7075-T6",

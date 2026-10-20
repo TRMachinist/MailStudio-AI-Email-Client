@@ -1,32 +1,27 @@
 # Changelog
 
-## 1.8.0 – Manufacturing & Productivity Suite (2026-10-20)
+## 1.8.0 – Revisions, quotes and a safer outbox (2026-10-20)
 
-- **Revision Comparison (Revizyon Karşılaştırma)**: Detects part revisions across email attachments and compares engineering drawings and documents side by side:
-  - PDF technical drawings: text, title block, and OCR diff.
-  - STEP 3D models: bounding box, raw stock, volume, center of mass, faces, and PMI tolerances.
-  - DXF/DWG 2D CAD: layers, text labels, and dimension values.
-  - Excel production & delivery schedules: cell-by-cell values, formulas, and visual formatting.
-  - Summary report with visual color-coded table (modified, added, removed) and manufacturing impact assessment.
-- **Quote Desk (Teklif Masası)**: Dedicated quotation workspace with automated RFQ detection from incoming emails, field extraction (part number, revision, quantity, material, delivery date), full CRUD, status lifecycle (New, In Progress, Sent, Won, Lost), reply tracking, and Excel export via ClosedXML.
-- **Email Rules Engine (Kural Sistemi)**: Outlook-style condition-action rule engine with ordered execution, stop-processing flag, actions (move to folder, mark read, set flag, categories), and AI natural language rule generation.
-- **Follow-up Tracking (Cevap Takibi)**: Automated reminder on sent emails awaiting replies; if no reply is received by the deadline, automatically converts into an actionable task in the task list.
-- **Undo Send & Scheduled Send (Geri Al & Zamanlanmış Gönderim)**: 10-second undo grace period banner with instant cancel, plus scheduled delivery at custom future dates/times.
-- **Missing Attachment Warning (Ek Unutma Uyarısı)**: Turkish and English keyword detection in draft body (e.g. "ektedir", "ekli dosyada", "attached", "enclosed") with prompt before sending without attachments.
-- **Email Templates & Quick Steps (Şablonlar & Hızlı Adımlar)**:
-  - Variable replacement in reusable templates (`{Ad}`, `{Firma}`, `{ParçaNo}`, `{İmza}`, etc.).
-  - Macro chains for repetitive actions with hotkeys (Ctrl+Shift+1..9).
-- **Mail Snooze (E-posta Erteleme)**: Temporarily snooze emails from inbox with presets ("Bu akşam", "Yarın sabah", "Haftaya", or custom date/time), returning unread to inbox when due.
-- **Unified Inbox & Search Folders (Birleşik Gelen Kutusu & Kayıtlı Aramalar)**:
-  - "Tüm Gelen Kutuları" node at folder tree top with account color badges.
-  - Saved search folders ("Okunmamış", "Bayraklı", "Bu haftanın ekli mailleri") and custom search folder dialog.
-- **Newsletters & Unsubscribe (Bültenler & Abonelikten Çıkma)**: RFC 2369 and RFC 8058 `List-Unsubscribe` header parsing, reading pane unsubscribe bar, browser/compose approval, and automatic folder routing.
-- **Two-Way Calendar Synchronization (Takvim Eşitlemesi)**: Microsoft 365 / Graph API, Google Calendar API v3, and CalDAV synchronization with deterministic conflict resolution.
-- **Small Polish**:
-  - Attachment compression prompt for sets > 20 MB with one-click ZIP archive creation.
-  - Contact Card in reading pane: sender avatar, details, recent emails, attachments, open tasks, and quotes.
-  - `@` mentions in email composer: autocomplete popup with keyboard navigation and automatic recipient addition to "To".
-- **MCP Server Tools**: Added `list_rules`, `list_followups`, `list_quotes`, `compare_revisions`, `add_rule` (disabled by default), and `update_quote_status`. (Still strictly no send tool).
+- **Revision comparison**: "Compare with previous revision" on an attachment (and in the PDF / STEP / CAD viewers) looks for
+  earlier revisions of the same part in the mails of the same correspondent (`-revC`, `Rev.D`, `_R02`, `wk44` …) and lets you pick one.
+  - **Excel**: rows matched by their first column (an inserted row does not shift the rest), changed / added / removed cells.
+  - **STEP**: exact bounding box, volume, surface and body count from the B-Rep, **holes by diameter** (real holes only, not fillets or bosses), PMI.
+  - **DXF/DWG**: layers, dimension values and texts (e.g. `8x Ø18` → `8x Ø20`, title block `REV B` → `REV C`).
+  - **PDF drawings**: dimensions, tolerances, fits, Ra, title block fields and notes (text layer, or OCR – then marked as such).
+  - Nothing is estimated: if a file cannot be read, the window says so. "Add to reply" writes the change list into the answer; "Ask the manufacturing impact" asks the AI.
+- **Quote desk** (Ctrl+5): add a request from the mail (right-click) – part, revision, quantity, material and dates are filled in; statuses New / In progress / Sent / Won / Lost, search, filters, Excel export, deadline reminders. Answering the customer with an attachment marks the quote as sent.
+- **Mail rules**: from / to / subject / body / attachment / type / account / folder / importance / size conditions; move, Deleted Items, read, flag, category, task, skill actions; write a rule in plain words with AI. Empty conditions are refused (they would match every mail), moves always run last, "Run in folder now" asks first.
+- **Follow-up**: "remind me if there is no answer in N days" in the composer; an answer closes it, otherwise a task appears under *Waiting for reply* with a one-click reminder draft in the same thread.
+- **Undo send** (0–30 s) and **Send later** (Outbox): the mail waits on disk, SMTP is not contacted until then. Closing MailStudio during the undo time asks; mails that became due while MailStudio was closed are never sent without asking; a send interrupted by a crash is marked *uncertain* and never repeated automatically.
+- **Missing attachment warning** (Turkish and English, quoted text and signature ignored), **large attachment** (> 20 MB) ZIP offer.
+- **Templates** with `{Ad} {Soyad} {Firma} {Konu} {ParçaNo} {Tarih} {İmza}` (and English names) and **Quick steps** (Ctrl+Shift+1…9).
+- **Snooze**: tonight / tomorrow / next week / pick a date; the mail comes back unread with a notification.
+- **All inboxes** and **search folders** (Unread, Flagged, This week's attachments, your own).
+- **Newsletters**: unsubscribe from the `List-Unsubscribe` header – the web page opens only after you confirm, a mail address opens a draft you send yourself; nothing is ever requested automatically. "Always move this sender to Newsletters".
+- **Calendar sync** with Microsoft 365 / Outlook.com, Google Calendar and CalDAV – **off by default** per account. Calendar access is a separate consent asked on the first "Sync now". 60 days back and 400 days ahead are read completely (nothing is deleted from an incomplete listing); only events you put in that account's calendar are uploaded; on a conflict the server wins and your version is kept in the notes.
+- **Contact card** (recent mails, attachments, tasks, quotes), **@mentions** in the composer.
+- **Agent (MCP) tools**: `list_rules`, `list_followups`, `list_quotes`, `compare_revisions` (attachments only), `add_rule` (added disabled), `update_quote_status`. Still no send tool.
+- Self-test: an empty (white/black) screenshot is now a failure – a locked screen can no longer produce a "passed" run without pictures.
 
 ## 1.7.1 – Fixes found by the new self-test (2026-10-19)
 

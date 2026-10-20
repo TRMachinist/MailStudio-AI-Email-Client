@@ -52,15 +52,11 @@ zeka asla kendi başına mail gönderemez.
 - Mail **ve eklerin** çevrimdışı kopyası, anında açılış, anlık bildirim (IMAP IDLE), masaüstü uyarıları, tepsi modu
 - İmzalı zengin HTML düzenleyici, satır içi yanıt, ayrı pencere, kişi otomatik tamamlama, güvenli taslak ve kurtarma
 - **Adres defteri**: kişiler, gruplar, Outlook/Gmail CSV ve vCard içe/dışa aktarma, Kime/Bilgi/Gizli seçici; maildeki her adres tıklanabilir (kopyala, yeni mail, kişilere ekle, maillerini bul)
-- **Takvim ve Eşitleme** (gün / iş haftası / hafta / ay, sürükle-bırak, yinelenen öğeler, anımsatıcılar, renk kategorileri) ve toplantı davetleri (Kabul et / Belki / Reddet), .ics içe/dışa aktarma ve çift yönlü bulut eşitlemesi (Microsoft 365, Google, CalDAV)
-- **Görevler ve Cevap Takibi**: hızlı ekleme, son tarih grupları, anımsatıcılar, ve yanıt bekleyen iletiler için otomatik son tarih takibi ile göreve dönüştürme
-- **Revizyon Karşılaştırma**: PDF teknik resimler, STEP 3D modeller, DXF/DWG 2D CAD ve Excel üretim çizelgeleri için imalat odaklı fark motoru
-- **Teklif Masası (Quote Desk)**: gelen e-postalardan otomatik teklif talebi tespiti, teknik alan ayrıştırma, teklif yaşam döngüsü (Yeni/Hazırlanıyor/Gönderildi/Kazanıldı/Kaybedildi) ve Excel dışa aktarımı
-- **Kurallar, Şablonlar ve Hızlı Adımlar**: koşul-eylem filtre kuralları, kısayollu makro zincirleri (Ctrl+Shift+1..9) ve değişkenli hazır yanıt şablonları
-- **E-posta Erteleme, Geri Al ve Zamanlanmış Gönderim**: 10 saniyelik geri alma çubuğu, ileri tarihli gönderim ve iletileri belirlenen zamana kadar erteleme
-- **Birleşik Gelen Kutusu ve Kayıtlı Aramalar**: hesap renk rozetli Tüm Gelen Kutuları kökü, dinamik arama klasörleri (Okunmamış, Bayraklı, Ekli İletiler)
-- **Bültenler ve Abonelikten Çıkma**: RFC 2369 / RFC 8058 tek tıkla abonelikten çıkma, okuma bölmesi bildirim çubuğu ve otomatik klasörleme
-- **Editör İyileştirmeleri**: @ ile kişi bahsetme ve otomatik alıcı ekleme, okuma bölmesinde kişi kartı, >20MB ek boyutu sıkıştırma uyarısı
+- **Takvim** (gün / iş haftası / hafta / ay, sürükle-bırak, yinelenen öğeler, anımsatıcılar, renk kategorileri) ve toplantı davetleri: maildeki daveti tek tıkla Kabul et / Belki / Reddet, davet ve güncelleme gönderme, .ics içe/dışa aktarma – isteğe bağlı Microsoft 365, Google ve CalDAV eşitlemesi (varsayılan kapalı)
+- **Görevler**: hızlı ekleme ("teklifi gönder yarın"), son tarih grupları, bayraklı mailler, mailden görev, yapay zekanın çıkardığı görevler, anımsatıcılar ve **cevap takibi** ("cevap gelmezse hatırlat")
+- İmalatçılar için **revizyon karşılaştırma**: eski revizyonu aynı müşterinin maillerinde bulur ve neyin değiştiğini listeler – STEP (ölçüler, hacim, çapa göre delikler, PMI), DXF/DWG (ölçüler, yazılar), PDF teknik resim (ölçü, tolerans, antet, notlar) ve Excel planları
+- **Teklif masası**: mailden gelen teklif talepleri; parça, revizyon, adet, malzeme ve tarihler kendiliğinden dolar; durumlar, hatırlatma, Excel'e aktarma
+- **Kurallar, şablonlar ve hızlı adımlar**, **göndermeyi geri al / sonra gönder**, **erteleme**, **tüm gelen kutuları ve arama klasörleri**, bültenlerden **abonelikten çıkma** (her zaman senin onayınla), ek unutma uyarısı
 - Outlook'taki gibi **koşullu biçimlendirme** — kuralları yapay zekaya düz cümleyle de yazdırabilirsiniz
 - Gmail / Outlook.com / Microsoft 365 (OAuth veya uygulama parolası), Yandex ve her IMAP/SMTP sunucusu
 - Açık ve koyu tema

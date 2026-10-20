@@ -46,7 +46,7 @@ Restart the agent (or open a new session) after connecting. If you move the Mail
 | `search_messages` | Full-text search in the local cache (subject / sender / body) |
 | `read_message` | The whole mail; does **not** change the read state |
 | `read_attachment` | Attachment as text: PDF (OCR for scans), STEP sizes/volumes/PMI, DXF/DWG texts and dimensions, Excel cells, Word, PowerPoint, CSV, CNC |
-| `compare_revisions` | Compares two revisions of an engineering drawing or schedule (PDF, STEP, DXF, Excel) and returns the detailed diff |
+| `compare_revisions` | Compares two revisions (PDF, STEP, DXF, Excel) given as **attachment names** of mails (never an arbitrary file path) and returns the list of changes |
 | `list_skills`, `get_skill` | Your [skills](SKILLS.md) – the agent loads the instructions and follows them |
 | `list_events` | Appointments and meetings between two dates (recurring items expanded) |
 | `find_free_time` | Free slots on working days (08:00–18:00) for a meeting of a given length |
@@ -56,7 +56,7 @@ Restart the agent (or open a new session) after connecting. If you move the Mail
 | `list_followups` | Email follow-up reminders awaiting replies |
 | `create_draft` | Saves a draft to Drafts (never sends) |
 | `add_task`, `add_event` | Adds a task or an appointment (draft level; invitations are never sent by an agent) |
-| `add_rule` | Adds an email rule (created disabled; user reviews and enables it in MailStudio) |
+| `add_rule` | Adds an email rule – always **disabled**, you review and enable it in MailStudio; empty conditions and skill actions are refused |
 | `update_quote_status` | Updates quote status in the Quote Desk (new, in_progress, sent, won, lost) |
 | `flag_message`, `mark_read`, `move_message` | Organize level only |
 
