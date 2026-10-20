@@ -2009,6 +2009,123 @@ END:VCALENDAR";
     Check(serverReceivedDeletes.Count == 1, "CalDAV server received 1 DELETE");
 });
 
+await Test("büyük ek uyarısı: AttachmentCompressor 20 MB eşiği ve ZIP arşiv oluşturma", () => Sync(() =>
+{
+    var zipTestDir = Path.Combine(root, "zip-test");
+    Directory.CreateDirectory(zipTestDir);
+    var f1 = Path.Combine(zipTestDir, "part1.bin");
+    var f2 = Path.Combine(zipTestDir, "part2.bin");
+
+    // Small files check
+    File.WriteAllBytes(f1, new byte[1024 * 100]); // 100 KB
+    Check(!AttachmentCompressor.IsLarge(new[] { f1 }, out var smallSize), "100 KB file is not large (<20 MB)");
+    Check(smallSize == 1024 * 100, "Small size calculated correctly");
+
+    // Large files check (>20 MB total)
+    // 11 MB + 11 MB = 22 MB
+    File.WriteAllBytes(f1, new byte[11 * 1024 * 1024]);
+    File.WriteAllBytes(f2, new byte[11 * 1024 * 1024]);
+
+    Check(AttachmentCompressor.IsLarge(new[] { f1, f2 }, out var totalSize), "22 MB files set detected as large (>20 MB)");
+    Check(totalSize >= 22 * 1024 * 1024, "Total size is >= 22 MB");
+
+    // Compress to ZIP
+    var zipOut = Path.Combine(zipTestDir, "compressed_parts.zip");
+    var resultZip = AttachmentCompressor.CreateZipArchive(new[] { f1, f2 }, zipOut);
+    Check(File.Exists(resultZip), "ZIP file created successfully on disk");
+
+    using (var archive = System.IO.Compression.ZipFile.OpenRead(resultZip))
+    {
+        Check(archive.Entries.Count == 2, $"ZIP archive contains 2 entries (found {archive.Entries.Count})");
+        Check(archive.Entries.Any(e => e.Name == "part1.bin"), "ZIP contains part1.bin");
+        Check(archive.Entries.Any(e => e.Name == "part2.bin"), "ZIP contains part2.bin");
+    }
+}));
+
+await Test("kişi kartı: MailCache kişi mailleri ve ekleri sorgulama", () => Sync(() =>
+{
+    var cDir = Path.Combine(root, "contact-cache-test");
+    Directory.CreateDirectory(cDir);
+    var cache = new MailCache(Path.Combine(cDir, "mail.db"));
+    cache.Init();
+
+    var targetEmail = "anna.keller@northwind.example";
+    var otherEmail = "other@example.com";
+
+    var m1 = new MailHeader
+    {
+        AccountId = "acc1", Folder = "INBOX", Uid = 501,
+        FromAddress = targetEmail, FromName = "Anna Keller",
+        Subject = "DN100 Flanş Çizimi",
+        Date = DateTimeOffset.Now.AddDays(-2),
+        HasAttachments = true
+    };
+    var m2 = new MailHeader
+    {
+        AccountId = "acc1", Folder = "INBOX", Uid = 502,
+        FromAddress = "sales@company.com", To = $"Anna Keller <{targetEmail}>",
+        Subject = "Teklifimiz Ektedir",
+        Date = DateTimeOffset.Now.AddDays(-1),
+        HasAttachments = true
+    };
+    var mOther = new MailHeader
+    {
+        AccountId = "acc1", Folder = "INBOX", Uid = 503,
+        FromAddress = otherEmail, To = "someone@else.com",
+        Subject = "Alakasız Posta",
+        Date = DateTimeOffset.Now,
+        HasAttachments = false
+    };
+
+    cache.UpsertHeaders(new[] { m1, m2, mOther });
+    cache.SaveAttachments("acc1", "INBOX", 501, new List<AttachmentInfo>
+    {
+        new() { FileName = "flange-DN100.dxf", Part = "2", Size = 512000 }
+    });
+    cache.SaveAttachments("acc1", "INBOX", 502, new List<AttachmentInfo>
+    {
+        new() { FileName = "teklif-NW1042.pdf", Part = "1", Size = 124000 }
+    });
+
+    // 1. Get mails for contact
+    var contactMails = cache.GetMailsForContact(targetEmail);
+    Check(contactMails.Count == 2, $"GetMailsForContact returned {contactMails.Count} messages (expected 2)");
+    Check(contactMails.Any(m => m.Uid == 501) && contactMails.Any(m => m.Uid == 502), "Both sent and received mails for contact returned");
+    Check(!contactMails.Any(m => m.Uid == 503), "Unrelated mail not returned");
+
+    // 2. Get attachments for contact
+    var contactAtts = cache.GetAttachmentsForContact(targetEmail);
+    Check(contactAtts.Count == 2, $"GetAttachmentsForContact returned {contactAtts.Count} attachments (expected 2)");
+    Check(contactAtts.Any(a => a.FileName == "flange-DN100.dxf" && a.Uid == 501), "flange-DN100.dxf found for mail 501");
+    Check(contactAtts.Any(a => a.FileName == "teklif-NW1042.pdf" && a.Uid == 502), "teklif-NW1042.pdf found for mail 502");
+}));
+
+await Test("@ ile bahsetme: ContactBook önerileri ve arama eşleme", () => Sync(() =>
+{
+    var cDir = Path.Combine(root, "contact-suggest-test");
+    Directory.CreateDirectory(cDir);
+    var store = new ContactStore(Path.Combine(cDir, "contacts.json"));
+
+    store.Save(new Contact { FirstName = "Anna", LastName = "Lindqvist", Email = "anna@contoso-aero.example", Company = "Contoso Aero" });
+    store.Save(new Contact { FirstName = "Mustafa", LastName = "Yılmaz", Email = "mustafa@abcmakina.com", Company = "ABC Makina" });
+    store.Save(new Contact { FirstName = "Hans", LastName = "Weber", Email = "hans.weber@siemens.example", Company = "Siemens Energy" });
+
+    var book = new ContactBook(null, store);
+
+    // Query "Anna"
+    var annaMatches = book.Suggest("Anna").ToList();
+    Check(annaMatches.Count >= 1, "Suggest('Anna') found at least 1 match");
+    Check(annaMatches[0].Name == "Anna Lindqvist" && annaMatches[0].Address == "anna@contoso-aero.example", "Anna match details correct");
+
+    // Query "mustafa" (case-insensitive)
+    var mustafaMatches = book.Suggest("mustafa").ToList();
+    Check(mustafaMatches.Count >= 1 && mustafaMatches[0].Address == "mustafa@abcmakina.com", "Suggest('mustafa') found match");
+
+    // Query "siemens" (company match)
+    var siemensMatches = book.Suggest("siemens").ToList();
+    Check(siemensMatches.Count >= 1 && siemensMatches[0].Address == "hans.weber@siemens.example", "Suggest('siemens') found match by company");
+}));
+
 Console.WriteLine($"RESULT {passed} passed. Synthetic evidence: {root}");
 
 sealed class MockHttpHandler : HttpMessageHandler

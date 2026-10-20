@@ -70,6 +70,7 @@ public partial class MainWindow
             ("unified inbox and search folders: all inboxes node, saved searches, criteria execution", StepUnifiedInboxAndSearchFolders),
             ("newsletters and unsubscribe: header parsing, unsubscribe bar, filter tab, move to newsletters rule", StepNewslettersAndUnsubscribe),
             ("calendar sync: account settings, ribbon sync button, two-way sync execution", StepCalendarSync),
+            ("small polish: large attachment warning, contact card, at-mentions", StepSmallPolish),
             ("reminders window", StepReminders),
             ("other windows: accounts, signatures, rules, skills, agents", StepOtherWindows),
             ("dark theme screenshots", StepDarkTheme),
@@ -387,7 +388,7 @@ public partial class MainWindow
         Check(link != null && link.ContextMenu != null, "sender is a clickable link with a menu");
         await OpenAndInspect("address book", () => OnAddressBook(this, new RoutedEventArgs()));
         await OpenAndInspect("address book (pick)", () => new ContactsWindow(pickMode: true) { Owner = this }.ShowDialog());
-        await OpenAndInspect("contact card", () => new ContactEditWindow(new Contact { FirstName = "Self", LastName = "Test", Email = "self.test@example.test" }) { Owner = this }.ShowDialog());
+        await OpenAndInspect("contact edit", () => new ContactEditWindow(new Contact { FirstName = "Self", LastName = "Test", Email = "self.test@example.test" }) { Owner = this }.ShowDialog());
         await OpenAndInspect("contact group", () => new GroupEditWindow(new ContactGroup { Name = "Self-test" }) { Owner = this }.ShowDialog());
     }
 
@@ -800,6 +801,58 @@ public partial class MainWindow
         SwitchModule(PimModule.Mail);
         await Wait(300);
         Pass("calendar sync");
+    }
+
+    async Task StepSmallPolish()
+    {
+        // 1. Contact Card Window from reading pane sender link
+        await OpenAndInspect("contact card", () => OpenContactCard("Anna Keller", "anna.keller@northwind-machining.example"), async w =>
+        {
+            await InspectWindow(w, "contact-card", closeWithButton: false);
+            var closeBtn = Tree(w).OfType<Button>().FirstOrDefault(b => TextOf(b.Content) == L.T("Kapat") || b.IsCancel);
+            Check(closeBtn != null, "contact card: close button present");
+            if (closeBtn != null) Invoke(closeBtn);
+        });
+
+        // 2. ComposeWindow with large attachment warning (>20MB) and ZIP compression
+        await OpenAndInspect("compose large attachment", () => OnNewMail(this, new RoutedEventArgs()), async w =>
+        {
+            if (w is ComposeWindow c)
+            {
+                await Until(() => c.IsEditorInitialized, 15000);
+                var largeFile = Path.Combine(Path.GetTempPath(), "selftest-large-" + Guid.NewGuid().ToString("N") + ".dat");
+                using (var fs = new FileStream(largeFile, FileMode.Create, FileAccess.Write))
+                {
+                    fs.SetLength(22 * 1024 * 1024);
+                }
+                c.AddAttachmentFiles(new[] { largeFile });
+                await Wait(400);
+
+                var warningBorder = c.FindName("LargeAttachmentWarning") as Border;
+                Check(warningBorder != null && warningBorder.IsVisible, "large attachment warning banner is visible");
+                Shot(c, "compose-large-attachment-warning");
+                CheckTexts(c, "compose-large-attachment-warning");
+
+                // Click ZIP button
+                var zipBtn = c.FindName("ZipAttachmentsBtn") as Button;
+                Check(zipBtn != null, "compose: zip attachments button exists");
+                if (zipBtn != null) Invoke(zipBtn);
+                await Wait(500);
+
+                Check(warningBorder == null || !warningBorder.IsVisible, "large attachment warning collapsed after ZIP");
+
+                // 3. @ mention in compose window
+                await c.InsertMentionAsync("Anna Keller", "anna.keller@northwind-machining.example");
+                await Wait(400);
+                Shot(c, "compose-at-mention");
+                CheckTexts(c, "compose-at-mention");
+
+                try { if (File.Exists(largeFile)) File.Delete(largeFile); } catch { }
+                ForceClose(c);
+            }
+        }, closeWithButton: false);
+
+        Pass("small polish");
     }
 
     async Task StepReminders()

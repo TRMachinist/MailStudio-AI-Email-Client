@@ -862,6 +862,60 @@ internal static class Program
             Console.WriteLine("PASS Google / Outlook takvim eşitlemesi UI elements verified"); _passed++;
         }
 
+        // ---- 3.12 Küçük Ama Değerli Olanlar (Büyük Ek Uyarısı, Kişi Kartı, @ Bahsetme) UI Test
+        {
+            // 1. ComposeWindow: Large attachment warning (>20MB) & ZIP compression
+            var largeFilePath = Path.Combine(Path.GetTempPath(), "test-large-attachment-" + Guid.NewGuid().ToString("N") + ".dat");
+            using (var fs = new FileStream(largeFilePath, FileMode.Create, FileAccess.Write))
+            {
+                fs.SetLength(22 * 1024 * 1024); // 22 MB
+            }
+            var largeCompose = new ComposeWindow(new[] { account }, account.Id, new() { Subject = "Large attachment test" }, mail, (_, _) => Task.FromResult(""), () => "Test");
+            largeCompose.Show(); await Until(() => largeCompose.IsEditorInitialized);
+            Invoke(largeCompose, "AddAttachmentFiles", (object)new[] { largeFilePath });
+            var largeWarningBorder = largeCompose.FindName("LargeAttachmentWarning") as Border;
+            var largeWarningText = largeCompose.FindName("LargeAttachmentText") as TextBlock;
+            Check(largeWarningBorder != null && largeWarningBorder.Visibility == Visibility.Visible, "LargeAttachmentWarning banner is visible for >20MB attachments");
+            Check(largeWarningText != null && largeWarningText.Text.Contains("20 MB"), "LargeAttachmentText mentions 20 MB");
+
+            Audit(largeCompose, "ComposeWindow-LargeAttachmentWarning");
+            Capture(largeCompose, "compose-large-attachment-warning.png");
+
+            // Test ZIP compression button
+            var zipBtn = largeCompose.FindName("ZipAttachmentsBtn") as Button;
+            Check(zipBtn != null, "ZipAttachmentsButton exists in LargeAttachmentWarning banner");
+            zipBtn!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check(largeWarningBorder.Visibility == Visibility.Collapsed, "LargeAttachmentWarning collapses after ZIP compression");
+            var attachmentsList = Field<System.Collections.ObjectModel.ObservableCollection<string>>(largeCompose, "_attachments");
+            Check(attachmentsList.Count == 1 && attachmentsList[0].EndsWith(".zip", StringComparison.OrdinalIgnoreCase), "Attachments replaced by a single .zip file");
+
+            try { if (File.Exists(largeFilePath)) File.Delete(largeFilePath); } catch { }
+            try { if (File.Exists(attachmentsList[0])) File.Delete(attachmentsList[0]); } catch { }
+            Close(largeCompose);
+
+            // 2. ComposeWindow: @ mention suggestion & insert
+            var mentionCompose = new ComposeWindow(new[] { account }, account.Id, new() { Subject = "Mention test" }, mail, (_, _) => Task.FromResult(""), () => "Test");
+            mentionCompose.Show(); await Until(() => mentionCompose.IsEditorInitialized);
+            var mentionSuccess = await mentionCompose.InsertMentionAsync("Anna Keller", "anna.keller@northwind-machining.example");
+            Check(mentionSuccess, "InsertMentionAsync returns true when editor is ready");
+            Check(mentionCompose.ToAddressText.Contains("anna.keller@northwind-machining.example"), "InsertMentionAsync adds mentioned contact to ToBox");
+            var mentionSnapshot = await mentionCompose.SnapshotAsync();
+            Check(mentionSnapshot.EditableHtml != null && mentionSnapshot.EditableHtml.Contains("class=\"ms-mention\"") && mentionSnapshot.EditableHtml.Contains("@Anna Keller"), "Editor HTML contains @ mention span element");
+            Audit(mentionCompose, "ComposeWindow-AtMention");
+            Capture(mentionCompose, "compose-at-mention.png");
+            Close(mentionCompose);
+
+            // 3. ContactCardWindow: Open and inspect elements
+            var cardWin = new ContactCardWindow("Anna Keller", "anna.keller@northwind-machining.example", Field<MailCache>(main, "_cache"), Field<TaskStore>(main, "_tasks"), Field<QuoteStore>(main, "_quoteStore"), Field<ContactBook>(main, "_contacts").Store);
+            cardWin.Show(); await Task.Delay(300);
+            Check(cardWin.ContactName == "Anna Keller" && cardWin.ContactAddress == "anna.keller@northwind-machining.example", "ContactCardWindow properties match contact");
+            Audit(cardWin, "ContactCardWindow");
+            Capture(cardWin, "contact-card-window.png");
+            cardWin.Close();
+
+            Console.WriteLine("PASS Küçük ama değerli olanlar (büyük ek uyarısı, kişi kartı, @ bahsetme) UI verified"); _passed++;
+        }
+
         if (L.IsEnglish)
         {
             foreach (var w in Application.Current.Windows.OfType<Window>().Where(w => w.IsVisible).ToList()) Audit(w, w.GetType().Name);
@@ -923,6 +977,18 @@ internal static class Program
 
             var auditSfWin = new MailStudio.Views.SearchFolders.SearchFolderDialog();
             auditSfWin.Show(); await Task.Delay(300); Audit(auditSfWin, "SearchFolderDialog(en)"); auditSfWin.Close();
+
+            var auditCard = new ContactCardWindow("Anna Keller", "anna.keller@northwind-machining.example", Field<MailCache>(main, "_cache"), Field<TaskStore>(main, "_tasks"), Field<QuoteStore>(main, "_quoteStore"), Field<ContactBook>(main, "_contacts").Store);
+            auditCard.Show(); await Task.Delay(300); Audit(auditCard, "ContactCardWindow(en)"); auditCard.Close();
+
+            var auditLargeCompose = new ComposeWindow(new[] { account }, account.Id, new() { Subject = "Large attachment test en" }, mail, (_, _) => Task.FromResult(""), () => "Test");
+            auditLargeCompose.Show(); await Until(() => auditLargeCompose.IsEditorInitialized);
+            var auditLargeFile = Path.Combine(Path.GetTempPath(), "test-audit-large-" + Guid.NewGuid().ToString("N") + ".dat");
+            using (var fs = new FileStream(auditLargeFile, FileMode.Create, FileAccess.Write)) { fs.SetLength(22 * 1024 * 1024); }
+            Invoke(auditLargeCompose, "AddAttachmentFiles", (object)new[] { auditLargeFile });
+            Audit(auditLargeCompose, "ComposeWindow(LargeAttachment-en)");
+            try { if (File.Exists(auditLargeFile)) File.Delete(auditLargeFile); } catch { }
+            Close(auditLargeCompose);
 
             foreach (var t in TurkishLooking) Console.WriteLine("REVIEW " + t);
             foreach (var t in Untranslated) Console.WriteLine("UNTRANSLATED " + t);

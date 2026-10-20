@@ -16,6 +16,7 @@ public static class AddressChips
     public static ContactStore? Store { get; set; }
     public static Action<string>? NewMailTo { get; set; }
     public static Action<string>? FindMailsOf { get; set; }
+    public static Action<string, string>? ShowContactCard { get; set; }
 
     /// <summary>Fills the panel: optional label ("To: ") then one link per address.</summary>
     public static void Fill(Panel panel, string? label, string? field, double fontSize = 12, bool bold = false, Brush? foreground = null)
@@ -41,7 +42,11 @@ public static class AddressChips
             };
             var full = name.Length > 0 ? $"{name} <{addr}>" : addr;
             link.ContextMenu = Menu(name, addr, full, field!);
-            link.Click += (_, _) => { link.ContextMenu.PlacementTarget = text; link.ContextMenu.IsOpen = true; };
+            link.Click += (_, _) =>
+            {
+                if (ShowContactCard != null) ShowContactCard(name, addr);
+                else { link.ContextMenu.PlacementTarget = text; link.ContextMenu.IsOpen = true; }
+            };
             link.MouseEnter += (_, _) => link.TextDecorations = TextDecorations.Underline;
             link.MouseLeave += (_, _) => link.TextDecorations = null;
             text.Inlines.Add(link);
@@ -58,6 +63,7 @@ public static class AddressChips
         void Item(string h, Action a, bool enabled = true) { var i = new MenuItem { Header = h, IsEnabled = enabled }; i.Click += (_, _) => a(); m.Items.Add(i); }
         m.Items.Add(new MenuItem { Header = full, IsEnabled = false, FontWeight = FontWeights.SemiBold });
         m.Items.Add(new Separator());
+        Item(L.T("Kişi Kartı"), () => ShowContactCard?.Invoke(name, addr), ShowContactCard != null);
         Item(L.T("Kopyala (ad ve adres)"), () => Clipboard.SetText(full));
         Item(L.T("Yalnızca e-posta adresini kopyala"), () => Clipboard.SetText(addr));
         Item(L.T("Tüm adresleri kopyala"), () => Clipboard.SetText(AllAddresses(field)));

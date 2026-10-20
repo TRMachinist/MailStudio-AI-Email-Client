@@ -522,6 +522,45 @@ public class MailCache
         Exec(c, "DELETE FROM folder_state WHERE account=$a", ("$a", account));
     }
 
+    /// <summary>Returns recent emails sent by or received from the specified contact address.</summary>
+    public List<MailHeader> GetMailsForContact(string email, int limit = 20)
+    {
+        if (string.IsNullOrWhiteSpace(email)) return new();
+        using var c = Open();
+        using var cmd = c.CreateCommand();
+        cmd.CommandText = "SELECT * FROM messages WHERE LOWER(from_addr)=LOWER($e) OR to_addr LIKE '%' || $e || '%' ORDER BY date DESC LIMIT $l";
+        cmd.Parameters.AddWithValue("$e", email.Trim());
+        cmd.Parameters.AddWithValue("$l", limit);
+        return ReadHeaders(cmd);
+    }
+
+    /// <summary>Returns attachments from messages involving the specified contact address.</summary>
+    public List<ContactAttachmentItem> GetAttachmentsForContact(string email, int limit = 20)
+    {
+        if (string.IsNullOrWhiteSpace(email)) return new();
+        var mails = GetMailsForContact(email, 50).Where(m => m.HasAttachments);
+        var results = new List<ContactAttachmentItem>();
+        foreach (var m in mails)
+        {
+            var atts = GetAttachments(m.AccountId, m.Folder, m.Uid);
+            foreach (var a in atts)
+            {
+                results.Add(new ContactAttachmentItem(
+                    a.FileName,
+                    Path.GetExtension(a.FileName),
+                    a.Size,
+                    a.Part ?? "",
+                    m.AccountId,
+                    m.Folder,
+                    m.Uid,
+                    m.Subject,
+                    m.Date));
+                if (results.Count >= limit) return results;
+            }
+        }
+        return results;
+    }
+
     List<MailHeader> ReadHeaders(SqliteCommand cmd)
     {
         var list = new List<MailHeader>();

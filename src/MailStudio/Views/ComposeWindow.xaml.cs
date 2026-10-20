@@ -131,7 +131,8 @@ public partial class ComposeWindow : Window
         CcBox.AddHandler(System.Windows.Controls.Primitives.TextBoxBase.TextChangedEvent, new TextChangedEventHandler((_, _) => Changed()));
         BccBox.AddHandler(System.Windows.Controls.Primitives.TextBoxBase.TextChangedEvent, new TextChangedEventHandler((_, _) => Changed()));
         FromBox.SelectionChanged += async (_, _) => {Changed();if(_editorReady&&!_state.IsBusy)await Js($"ms.setSignature({JsonSerializer.Serialize(SignatureHtml(DefaultSignature()))})");};
-        _attachments.CollectionChanged += (_, _) => Changed();
+        _attachments.CollectionChanged += (_, _) => { Changed(); CheckLargeAttachments(); };
+        CheckLargeAttachments();
         _autosave.Interval = TimeSpan.FromSeconds(10);
         _autosave.Tick += async (_, _) =>
         {
@@ -205,6 +206,21 @@ public partial class ComposeWindow : Window
                     Mark(BoldBtn, doc.RootElement.GetProperty("b").GetBoolean());
                     Mark(ItalicBtn, doc.RootElement.GetProperty("i").GetBoolean());
                     Mark(UnderBtn, doc.RootElement.GetProperty("u").GetBoolean());
+                }
+                else if (t == "mention-query")
+                {
+                    var q = doc.RootElement.GetProperty("query").GetString() ?? "";
+                    var matches = (RecipientBox.Provider?.Invoke(q) ?? Enumerable.Empty<ContactInfo>())
+                        .Take(5)
+                        .Select(c => new { name = c.Name, address = c.Address })
+                        .ToList();
+                    _ = Js($"ms.showMentions({JsonSerializer.Serialize(matches)})");
+                }
+                else if (t == "mention-selected")
+                {
+                    var name = doc.RootElement.GetProperty("name").GetString() ?? "";
+                    var address = doc.RootElement.GetProperty("address").GetString() ?? "";
+                    AddRecipientToToBox(name, address);
                 }
             }
             catch (Exception ex) { if (!_closed) StatusText.Text = L.T("Editör işlemi tamamlanamadı: ") + ex.Message; }
@@ -484,7 +500,7 @@ public partial class ComposeWindow : Window
         if (dlg.ShowDialog(DialogOwner) == true) AddAttachmentFiles(dlg.FileNames);
     }
 
-    void AddAttachmentFiles(IEnumerable<string> files)
+    internal void AddAttachmentFiles(IEnumerable<string> files)
     {
         if (_closed || _closingConfirmed || _state.IsBusy) return;
         var added = 0;
@@ -521,6 +537,72 @@ public partial class ComposeWindow : Window
     {
         if (_state.IsBusy) return;
         if (sender is Button { Tag: string p }) _attachments.Remove(p);
+    }
+
+    bool _largeAttachmentDismissed;
+
+    public void CheckLargeAttachments()
+    {
+        if (LargeAttachmentWarning == null || LargeAttachmentText == null) return;
+        if (_largeAttachmentDismissed) return;
+        if (AttachmentCompressor.IsLarge(_attachments, out var totalBytes))
+        {
+            var mb = totalBytes / 1024d / 1024d;
+            LargeAttachmentText.Text = L.F("Eklerin toplam boyutu 20 MB'ı aşıyor ({0:0.#} MB). Dosyaları ZIP olarak sıkıştırmanız önerilir.", mb);
+            LargeAttachmentWarning.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            LargeAttachmentWarning.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    void OnZipAttachments(object sender, RoutedEventArgs e)
+    {
+        if (_attachments.Count == 0) return;
+        try
+        {
+            var zipPath = AttachmentCompressor.CreateZipArchive(_attachments);
+            _attachments.Clear();
+            _attachments.Add(zipPath);
+            _largeAttachmentDismissed = true;
+            if (LargeAttachmentWarning != null) LargeAttachmentWarning.Visibility = Visibility.Collapsed;
+            StatusText.Text = L.T("Ekler başarıyla ZIP olarak sıkıştırıldı.");
+            Changed();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(DialogOwner, L.T("ZIP oluşturulamadı: ") + ex.Message, L.T("Hata"), MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    void OnDismissLargeAttachmentWarning(object sender, RoutedEventArgs e)
+    {
+        _largeAttachmentDismissed = true;
+        if (LargeAttachmentWarning != null) LargeAttachmentWarning.Visibility = Visibility.Collapsed;
+    }
+
+    public void AddRecipientToToBox(string name, string address)
+    {
+        if (string.IsNullOrWhiteSpace(address)) return;
+        var current = ToBox.Text.Trim();
+        if (!current.Contains(address, StringComparison.OrdinalIgnoreCase))
+        {
+            var entry = string.IsNullOrWhiteSpace(name) ? address : $"{name} <{address}>";
+            ToBox.Text = string.IsNullOrEmpty(current) ? entry + "; " : current.TrimEnd(';', ' ') + "; " + entry + "; ";
+            Changed();
+        }
+    }
+
+    public async Task<bool> InsertMentionAsync(string name, string address)
+    {
+        AddRecipientToToBox(name, address);
+        if (_editorReady)
+        {
+            var span = $"<span class=\"ms-mention\" style=\"color:#0078D4;font-weight:600;\">@{System.Net.WebUtility.HtmlEncode(name)}</span>&nbsp;";
+            await Js($"ms.insertHtml({JsonSerializer.Serialize(span)})");
+        }
+        return true;
     }
 
     void OnPickTo(object sender, RoutedEventArgs e) => Pick(ContactsWindow.Target.To);
@@ -598,6 +680,22 @@ public partial class ComposeWindow : Window
                 {
                     OnAttach(this, new RoutedEventArgs());
                     return;
+                }
+            }
+
+            if (!_largeAttachmentDismissed && AttachmentCompressor.IsLarge(_attachments, out var totalBytes))
+            {
+                var mb = totalBytes / 1024d / 1024d;
+                var ans = MessageBox.Show(DialogOwner,
+                    L.F("Eklerin toplam boyutu 20 MB'ı aşıyor ({0:0.#} MB). Göndermeden önce ZIP olarak sıkıştırmak ister misiniz?", mb),
+                    L.T("Büyük Ek Uyarısı"),
+                    MessageBoxButton.YesNoCancel,
+                    MessageBoxImage.Question);
+                if (ans == MessageBoxResult.Cancel) return;
+                if (ans == MessageBoxResult.Yes)
+                {
+                    OnZipAttachments(this, new RoutedEventArgs());
+                    request = await CollectAsync();
                 }
             }
             _drafts.Save(acc.Id, request);
@@ -688,6 +786,22 @@ public partial class ComposeWindow : Window
                 {
                     OnAttach(this, new RoutedEventArgs());
                     return;
+                }
+            }
+
+            if (!_largeAttachmentDismissed && AttachmentCompressor.IsLarge(_attachments, out var totalBytes))
+            {
+                var mb = totalBytes / 1024d / 1024d;
+                var ans = MessageBox.Show(DialogOwner,
+                    L.F("Eklerin toplam boyutu 20 MB'ı aşıyor ({0:0.#} MB). Göndermeden önce ZIP olarak sıkıştırmak ister misiniz?", mb),
+                    L.T("Büyük Ek Uyarısı"),
+                    MessageBoxButton.YesNoCancel,
+                    MessageBoxImage.Question);
+                if (ans == MessageBoxResult.Cancel) return;
+                if (ans == MessageBoxResult.Yes)
+                {
+                    OnZipAttachments(this, new RoutedEventArgs());
+                    request = await CollectAsync();
                 }
             }
             _drafts.Save(acc.Id, request);

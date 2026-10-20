@@ -79,7 +79,169 @@ public static class EditorHtml
     }
   });
 
+  // --- @ mentions ---
+  let mentionBox = null;
+  let mentionStartNode = null;
+  let mentionStartOffset = -1;
+  let mentionQuery = '';
+  let mentionMatches = [];
+  let mentionSelectedIndex = 0;
+
+  function closeMentionBox() {
+    if (mentionBox) { mentionBox.remove(); mentionBox = null; }
+    mentionMatches = [];
+    mentionQuery = '';
+    mentionStartNode = null;
+    mentionStartOffset = -1;
+  }
+
+  function checkMentionInput() {
+    const s = window.getSelection();
+    if (!s.rangeCount || !s.isCollapsed) { closeMentionBox(); return; }
+    const r = s.getRangeAt(0);
+    const node = r.startContainer;
+    if (node && node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent.substring(0, r.startOffset);
+      const match = /(?:^|\s)@([a-zA-Z0-9_\u00C0-\u017F]*)$/.exec(text);
+      if (match) {
+        mentionQuery = match[1];
+        mentionStartNode = node;
+        mentionStartOffset = match.index + (match[0].startsWith(' ') ? 1 : 0);
+        try {
+          chrome.webview.postMessage(JSON.stringify({ t: 'mention-query', query: mentionQuery }));
+        } catch(e) {}
+        return;
+      }
+    }
+    closeMentionBox();
+  }
+
+  function renderMentionItems() {
+    if (!mentionBox) return;
+    mentionBox.innerHTML = '';
+    mentionMatches.forEach((item, index) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'padding: 6px 10px; cursor: pointer; display: flex; align-items: center; border-bottom: 1px solid rgba(128,128,128,0.15);' +
+        (index === mentionSelectedIndex ? 'background: #0078D4; color: #fff;' : 'background: transparent; color: inherit;');
+
+      const avatar = document.createElement('span');
+      avatar.style.cssText = 'display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 11px; background: ' +
+        (index === mentionSelectedIndex ? '#fff' : '#0078D4') + '; color: ' + (index === mentionSelectedIndex ? '#0078D4' : '#fff') + '; font-size: 9pt; font-weight: bold; margin-right: 8px; flex-shrink: 0;';
+      const nameParts = (item.name || item.address || '?').split(' ');
+      avatar.textContent = (nameParts[0][0] + (nameParts.length > 1 ? nameParts[1][0] : '')).toUpperCase();
+      row.appendChild(avatar);
+
+      const info = document.createElement('div');
+      info.style.cssText = 'overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+      const nameSpan = document.createElement('div');
+      nameSpan.style.cssText = 'font-weight: 600; font-size: 10pt; line-height: 1.2;';
+      nameSpan.textContent = item.name || item.address;
+      info.appendChild(nameSpan);
+
+      if (item.name && item.address) {
+        const addrSpan = document.createElement('div');
+        addrSpan.style.cssText = 'font-size: 8.5pt; opacity: 0.8; line-height: 1.1;';
+        addrSpan.textContent = item.address;
+        info.appendChild(addrSpan);
+      }
+      row.appendChild(info);
+
+      row.addEventListener('mousedown', e => {
+        e.preventDefault();
+        selectMention(index);
+      });
+      mentionBox.appendChild(row);
+    });
+  }
+
+  function selectMention(index) {
+    const item = mentionMatches[index];
+    if (!item) { closeMentionBox(); return; }
+
+    const s = window.getSelection();
+    const r = document.createRange();
+    if (mentionStartNode && mentionStartNode.parentNode) {
+      const currentOffset = Math.min(mentionStartNode.textContent.length, mentionStartOffset + mentionQuery.length + 1);
+      r.setStart(mentionStartNode, mentionStartOffset);
+      r.setEnd(mentionStartNode, currentOffset);
+      r.deleteContents();
+
+      const span = document.createElement('span');
+      span.className = 'ms-mention';
+      span.style.color = '#0078D4';
+      span.style.fontWeight = '600';
+      span.textContent = '@' + item.name;
+      r.insertNode(span);
+
+      const space = document.createTextNode('\u00A0');
+      span.parentNode.insertBefore(space, span.nextSibling);
+      r.setStartAfter(space);
+      r.collapse(true);
+      s.removeAllRanges();
+      s.addRange(r);
+      lastRange = r.cloneRange();
+    }
+
+    closeMentionBox();
+    dirty();
+    try {
+      chrome.webview.postMessage(JSON.stringify({ t: 'mention-selected', name: item.name, address: item.address }));
+    } catch(e) {}
+  }
+
+  root.addEventListener('keyup', e => {
+    if (mentionBox && (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter' || e.key === 'Tab' || e.key === 'Escape')) return;
+    checkMentionInput();
+  });
+
+  root.addEventListener('keydown', e => {
+    if (mentionBox && mentionMatches.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        mentionSelectedIndex = (mentionSelectedIndex + 1) % mentionMatches.length;
+        renderMentionItems();
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        mentionSelectedIndex = (mentionSelectedIndex - 1 + mentionMatches.length) % mentionMatches.length;
+        renderMentionItems();
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        selectMention(mentionSelectedIndex);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeMentionBox();
+        return;
+      }
+    }
+  });
+
   window.ms = {
+    showMentions(items) {
+      mentionMatches = items || [];
+      mentionSelectedIndex = 0;
+      if (!mentionMatches.length) { closeMentionBox(); return; }
+      if (!mentionBox) {
+        mentionBox = document.createElement('div');
+        mentionBox.id = 'ms-mention-box';
+        mentionBox.style.cssText = 'position:fixed; background:' + (document.documentElement.style.colorScheme==='dark'?'#1E293B':'#ffffff') + '; border:1px solid #0078D4; border-radius:6px; box-shadow:0 4px 14px rgba(0,0,0,0.25); z-index:9999; min-width:240px; max-width:340px; overflow:hidden;';
+        document.body.appendChild(mentionBox);
+
+        const s = window.getSelection();
+        if (s.rangeCount) {
+          const rect = s.getRangeAt(0).getBoundingClientRect();
+          mentionBox.style.left = Math.min(window.innerWidth - 260, Math.max(10, rect.left)) + 'px';
+          mentionBox.style.top = Math.min(window.innerHeight - 150, rect.bottom + 4) + 'px';
+        }
+      }
+      renderMentionItems();
+    },
+    closeMentions() { closeMentionBox(); },
     exec(cmd, val) { restore(); document.execCommand(cmd, false, val ?? null); dirty(); report(); },
     fontSize(pt) {
       restore();

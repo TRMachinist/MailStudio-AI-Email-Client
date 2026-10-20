@@ -90,6 +90,7 @@ public partial class MainWindow : Window
         AddressChips.Store = _contacts.Store;
         AddressChips.NewMailTo = to => OpenCompose(new ComposeRequest { To = to });
         AddressChips.FindMailsOf = FindMailsOf;
+        AddressChips.ShowContactCard = (name, addr) => OpenContactCard(name, addr);
         ContactsWindow.FindMailsOf = FindMailsOf;
         ContactsWindow.NewMailTo = c => OpenCompose(new ComposeRequest { To = c.Display + "; " });
         _mail = new MailService(_cache, _oauth);
@@ -863,6 +864,12 @@ public partial class MainWindow : Window
         _searchQuery = address;
         LoadMessagesFromCache();
         Status(L.F("Arama: \"{0}\" ({1} sonuç)", _searchQuery, _messages.Count));
+    }
+
+    public void OpenContactCard(string name, string address)
+    {
+        var win = new ContactCardWindow(name, address, _cache, _tasks, _quoteStore, _contacts.Store) { Owner = this };
+        win.ShowDialog();
     }
 
     void OnSearchKey(object sender, KeyEventArgs e)

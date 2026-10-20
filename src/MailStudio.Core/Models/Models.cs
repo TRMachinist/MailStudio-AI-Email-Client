@@ -226,6 +226,12 @@ public class AttachmentInfo
     public string SizeDisplay => Size > 1024 * 1024 ? $"{Size / 1024d / 1024d:0.0} MB" : $"{Math.Max(1, Size / 1024)} KB";
 }
 
+public record ContactAttachmentItem(string FileName, string Extension, long Size, string Part, string AccountId, string Folder, uint Uid, string Subject, DateTimeOffset Date)
+{
+    public string SizeDisplay => Size > 1024 * 1024 ? $"{Size / 1024d / 1024d:0.0} MB" : $"{Math.Max(1, Size / 1024)} KB";
+    public string DateDisplay => Date.ToLocalTime().ToString("g");
+}
+
 public class ComposeRequest
 {
     public string? EditableHtml { get; set; }
