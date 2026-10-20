@@ -39,6 +39,12 @@ public static class Showcase
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         w.UpdateLayout();
         var h = new WindowInteropHelper(w).Handle;
+        if (WindowCapture.OffScreen)
+        {
+            using var rendered = WindowCapture.Render(w, fresh: true).Bitmap;
+            rendered.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+            return;
+        }
         GetWindowRect(h, out var r);
         using var bmp = new System.Drawing.Bitmap(Math.Max(1, r.R - r.L), Math.Max(1, r.B - r.T), System.Drawing.Imaging.PixelFormat.Format32bppArgb);
         using (var g = System.Drawing.Graphics.FromImage(bmp)) { var hdc = g.GetHdc(); PrintWindow(h, hdc, 2); g.ReleaseHdc(hdc); }

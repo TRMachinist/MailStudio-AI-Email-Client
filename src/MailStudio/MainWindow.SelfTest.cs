@@ -149,13 +149,22 @@ public partial class MainWindow
             if (hwnd == IntPtr.Zero || !GetWindowRect(hwnd, out var r)) return;
             int width = r.Right - r.Left, height = r.Bottom - r.Top;
             if (width <= 0 || height <= 0) return;
-            using var bmp = new System.Drawing.Bitmap(width, height);
-            using (var g = System.Drawing.Graphics.FromImage(bmp))
+            System.Drawing.Bitmap bmp;
+            if (WindowCapture.OffScreen)
             {
+                // Hidden test desktop or locked screen: Windows draws nothing there, WPF renders the window itself
+                bmp = WindowCapture.Render(w, fresh: true).Bitmap;
+                if (!_offScreenNoted) { _offScreenNoted = true; Log("INFO", "running off-screen (hidden desktop or locked screen): pictures rendered by WPF, mail view from WebView2 capture"); }
+            }
+            else
+            {
+                bmp = new System.Drawing.Bitmap(width, height);
+                using var g = System.Drawing.Graphics.FromImage(bmp);
                 var hdc = g.GetHdc();
                 PrintWindow(hwnd, hdc, 2); // PW_RENDERFULLCONTENT
                 g.ReleaseHdc(hdc);
             }
+            using var _bmp = bmp;
             var file = $"{++_stShot:00}-{string.Concat(name.Select(c => char.IsLetterOrDigit(c) ? c : '-'))}.png";
             bmp.Save(Path.Combine(_stDir, file), System.Drawing.Imaging.ImageFormat.Png);
             Log("SHOT", file);
@@ -174,7 +183,7 @@ public partial class MainWindow
         catch (Exception ex) { Warn("screenshot " + name, ex.Message); }
     }
 
-    int _blankShots; bool _blankAborted, _stopRequested;
+    int _blankShots; bool _blankAborted, _stopRequested, _offScreenNoted;
 
     /// <summary>
     /// True when the window content (below the title bar, inside the frame) has at most 3 exact colours - what

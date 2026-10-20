@@ -44,13 +44,14 @@ public static class ShowcaseVideo
         public Window? Target;
         public Point Cursor = new(W * 0.6, H * 0.55);   // client DIPs
         public double Ripple = -1;                     // 0..1 while a click ripple is shown
-        string _dir = ""; int _n; readonly Stopwatch _sw = new(); DispatcherTimer? _t;
+        string _dir = ""; int _n; bool _offScreen; readonly Stopwatch _sw = new(); DispatcherTimer? _t;
         readonly List<string> _lines = new(); readonly List<Task> _saves = new();
         static readonly D.Imaging.ImageCodecInfo Jpeg = D.Imaging.ImageCodecInfo.GetImageEncoders().First(c => c.FormatID == D.Imaging.ImageFormat.Jpeg.Guid);
 
         public void Start(Window w, string scene)
         {
             Stop();
+            _offScreen = WindowCapture.OffScreen;
             Target = w; _dir = Path.Combine(_out, scene); Directory.CreateDirectory(_dir); _n = 0; _lines.Clear(); _sw.Restart();
             _t = new DispatcherTimer(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(66) };
             _t.Tick += (_, _) => { try { Capture(); } catch (Exception ex) { Log.Add("capture skipped: " + ex.Message); } };
@@ -71,18 +72,29 @@ public static class ShowcaseVideo
         {
             var w = Target; if (w == null || !w.IsVisible) return;
             var h = new WindowInteropHelper(w).Handle;
-            GetWindowRect(h, out var r);
-            var bmp = new D.Bitmap(Math.Max(1, r.R - r.L), Math.Max(1, r.B - r.T), D.Imaging.PixelFormat.Format32bppArgb);
-            using (var g = D.Graphics.FromImage(bmp)) { var hdc = g.GetHdc(); PrintWindow(h, hdc, 2); g.ReleaseHdc(hdc); }
-            int ox = 0, oy = 0; var frame = bmp;
-            if (DwmGetWindowAttribute(h, 9, out var ef, Marshal.SizeOf<RECT>()) == 0)
-            {
-                var crop = D.Rectangle.Intersect(new D.Rectangle(ef.L - r.L, ef.T - r.T, ef.R - ef.L, ef.B - ef.T), new D.Rectangle(0, 0, bmp.Width, bmp.Height));
-                if (crop.Width > 10 && crop.Height > 10) { frame = bmp.Clone(crop, bmp.PixelFormat); bmp.Dispose(); ox = r.L + crop.X; oy = r.T + crop.Y; }
-            }
-            var p = new POINT(); ClientToScreen(h, ref p);
             var dpi = VisualTreeHelper.GetDpi(w).DpiScaleX;
-            float cx = (float)(p.X - ox + Cursor.X * dpi), cy = (float)(p.Y - oy + Cursor.Y * dpi);
+            D.Bitmap frame; float cx, cy;
+            if (_offScreen)
+            {
+                // Hidden desktop: WPF renders the window, the mail view comes from the last WebView2 capture
+                var (rendered, clx, cly) = WindowCapture.Render(w, fresh: false);
+                frame = rendered;
+                cx = (float)(clx + Cursor.X * dpi); cy = (float)(cly + Cursor.Y * dpi);
+            }
+            else
+            {
+                GetWindowRect(h, out var r);
+                var bmp = new D.Bitmap(Math.Max(1, r.R - r.L), Math.Max(1, r.B - r.T), D.Imaging.PixelFormat.Format32bppArgb);
+                using (var g = D.Graphics.FromImage(bmp)) { var hdc = g.GetHdc(); PrintWindow(h, hdc, 2); g.ReleaseHdc(hdc); }
+                int ox = 0, oy = 0; frame = bmp;
+                if (DwmGetWindowAttribute(h, 9, out var ef, Marshal.SizeOf<RECT>()) == 0)
+                {
+                    var crop = D.Rectangle.Intersect(new D.Rectangle(ef.L - r.L, ef.T - r.T, ef.R - ef.L, ef.B - ef.T), new D.Rectangle(0, 0, bmp.Width, bmp.Height));
+                    if (crop.Width > 10 && crop.Height > 10) { frame = bmp.Clone(crop, bmp.PixelFormat); bmp.Dispose(); ox = r.L + crop.X; oy = r.T + crop.Y; }
+                }
+                var p = new POINT(); ClientToScreen(h, ref p);
+                cx = (float)(p.X - ox + Cursor.X * dpi); cy = (float)(p.Y - oy + Cursor.Y * dpi);
+            }
             var ripple = Ripple;
             var file = $"f{_n++:00000}.jpg";
             _lines.Add($"{file}\t{_sw.ElapsedMilliseconds}");
