@@ -320,6 +320,47 @@ public class MailCache
         return ReadHeaders(cmd);
     }
 
+    /// <summary>All INBOX messages across all accounts (Unified Inbox), newest first.</summary>
+    public List<MailHeader> GetUnifiedInboxHeaders(int limit = 50000)
+    {
+        try
+        {
+            using var c = Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT * FROM messages WHERE UPPER(folder)='INBOX' ORDER BY date DESC LIMIT $l";
+            cmd.Parameters.AddWithValue("$l", limit);
+            return ReadHeaders(cmd);
+        }
+        catch (SqliteException ex) when (IsCorrupt(ex)) { OnCorrupt(); return new(); }
+    }
+
+    /// <summary>Total unread count for INBOX across all accounts.</summary>
+    public int GetUnifiedInboxUnreadCount()
+    {
+        try
+        {
+            using var c = Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(*) FROM messages WHERE UPPER(folder)='INBOX' AND is_read=0";
+            return Convert.ToInt32(cmd.ExecuteScalar());
+        }
+        catch (SqliteException ex) when (IsCorrupt(ex)) { OnCorrupt(); return 0; }
+    }
+
+    /// <summary>All messages across all accounts, newest first.</summary>
+    public List<MailHeader> GetAllHeaders(int limit = 50000)
+    {
+        try
+        {
+            using var c = Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT * FROM messages ORDER BY date DESC LIMIT $l";
+            cmd.Parameters.AddWithValue("$l", limit);
+            return ReadHeaders(cmd);
+        }
+        catch (SqliteException ex) when (IsCorrupt(ex)) { OnCorrupt(); return new(); }
+    }
+
     /// <summary>Flagged mails of every account and folder (the "flagged mail" part of Tasks), newest first.</summary>
     public List<MailHeader> GetFlagged(int limit = 2000)
     {

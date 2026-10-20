@@ -67,6 +67,7 @@ public partial class MainWindow
             ("quote desk: list, search, filters, dialog, airspace", StepQuoteDesk),
             ("templates and quick steps: template insertion, manager dialog, macro execution", StepTemplatesAndQuickSteps),
             ("mail snooze: hide from list, filter tab, custom date dialog, wake up", StepSnooze),
+            ("unified inbox and search folders: all inboxes node, saved searches, criteria execution", StepUnifiedInboxAndSearchFolders),
             ("reminders window", StepReminders),
             ("other windows: accounts, signatures, rules, skills, agents", StepOtherWindows),
             ("dark theme screenshots", StepDarkTheme),
@@ -636,6 +637,75 @@ public partial class MainWindow
             Shot(this, "snooze-mail-restored");
         }
         Pass("mail snooze");
+    }
+
+    async Task StepUnifiedInboxAndSearchFolders()
+    {
+        // 1. Unified inbox
+        var unifiedNode = _roots.FirstOrDefault(r => r.IsUnifiedInbox);
+        Check(unifiedNode != null, "unified inbox node exists in folder tree");
+        if (unifiedNode != null)
+        {
+            SelectFolder(unifiedNode); await Wait(600);
+            Check(MessageList.Items.Count >= 8, $"unified inbox lists demo mails ({MessageList.Items.Count})");
+            CheckAirspace(this, "unified-inbox");
+            Shot(this, "unified-inbox");
+            CheckTexts(this, "unified-inbox");
+        }
+
+        // 2. Search folders root
+        var searchRoot = _roots.FirstOrDefault(r => r.IsSearchFolderRoot);
+        Check(searchRoot != null && searchRoot.Children.Count >= 3, "search folders root exists with default folders");
+
+        // 3. Search folder: Unread
+        var unreadFolder = searchRoot?.Children.FirstOrDefault(c => c.SearchFolderId == "search-unread");
+        Check(unreadFolder != null, "search folder 'Okunmamış' found");
+        if (unreadFolder != null)
+        {
+            var demoMails = _cache.GetAllHeaders().Take(2).ToList();
+            foreach (var dm in demoMails)
+                _cache.SetFlags(dm.AccountId, dm.Folder, dm.Uid, read: false);
+            MessageList.SelectedItem = null;
+            _current = null;
+            SelectFolder(unreadFolder); await Wait(600);
+            var unreadItems = MessageList.Items.OfType<MailHeader>().ToList();
+            Check(unreadItems.Count >= 1 && unreadItems.All(h => !h.IsRead), $"search folder unread contains only unread mails ({unreadItems.Count})");
+            Shot(this, "search-folder-unread");
+        }
+
+        // 4. Search folder: Flagged
+        var flaggedFolder = searchRoot?.Children.FirstOrDefault(c => c.SearchFolderId == "search-flagged");
+        Check(flaggedFolder != null, "search folder 'Bayraklı' found");
+        if (flaggedFolder != null)
+        {
+            SelectFolder(flaggedFolder); await Wait(600);
+            var flaggedItems = MessageList.Items.OfType<MailHeader>().ToList();
+            Check(flaggedItems.Count >= 1 && flaggedItems.All(h => h.IsFlagged), $"search folder flagged contains only flagged mails ({flaggedItems.Count})");
+            Shot(this, "search-folder-flagged");
+        }
+
+        // 5. Search folder: This Week's Attachments
+        var attFolder = searchRoot?.Children.FirstOrDefault(c => c.SearchFolderId == "search-this-week-attachments");
+        Check(attFolder != null, "search folder 'Bu haftanın ekli mailleri' found");
+        if (attFolder != null)
+        {
+            SelectFolder(attFolder); await Wait(600);
+            var attItems = MessageList.Items.OfType<MailHeader>().ToList();
+            Check(attItems.Count >= 1 && attItems.All(h => h.HasAttachments), $"search folder attachments contains only mails with attachments ({attItems.Count})");
+            Shot(this, "search-folder-attachments");
+        }
+
+        // 6. SearchFolderDialog UI
+        var sfDlg = new Views.SearchFolders.SearchFolderDialog();
+        sfDlg.Show(); await Wait(400);
+        Check(sfDlg.IsVisible, "SearchFolderDialog opened successfully");
+        Shot(sfDlg, "search-folder-dialog");
+        CheckTexts(sfDlg, "search-folder-dialog");
+        sfDlg.Close();
+
+        // Restore to inbox
+        if (unifiedNode != null) { SelectFolder(unifiedNode); await Wait(400); }
+        Pass("unified inbox and search folders");
     }
 
     async Task StepReminders()

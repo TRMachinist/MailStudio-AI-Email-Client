@@ -795,6 +795,31 @@ internal static class Program
             Console.WriteLine("PASS Mail Erteleme (Snooze) UI views and interactions"); _passed++;
         }
 
+        // ---- 3.9 Birleşik Gelen Kutusu ve Kayıtlı Aramalar UI Test
+        {
+            var testSf = new SearchFolderItem
+            {
+                Name = "Teklif Talepleri",
+                Criteria = new SearchFolderCriteria
+                {
+                    From = "anna.keller@northwind-machining.example",
+                    HasAttachments = true,
+                    AttachmentType = "pdf",
+                    DateRangePreset = "this_week",
+                    IsUnread = true
+                }
+            };
+            var sfDialog = new MailStudio.Views.SearchFolders.SearchFolderDialog(testSf);
+            sfDialog.Show(); await Task.Delay(300);
+            Check(sfDialog.IsVisible && Field<TextBox>(sfDialog, "_nameBox").Text == "Teklif Talepleri", "SearchFolderDialog opens with pre-filled name");
+            Check(Field<TextBox>(sfDialog, "_fromBox").Text == "anna.keller@northwind-machining.example", "SearchFolderDialog displays sender criteria");
+            Audit(sfDialog, "SearchFolderDialog");
+            Capture(sfDialog, "search-folder-dialog.png");
+            sfDialog.Close();
+
+            Console.WriteLine("PASS Birleşik Gelen Kutusu ve Kayıtlı Aramalar UI views and interactions"); _passed++;
+        }
+
         if (L.IsEnglish)
         {
             foreach (var w in Application.Current.Windows.OfType<Window>().Where(w => w.IsVisible).ToList()) Audit(w, w.GetType().Name);
@@ -850,6 +875,9 @@ internal static class Program
 
             var auditSnoozeWin = new SnoozeCustomDateDialog();
             auditSnoozeWin.Show(); await Task.Delay(300); Audit(auditSnoozeWin, "SnoozeCustomDateDialog(en)"); auditSnoozeWin.Close();
+
+            var auditSfWin = new MailStudio.Views.SearchFolders.SearchFolderDialog();
+            auditSfWin.Show(); await Task.Delay(300); Audit(auditSfWin, "SearchFolderDialog(en)"); auditSfWin.Close();
 
             foreach (var t in TurkishLooking) Console.WriteLine("REVIEW " + t);
             foreach (var t in Untranslated) Console.WriteLine("UNTRANSLATED " + t);

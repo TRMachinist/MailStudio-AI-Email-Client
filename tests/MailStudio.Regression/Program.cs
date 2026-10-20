@@ -1494,5 +1494,129 @@ await Test("snooze: zaman aşımı (CheckDue), okunmamış olarak geri dönme ve
     Check(updatedHeaders[0].Date > now, "Woken message date touched so it sorts to the top");
 }));
 
+await Test("birleşik gelen kutusu: çoklu hesap INBOX birleştirme, tarih sıralaması ve okunmamış sayısı", () => Sync(() =>
+{
+    var cacheDir = Path.Combine(root, "cache-unified-test");
+    Directory.CreateDirectory(cacheDir);
+    var cache = new MailCache(Path.Combine(cacheDir, "mail.db"));
+    cache.Init();
+
+    var now = DateTimeOffset.Now;
+
+    // Account A: 2 in INBOX (1 unread, 1 read), 1 in Sent
+    var m1 = new MailHeader { AccountId = "acc-a", Folder = "INBOX", Uid = 1, Subject = "İş Teklifi A1", Date = now.AddHours(-2), IsRead = true };
+    var m2 = new MailHeader { AccountId = "acc-a", Folder = "INBOX", Uid = 2, Subject = "İş Teklifi A2", Date = now.AddHours(-1), IsRead = false };
+    var m3 = new MailHeader { AccountId = "acc-a", Folder = "Sent", Uid = 3, Subject = "Giden Cevap A3", Date = now.AddHours(-0.5), IsRead = true };
+
+    // Account B: 2 in INBOX (1 unread, 1 read)
+    var m4 = new MailHeader { AccountId = "acc-b", Folder = "INBOX", Uid = 10, Subject = "Tedarikçi B1", Date = now.AddMinutes(-30), IsRead = false };
+    var m5 = new MailHeader { AccountId = "acc-b", Folder = "INBOX", Uid = 11, Subject = "Tedarikçi B2", Date = now.AddHours(-4), IsRead = true };
+
+    cache.UpsertHeaders(new[] { m1, m2, m3, m4, m5 });
+
+    var unified = cache.GetUnifiedInboxHeaders();
+    Check(unified.Count == 4, $"Unified Inbox returned {unified.Count} mails (expected 4, Sent excluded)");
+    Check(unified.All(m => m.Folder.Equals("INBOX", StringComparison.OrdinalIgnoreCase)), "All unified mails are from INBOX");
+
+    // Verify sorted by date descending: m4 (30m ago), m2 (1h ago), m1 (2h ago), m5 (4h ago)
+    Check(unified[0].Uid == 10 && unified[0].AccountId == "acc-b", "Newest mail is first (acc-b, 30m ago)");
+    Check(unified[1].Uid == 2 && unified[1].AccountId == "acc-a", "Second mail is acc-a (1h ago)");
+    Check(unified[2].Uid == 1 && unified[2].AccountId == "acc-a", "Third mail is acc-a (2h ago)");
+    Check(unified[3].Uid == 11 && unified[3].AccountId == "acc-b", "Oldest mail is last (acc-b, 4h ago)");
+
+    // Unread count across both accounts
+    var unreadTotal = cache.GetUnifiedInboxUnreadCount();
+    Check(unreadTotal == 2, $"Unified inbox unread count is {unreadTotal} (expected 2)");
+
+    // Account color palette helper
+    var accA = new AccountConfig { Id = "acc-a", Email = "is@example.com" };
+    var accB = new AccountConfig { Id = "acc-b", Email = "kisisel@example.com" };
+    var colA = AccountColorHelper.GetAccountColor(accA, 0);
+    var colB = AccountColorHelper.GetAccountColor(accB, 1);
+    Check(!string.IsNullOrEmpty(colA) && !string.IsNullOrEmpty(colB), "Colors assigned to accounts");
+    Check(colA != colB, "Different accounts get distinct colors from palette");
+}));
+
+await Test("arama klasörleri: SearchFolderStore kalıcılık, varsayılanlar ve kriter değerlendirme motoru", () => Sync(() =>
+{
+    var sfFile = Path.Combine(root, "searchfolders-test.json");
+    if (File.Exists(sfFile)) File.Delete(sfFile);
+
+    var store = new SearchFolderStore(sfFile);
+    Check(store.Folders.Count == 3, $"SearchFolderStore initialized with {store.Folders.Count} default folders (expected 3)");
+
+    var unreadFolder = store.Find("search-unread");
+    Check(unreadFolder != null && unreadFolder.Criteria.IsUnread == true, "Default 'Okunmamış' folder has IsUnread=true");
+
+    var flaggedFolder = store.Find("search-flagged");
+    Check(flaggedFolder != null && flaggedFolder.Criteria.IsFlagged == true, "Default 'Bayraklı' folder has IsFlagged=true");
+
+    var attFolder = store.Find("search-this-week-attachments");
+    Check(attFolder != null && attFolder.Criteria.HasAttachments == true && attFolder.Criteria.DateRangePreset == "this_week",
+        "Default 'Bu haftanın ekli mailleri' folder has HasAttachments=true and this_week preset");
+
+    // Add custom search folder
+    var custom = new SearchFolderItem
+    {
+        Id = "sf-custom-pdf",
+        Name = "PDF Çizimler",
+        Criteria = new SearchFolderCriteria
+        {
+            HasAttachments = true,
+            AttachmentType = "pdf",
+            From = "Anna",
+            Query = "flange"
+        }
+    };
+    store.AddOrUpdate(custom);
+    Check(store.Folders.Count == 4, "Custom search folder added");
+
+    // Reload from disk to verify persistence
+    var store2 = new SearchFolderStore(sfFile);
+    Check(store2.Folders.Count == 4, "SearchFolderStore persisted to JSON and reloaded");
+    var found = store2.Find("sf-custom-pdf");
+    Check(found != null && found.Criteria.AttachmentType == "pdf" && found.Criteria.From == "Anna", "Custom criteria persisted");
+
+    // Test Search Criteria against sample mails in MailCache
+    var cacheDir = Path.Combine(root, "cache-searchfolder-test");
+    Directory.CreateDirectory(cacheDir);
+    var cache = new MailCache(Path.Combine(cacheDir, "mail.db"));
+    cache.Init();
+
+    var now = DateTimeOffset.Now;
+    var startOfWeek = MailStudio.Services.Calendar.Recurrence.WeekStart(now.Date);
+
+    var mailUnread = new MailHeader { AccountId = "demo", Folder = "INBOX", Uid = 1, Subject = "Teklif", FromName = "Anna Keller", Date = now, IsRead = false, HasAttachments = false };
+    var mailFlagged = new MailHeader { AccountId = "demo", Folder = "INBOX", Uid = 2, Subject = "Önemli", FromName = "Tom", Date = now, IsRead = true, IsFlagged = true, HasAttachments = false };
+    var mailOldAtt = new MailHeader { AccountId = "demo", Folder = "INBOX", Uid = 3, Subject = "Geçen Hafta Çizim", FromName = "Anna", Date = startOfWeek.AddDays(-3), IsRead = true, HasAttachments = true };
+    var mailThisWeekAtt = new MailHeader { AccountId = "demo", Folder = "INBOX", Uid = 4, Subject = "Bu Hafta flange-DN100", FromName = "Anna Keller", Date = now, IsRead = false, HasAttachments = true };
+
+    cache.UpsertHeaders(new[] { mailUnread, mailFlagged, mailOldAtt, mailThisWeekAtt });
+    cache.SaveAttachments("demo", "INBOX", 4, new List<AttachmentInfo>
+    {
+        new() { FileName = "flange-DN100-revB.pdf", Part = "1", Size = 2048 }
+    });
+
+    // Test Unread search
+    var unreadMatches = store.ExecuteSearch(unreadFolder!, cache, now);
+    Check(unreadMatches.Count == 2 && unreadMatches.Any(m => m.Uid == 1) && unreadMatches.Any(m => m.Uid == 4), "Unread search folder matches 2 unread mails");
+
+    // Test Flagged search
+    var flaggedMatches = store.ExecuteSearch(flaggedFolder!, cache, now);
+    Check(flaggedMatches.Count == 1 && flaggedMatches[0].Uid == 2, "Flagged search folder matches only flagged mail");
+
+    // Test This Week's Attachments search
+    var weekAttMatches = store.ExecuteSearch(attFolder!, cache, now);
+    Check(weekAttMatches.Count == 1 && weekAttMatches[0].Uid == 4, "This week's attachments folder matches mail 4 (mail 3 excluded as last week)");
+
+    // Test Custom PDF search
+    var customMatches = store.ExecuteSearch(custom, cache, now);
+    Check(customMatches.Count == 1 && customMatches[0].Uid == 4, "Custom PDF search matched mail with PDF attachment, Anna sender, and flange query");
+
+    // Test Delete
+    store.Delete("sf-custom-pdf");
+    Check(store.Folders.Count == 3, "Custom search folder successfully deleted");
+}));
+
 Console.WriteLine($"RESULT {passed} passed. Synthetic evidence: {root}");
 

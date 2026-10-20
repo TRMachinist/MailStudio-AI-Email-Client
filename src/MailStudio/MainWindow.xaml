@@ -252,6 +252,13 @@
                             <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
                         </Style>
                     </TreeView.ItemContainerStyle>
+                    <TreeView.ContextMenu>
+                        <ContextMenu Opened="OnFolderTreeContextMenuOpened">
+                            <MenuItem Header="Yeni Arama Klasörü..." Icon="&#xE721;" Click="OnNewSearchFolderClick"/>
+                            <MenuItem Header="Arama Klasörünü Düzenle..." x:Name="EditSearchFolderMenuItem" Click="OnEditSearchFolderClick"/>
+                            <MenuItem Header="Arama Klasörünü Sil" x:Name="DeleteSearchFolderMenuItem" Click="OnDeleteSearchFolderClick"/>
+                        </ContextMenu>
+                    </TreeView.ContextMenu>
                     <TreeView.ItemTemplate>
                         <HierarchicalDataTemplate DataType="{x:Type m:FolderNode}" ItemsSource="{Binding Children}">
                             <Grid Margin="0,1">
@@ -260,7 +267,11 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="{Binding Icon}" FontFamily="{StaticResource Icons}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,1,8,0" VerticalAlignment="Center"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,1,8,0" VerticalAlignment="Center">
+                                    <Border Width="8" Height="8" CornerRadius="4" Background="{Binding CustomColor, Converter={x:Static local:HexBrush.Instance}}"
+                                            Margin="0,0,6,0" VerticalAlignment="Center" Visibility="{Binding HasCustomColor, Converter={StaticResource BoolVis}}"/>
+                                    <TextBlock Text="{Binding Icon}" FontFamily="{StaticResource Icons}" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                                </StackPanel>
                                 <TextBlock Grid.Column="1" x:Name="nm" Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                                 <Border Grid.Column="2" x:Name="cnt" Background="{DynamicResource AccentFillBrush}" CornerRadius="8" Padding="6,0" MinWidth="20" Margin="8,0,6,0" VerticalAlignment="Center" Visibility="Collapsed">
                                     <TextBlock Text="{Binding UnreadText}" Foreground="{DynamicResource TextOnAccentBrush}" FontWeight="SemiBold" FontSize="12" HorizontalAlignment="Center"/>
@@ -268,6 +279,12 @@
                             </Grid>
                             <HierarchicalDataTemplate.Triggers>
                                 <DataTrigger Binding="{Binding IsAccountRoot}" Value="True">
+                                    <Setter TargetName="nm" Property="FontWeight" Value="SemiBold"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsSearchFolderRoot}" Value="True">
+                                    <Setter TargetName="nm" Property="FontWeight" Value="SemiBold"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsUnifiedInbox}" Value="True">
                                     <Setter TargetName="nm" Property="FontWeight" Value="SemiBold"/>
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding UnreadText, Converter={x:Static local:AttachmentIcon.NotEmpty}}" Value="True">
@@ -407,8 +424,13 @@
                                 </Border>
                                 <StackPanel Grid.Column="2" x:Name="body" Margin="2,7,4,8">
                                     <StackPanel Orientation="Horizontal">
-                                        <TextBlock x:Name="from" Text="{Binding FromDisplay}" FontSize="13.5" TextTrimming="CharacterEllipsis" MaxWidth="230"/>
+                                        <TextBlock x:Name="from" Text="{Binding FromDisplay}" FontSize="13.5" TextTrimming="CharacterEllipsis" MaxWidth="210"/>
                                         <TextBlock Text="{Binding ThreadCountText}" Foreground="{DynamicResource AccentPrimaryBrush}" FontSize="12" Margin="6,1,0,0"/>
+                                        <Border Background="{Binding AccountColor, Converter={x:Static local:HexBrush.Instance}}"
+                                                CornerRadius="3" Padding="4,1" Margin="6,1,0,0" VerticalAlignment="Center"
+                                                Visibility="{Binding ShowAccountBadge, Converter={StaticResource BoolVis}}">
+                                            <TextBlock Text="{Binding AccountName}" FontSize="10" Foreground="White" FontWeight="SemiBold"/>
+                                        </Border>
                                     </StackPanel>
                                     <TextBlock x:Name="subj" Text="{Binding SubjectDisplay}" TextTrimming="CharacterEllipsis" Margin="0,1,0,0"/>
                                     <TextBlock x:Name="prev" Text="{Binding Preview}" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" TextTrimming="CharacterEllipsis" Margin="0,1,0,0"/>

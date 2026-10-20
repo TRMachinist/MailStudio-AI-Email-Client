@@ -40,6 +40,8 @@ public partial class MainWindow : Window
     public QuickStepStore QuickStepStore => _quickStepStore;
     readonly SnoozeStore _snoozeStore = new();
     public SnoozeStore SnoozeStore => _snoozeStore;
+    readonly SearchFolderStore _searchFolderStore = new();
+    public SearchFolderStore SearchFolderStore => _searchFolderStore;
     readonly DispatcherTimer _snoozeTimer = new() { Interval = TimeSpan.FromSeconds(15) };
     readonly DispatcherTimer _queueTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     OutboxItem? _activeUndoItem;
@@ -331,26 +333,94 @@ public partial class MainWindow : Window
     {
         _roots.Clear();
         NoAccountHint.Visibility = _store.Accounts.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        foreach (var acc in _store.Accounts)
+        if (_store.Accounts.Count > 0)
         {
-            var root = new FolderNode { AccountId = acc.Id, Name = acc.Email, FullName = "", Icon = "", IsAccountRoot = true };
-            _roots.Add(root);
-            // Add the Inbox first so it can work from the cache
-            root.Children.Add(new FolderNode { AccountId = acc.Id, FullName = "INBOX", Name = L.T("Gelen Kutusu"), Icon = "", SortOrder = 0,
-                                               UnreadCount = _cache.UnreadCount(acc.Id, "INBOX") });
+            var unifiedNode = new FolderNode
+            {
+                AccountId = "",
+                FullName = "UNIFIED_INBOX",
+                Name = L.T("Tüm Gelen Kutuları"),
+                Icon = "\uE715",
+                IsUnifiedInbox = true,
+                SortOrder = -100,
+                CustomColor = AccountColorHelper.GetAccountColor(_store.Accounts[0], 0),
+                UnreadCount = _cache.GetUnifiedInboxUnreadCount()
+            };
+            _roots.Add(unifiedNode);
+
+            int accIdx = 0;
+            foreach (var acc in _store.Accounts)
+            {
+                var color = AccountColorHelper.GetAccountColor(acc, accIdx++);
+                var root = new FolderNode
+                {
+                    AccountId = acc.Id,
+                    Name = acc.Email,
+                    FullName = "",
+                    Icon = "\uE77B",
+                    IsAccountRoot = true,
+                    CustomColor = color
+                };
+                _roots.Add(root);
+                root.Children.Add(new FolderNode
+                {
+                    AccountId = acc.Id,
+                    FullName = "INBOX",
+                    Name = L.T("Gelen Kutusu"),
+                    Icon = "\uE80C",
+                    SortOrder = 0,
+                    CustomColor = color,
+                    UnreadCount = _cache.UnreadCount(acc.Id, "INBOX")
+                });
+            }
+
+            var searchRoot = new FolderNode
+            {
+                AccountId = "",
+                FullName = "SEARCH_FOLDERS_ROOT",
+                Name = L.T("Arama Klasörleri"),
+                Icon = "\uE721",
+                IsSearchFolderRoot = true,
+                IsExpanded = true,
+                SortOrder = 1000
+            };
+            foreach (var sf in _searchFolderStore.Folders)
+            {
+                searchRoot.Children.Add(new FolderNode
+                {
+                    AccountId = "",
+                    FullName = $"SEARCH_{sf.Id}",
+                    Name = L.T(sf.Name),
+                    Icon = sf.Icon,
+                    IsSearchFolder = true,
+                    SearchFolderId = sf.Id,
+                    UnreadCount = _searchFolderStore.CountMatching(sf, _cache, unreadOnly: true)
+                });
+            }
+            _roots.Add(searchRoot);
         }
 
         foreach (var acc in _store.Accounts.ToList())
         {
-            var root = _roots.First(r => r.AccountId == acc.Id);
+            var root = _roots.FirstOrDefault(r => r.IsAccountRoot && r.AccountId == acc.Id);
+            if (root == null) continue;
             try
             {
                 Connection(L.F("{0} bağlanıyor...", acc.Email));
                 var folders = await _mail.GetFoldersAsync(acc);
                 root.Children.Clear();
+                var color = AccountColorHelper.GetAccountColor(acc, _store.Accounts.IndexOf(acc));
                 foreach (var f in folders)
-                    root.Children.Add(new FolderNode { AccountId = acc.Id, FullName = f.FullName, Name = f.DisplayName, Icon = f.Icon,
-                                                       SortOrder = f.Sort, UnreadCount = _cache.UnreadCount(acc.Id, f.FullName) });
+                    root.Children.Add(new FolderNode
+                    {
+                        AccountId = acc.Id,
+                        FullName = f.FullName,
+                        Name = f.DisplayName,
+                        Icon = f.Icon,
+                        CustomColor = f.FullName.Equals("INBOX", StringComparison.OrdinalIgnoreCase) ? color : null,
+                        SortOrder = f.Sort,
+                        UnreadCount = _cache.UnreadCount(acc.Id, f.FullName)
+                    });
                 Connection(L.T("Bağlı: ") + string.Join(", ", _store.Accounts.Select(a => a.Email)));
             }
             catch (Exception ex)
@@ -363,16 +433,23 @@ public partial class MainWindow : Window
         StartWatchers();
         RebuildContacts();
 
-        if (_currentFolder == null && _roots.FirstOrDefault()?.Children.FirstOrDefault() is { } inbox)
-            SelectFolder(inbox);
+        if (_currentFolder == null)
+        {
+            var defaultNode = _roots.FirstOrDefault(r => r.IsUnifiedInbox)
+                           ?? _roots.FirstOrDefault(r => r.IsAccountRoot)?.Children.FirstOrDefault();
+            if (defaultNode != null)
+                SelectFolder(defaultNode);
+        }
     }
 
     void SelectFolder(FolderNode node)
     {
-        if (FolderTree.ItemContainerGenerator.ContainerFromItem(_roots.First(r => r.AccountId == node.AccountId)) is TreeViewItem rootItem)
+        var root = _roots.FirstOrDefault(r => r == node || r.Children.Contains(node) || (r.IsAccountRoot && r.AccountId == node.AccountId));
+        if (root != null && FolderTree.ItemContainerGenerator.ContainerFromItem(root) is TreeViewItem rootItem)
         {
             rootItem.IsExpanded = true;
             rootItem.UpdateLayout();
+            if (root == node) { rootItem.IsSelected = true; return; }
             if (rootItem.ItemContainerGenerator.ContainerFromItem(node) is TreeViewItem child) { child.IsSelected = true; return; }
         }
         _ = OpenFolderAsync(node);
@@ -380,7 +457,7 @@ public partial class MainWindow : Window
 
     async void OnFolderSelected(object sender, RoutedPropertyChangedEventArgs<object> e)
     {
-        if (e.NewValue is FolderNode n && !n.IsAccountRoot) await OpenFolderAsync(n);
+        if (e.NewValue is FolderNode n && !n.IsAccountRoot && !n.IsSearchFolderRoot) await OpenFolderAsync(n);
     }
 
     async Task OpenFolderAsync(FolderNode node)
@@ -388,7 +465,14 @@ public partial class MainWindow : Window
         _currentFolder = node;
         _searchQuery = "";
         SearchBox.Text = "";
-        var folderTitle = $"{node.Name} - {Acc(node.AccountId)?.Email} - {L.ProductName}";
+        string folderTitle;
+        if (node.IsUnifiedInbox)
+            folderTitle = $"{node.Name} - {L.ProductName}";
+        else if (node.IsSearchFolder)
+            folderTitle = $"{node.Name} - {L.T("Arama Klasörü")} - {L.ProductName}";
+        else
+            folderTitle = $"{node.Name} - {Acc(node.AccountId)?.Email} - {L.ProductName}";
+
         if (_module == PimModule.Mail) Title = folderTitle; else _mailTitle = folderTitle;
         LoadMessagesFromCache();
         if (node.FullName.StartsWith("[Gmail]/", StringComparison.OrdinalIgnoreCase) && node.SortOrder == 50)
@@ -396,12 +480,47 @@ public partial class MainWindow : Window
         await SyncFolderAsync(node);
     }
 
+    void EnrichWithAccountInfo(List<MailHeader> list)
+    {
+        var accList = _store.Accounts.ToList();
+        var accDict = accList.ToDictionary(a => a.Id, a => a);
+        for (int i = 0; i < list.Count; i++)
+        {
+            var h = list[i];
+            if (accDict.TryGetValue(h.AccountId, out var acc))
+            {
+                var idx = accList.IndexOf(acc);
+                h.AccountName = !string.IsNullOrEmpty(acc.DisplayName) ? acc.DisplayName : acc.Email;
+                h.AccountColor = AccountColorHelper.GetAccountColor(acc, idx);
+                h.ShowAccountBadge = true;
+            }
+        }
+    }
+
     void LoadMessagesFromCache()
     {
         if (_currentFolder == null) return;
-        var list = string.IsNullOrWhiteSpace(_searchQuery)
-            ? _cache.GetHeaders(_currentFolder.AccountId, _currentFolder.FullName)
-            : _cache.Search(_currentFolder.AccountId, _searchQuery);
+        List<MailHeader> list;
+        if (_currentFolder.IsUnifiedInbox)
+        {
+            list = string.IsNullOrWhiteSpace(_searchQuery)
+                ? _cache.GetUnifiedInboxHeaders()
+                : _cache.Search(null, _searchQuery);
+            EnrichWithAccountInfo(list);
+        }
+        else if (_currentFolder.IsSearchFolder && _currentFolder.SearchFolderId != null)
+        {
+            var sf = _searchFolderStore.Find(_currentFolder.SearchFolderId);
+            list = sf != null ? _searchFolderStore.ExecuteSearch(sf, _cache) : new List<MailHeader>();
+            EnrichWithAccountInfo(list);
+        }
+        else
+        {
+            list = string.IsNullOrWhiteSpace(_searchQuery)
+                ? _cache.GetHeaders(_currentFolder.AccountId, _currentFolder.FullName)
+                : _cache.Search(_currentFolder.AccountId, _searchQuery);
+        }
+
         var selectedUid = _current?.Uid;
         FormatRuleEngine.Apply(_settings.FormatRules, list);
         _lastTotal = list.Count;
@@ -461,6 +580,18 @@ public partial class MainWindow : Window
 
     async Task SyncFolderAsync(FolderNode node, bool silent = false)
     {
+        if (node.IsUnifiedInbox)
+        {
+            foreach (var a in _store.Accounts)
+            {
+                var inbox = _roots.FirstOrDefault(r => r.IsAccountRoot && r.AccountId == a.Id)?.Children.FirstOrDefault(c => c.SortOrder == 0);
+                if (inbox != null) await SyncFolderAsync(inbox, silent: true);
+            }
+            LoadMessagesFromCache();
+            return;
+        }
+        if (node.IsSearchFolder || node.IsSearchFolderRoot) return;
+
         var acc = Acc(node.AccountId);
         if (acc == null || _lifetime.IsCancellationRequested) return;
         try
@@ -573,7 +704,7 @@ public partial class MainWindow : Window
     string OfflineSummary()
     {
         int total = 0, bodies = 0;
-        foreach (var f in _roots.SelectMany(r => r.Children))
+        foreach (var f in _roots.Where(r => r.IsAccountRoot).SelectMany(r => r.Children))
         {
             var (m, b) = _cache.Stats(f.AccountId, f.FullName);
             total += m; bodies += b;
@@ -592,11 +723,13 @@ public partial class MainWindow : Window
         {
             if (!silent) Status(L.T("Gönder/Al: tüm klasörler..."));
             // All folders like Outlook (Gmail's "All Mail" only when opened, because it is a copy of everything)
-            foreach (var root in _roots.ToList())
+            foreach (var root in _roots.Where(r => r.IsAccountRoot).ToList())
                 foreach (var f in root.Children.Where(c => c.SortOrder != 60).OrderBy(c => c.SortOrder).ToList())
                     await SyncFolderAsync(f, silent: true);
             if (_currentFolder != null && _currentFolder.SortOrder == 60)
                 await SyncFolderAsync(_currentFolder, silent: true);
+            if (_roots.FirstOrDefault(r => r.IsUnifiedInbox) is { } uInbox)
+                uInbox.UnreadCount = _cache.GetUnifiedInboxUnreadCount();
             Status(L.F("Son güncelleme: {0:HH:mm}", DateTime.Now));
             LastSyncText.Text = L.F("Son eşitleme: {0:dd.MM.yyyy HH:mm}", DateTime.Now);
             RebuildContacts();
@@ -704,10 +837,18 @@ public partial class MainWindow : Window
 
     void UpdateCounts()
     {
-        // In conversation view the list holds only headers; take the counts from the real number of mails
-        var unread = _currentFolder != null && string.IsNullOrEmpty(_searchQuery)
-            ? _cache.UnreadCount(_currentFolder.AccountId, _currentFolder.FullName)
-            : _messages.Count(m => !m.IsRead);
+        int unread;
+        if (_currentFolder == null)
+            unread = 0;
+        else if (_currentFolder.IsUnifiedInbox)
+            unread = _cache.GetUnifiedInboxUnreadCount();
+        else if (_currentFolder.IsSearchFolder)
+            unread = _messages.Count(m => !m.IsRead);
+        else if (string.IsNullOrEmpty(_searchQuery))
+            unread = _cache.UnreadCount(_currentFolder.AccountId, _currentFolder.FullName);
+        else
+            unread = _messages.Count(m => !m.IsRead);
+
         CountText.Text = L.F("Öğeler: {0}    Okunmamış: {1}", Math.Max(_lastTotal, _messages.Count), unread);
         EmptyListText.Visibility = _view.IsEmpty ? Visibility.Visible : Visibility.Collapsed;
         if (_currentFolder != null && string.IsNullOrEmpty(_searchQuery)) _currentFolder.UnreadCount = unread;
@@ -1975,6 +2116,101 @@ public partial class MainWindow : Window
         Status(due.Count == 1
             ? L.F("Ertelenen mail geri döndü: {0}", due[0].Subject)
             : L.F("Ertelenen {0} ileti geri döndü.", due.Count));
+    }
+
+    // ---------------- Search Folders ----------------
+
+    void OnFolderTreeContextMenuOpened(object sender, RoutedEventArgs e)
+    {
+        var sel = FolderTree.SelectedItem as FolderNode;
+        var isSearch = sel != null && sel.IsSearchFolder;
+        var isCustomSearch = isSearch && sel?.SearchFolderId != null && _searchFolderStore.Find(sel.SearchFolderId)?.IsBuiltIn != true;
+
+        if (EditSearchFolderMenuItem != null)
+        {
+            EditSearchFolderMenuItem.Visibility = isSearch ? Visibility.Visible : Visibility.Collapsed;
+        }
+        if (DeleteSearchFolderMenuItem != null)
+        {
+            DeleteSearchFolderMenuItem.Visibility = isCustomSearch ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+
+    void OnNewSearchFolderClick(object sender, RoutedEventArgs e)
+    {
+        var item = Views.SearchFolders.SearchFolderDialog.ShowDialog(this);
+        if (item != null)
+        {
+            _searchFolderStore.AddOrUpdate(item);
+            _ = RefreshSearchFoldersInTreeAsync(item.Id);
+        }
+    }
+
+    void OnEditSearchFolderClick(object sender, RoutedEventArgs e)
+    {
+        if (FolderTree.SelectedItem is not FolderNode node || !node.IsSearchFolder || node.SearchFolderId == null) return;
+        var existing = _searchFolderStore.Find(node.SearchFolderId);
+        if (existing == null) return;
+        var updated = Views.SearchFolders.SearchFolderDialog.ShowDialog(this, existing);
+        if (updated != null)
+        {
+            _searchFolderStore.AddOrUpdate(updated);
+            _ = RefreshSearchFoldersInTreeAsync(updated.Id);
+        }
+    }
+
+    void OnDeleteSearchFolderClick(object sender, RoutedEventArgs e)
+    {
+        if (FolderTree.SelectedItem is not FolderNode node || !node.IsSearchFolder || node.SearchFolderId == null) return;
+        var existing = _searchFolderStore.Find(node.SearchFolderId);
+        if (existing == null || existing.IsBuiltIn) return;
+
+        var res = MessageBox.Show(this,
+            L.F("\"{0}\" arama klasörünü silmek istediğinizden emin misiniz?", existing.Name),
+            L.T("Arama Klasörünü Sil"),
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+
+        if (res == MessageBoxResult.Yes)
+        {
+            _searchFolderStore.Delete(existing.Id);
+            _ = RefreshSearchFoldersInTreeAsync();
+        }
+    }
+
+    async Task RefreshSearchFoldersInTreeAsync(string? selectFolderId = null)
+    {
+        var searchRoot = _roots.FirstOrDefault(r => r.IsSearchFolderRoot);
+        if (searchRoot == null) return;
+
+        searchRoot.Children.Clear();
+        FolderNode? targetNode = null;
+        foreach (var sf in _searchFolderStore.Folders)
+        {
+            var fn = new FolderNode
+            {
+                AccountId = "",
+                FullName = $"SEARCH_{sf.Id}",
+                Name = L.T(sf.Name),
+                Icon = sf.Icon,
+                IsSearchFolder = true,
+                SearchFolderId = sf.Id,
+                UnreadCount = _searchFolderStore.CountMatching(sf, _cache, unreadOnly: true)
+            };
+            searchRoot.Children.Add(fn);
+            if (selectFolderId != null && sf.Id == selectFolderId) targetNode = fn;
+        }
+
+        if (targetNode != null)
+        {
+            SelectFolder(targetNode);
+        }
+        else if (_currentFolder?.IsSearchFolder == true)
+        {
+            var fallback = _roots.FirstOrDefault(r => r.IsUnifiedInbox);
+            if (fallback != null) SelectFolder(fallback);
+        }
+        await Task.CompletedTask;
     }
 
     async Task RunRuleOnFolderAsync(MailRule rule)

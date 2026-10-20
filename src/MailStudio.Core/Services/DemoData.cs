@@ -373,4 +373,10 @@ public static class DemoData
         await using (var i = File.OpenRead(src)) await AttachmentFiles.WriteAsync(dest, s => i.CopyToAsync(s), default);
         return dest;
     }
+
+    /// <summary>Ensures default search folders exist in searchfolders.json.</summary>
+    public static void SeedSearchFolders(SearchFolderStore searchFolderStore)
+    {
+        searchFolderStore.Load();
+    }
 }

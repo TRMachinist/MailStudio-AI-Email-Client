@@ -33,6 +33,7 @@ public class AccountConfig
     public bool OfflineAttachments { get; set; } = true;
     /// <summary>Attachments larger than this (MB) are not downloaded automatically; they download on click.</summary>
     public int OfflineMaxAttachmentMB { get; set; } = 30;
+    public string Color { get; set; } = "";
 }
 
 public class MailSignature
@@ -72,6 +73,12 @@ public partial class FolderNode : ObservableObject
     public string Name { get; init; } = "";
     public string Icon { get; init; } = "";
     public bool IsAccountRoot { get; init; }
+    public bool IsUnifiedInbox { get; init; }
+    public bool IsSearchFolderRoot { get; init; }
+    public bool IsSearchFolder { get; init; }
+    public string? SearchFolderId { get; init; }
+    public string? CustomColor { get; init; }
+    public bool HasCustomColor => !string.IsNullOrEmpty(CustomColor);
     public int SortOrder { get; init; } = 50;
 
     [ObservableProperty] private int unreadCount;
@@ -105,6 +112,10 @@ public partial class MailHeader : ObservableObject
     public bool HasAttachments { get; init; }
     public long Size { get; set; }
     public string? Importance { get; set; } = "normal";
+
+    [ObservableProperty] private string accountName = "";
+    [ObservableProperty] private string accountColor = "#0078D4";
+    [ObservableProperty] private bool showAccountBadge;
 
     [ObservableProperty] private string? category;
     [ObservableProperty] private bool isRead;
