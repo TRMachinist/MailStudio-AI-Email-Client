@@ -298,7 +298,7 @@ public static class Ics
         ["Tokyo Standard Time"] = "Asia/Tokyo", ["India Standard Time"] = "Asia/Kolkata", ["UTC"] = "Etc/UTC", ["GMT"] = "Etc/UTC",
     };
 
-    static TimeZoneInfo? FindZone(string tzid)
+    public static TimeZoneInfo? FindZone(string tzid)
     {
         var id = tzid.Trim().Trim('"');
         if (id.StartsWith('/')) id = id.TrimStart('/'); // some servers prefix "/mozilla.org/..." style ids

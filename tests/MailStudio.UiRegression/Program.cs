@@ -11,6 +11,10 @@ using MailStudio.Services;
 using MailStudio.Views;
 using MailStudio.Services.Calendar;
 using MailStudio.Views.Calendar;
+using MailStudio.Views.Quotes;
+using MailStudio.Views.Templates;
+using MailStudio.Views.QuickSteps;
+using MailStudio.Views.Snooze;
 using MailStudio.Regression;
 using Microsoft.Web.WebView2.Wpf;
 
@@ -549,6 +553,17 @@ internal static class Program
             rulesWin.Show();Field<TextBox>(rulesWin,"_aiBox").Text="tedarikçiden gelenler kırmızı kalın";await (Task)Invoke(rulesWin,"AiCreateAsync")!;
             Check(rulesWin.Rules.Count==1&&rulesWin.Rules[0].Bold&&rulesWin.Rules[0].TextColor=="#C42B1C"&&Field<TextBlock>(rulesWin,"_matchInfo").Text.Contains(L.IsEnglish?"1 of":"1 tanesi"),"AI creates a reviewable conditional formatting rule with live match count");
             Capture(rulesWin,"format-rules.png");rulesWin.Close();
+            // Email rules window + AI
+            var mailRulesStore = new RuleStore(Path.Combine(AppPaths.Root, "ui-rules.json"));
+            var mailRulesWin = new RulesWindow(mailRulesStore, new List<MailHeader>{new(){FromName="Anna Keller",FromAddress="anna@example.test",Subject="Teklif talebi",Date=DateTimeOffset.Now}},
+                (prompt,_)=>Task.FromResult(prompt.Contains("<tarif>")?"{\"Name\":\"Anna teklifleri\",\"Conditions\":[{\"Field\":\"from\",\"Value\":\"anna\"}],\"Actions\":[{\"Type\":\"move_to_folder\",\"Value\":\"Teklifler\"}],\"StopProcessing\":true,\"MatchAll\":true}":"{}"),()=>"Test");
+            mailRulesWin.Show();
+            Field<TextBox>(mailRulesWin,"_aiBox").Text="Anna'dan gelen teklifleri Teklifler klasörüne taşı";
+            await (Task)Invoke(mailRulesWin,"AiCreateAsync")!;
+            Check(mailRulesWin.Rules.Count==1&&mailRulesWin.Rules[0].Name=="Anna teklifleri"&&mailRulesWin.Rules[0].Actions[0].Type=="move_to_folder"&&Field<TextBlock>(mailRulesWin,"_matchInfo").Text.Contains(L.IsEnglish?"1 of":"1 tanesi"),"AI creates a reviewable email rule with live match count");
+            Audit(mailRulesWin, "RulesWindow");
+            Capture(mailRulesWin,"rules-window.png");
+            mailRulesWin.Close();
         }
         var trayMain=new MainWindow();
         trayMain.Loaded-=(RoutedEventHandler)Delegate.CreateDelegate(typeof(RoutedEventHandler),trayMain,trayMain.GetType().GetMethod("OnLoaded",Private)!);
@@ -623,14 +638,358 @@ internal static class Program
             finally { AgentConnector.TestRoot = null; }
             Console.WriteLine("PASS skills, Excel preview and agents windows"); _passed++;
         }
+        {
+            // 1.8: Missing attachment prompt test
+            var testPromptTriggered = false;
+            string? capturedKeyword = null;
+            var missPromptWin = new ComposeWindow(new[] { account }, account.Id, new() { To = "supplier@example.test", Subject = "Missing attachment test", Body = "Teklifimiz ektedir." }, mail, (_, _) => Task.FromResult(""), () => "Test");
+            missPromptWin.MissingAttachmentPrompt = (kw) =>
+            {
+                testPromptTriggered = true;
+                capturedKeyword = kw;
+                return MissingAttachmentResult.Cancel;
+            };
+            missPromptWin.Show();
+            await Until(() => missPromptWin.IsEditorInitialized);
+            Invoke(missPromptWin, "OnSend", missPromptWin, new RoutedEventArgs());
+            await Until(() => testPromptTriggered);
+            Check(testPromptTriggered && capturedKeyword == "ektedir", "ComposeWindow triggers missing attachment prompt on Send without files");
+            Close(missPromptWin);
+        }
+        {
+            // 1.8: Revision comparison window test
+            var sampleReport = new RevisionDiffReport
+            {
+                FileType = "STEP",
+                PartNumber = "NW-1042",
+                OldRevision = "B",
+                NewRevision = "C",
+                OldFileName = "flange-DN100-revB.pdf",
+                NewFileName = "flange-DN100-revC.pdf",
+                Items = new List<RevisionDiffItem>
+                {
+                    new() { Kind = RevisionDiffKind.Modified, Category = "Ölçü", Property = "Delik Çapı", OldValue = "Ø18 mm", NewValue = "Ø20 mm", Description = "8 adet flanş deliği Ø18 → Ø20" },
+                    new() { Kind = RevisionDiffKind.Modified, Category = "Ölçü", Property = "Kalınlık", OldValue = "24 mm", NewValue = "26 mm", Description = "Flanş kalınlığı 24 mm → 26 mm" },
+                    new() { Kind = RevisionDiffKind.Added, Category = "Yüzey", Property = "Yüzey Pürüzlülüğü", NewValue = "Ra 1.6", Description = "İşleme yüzeyi Ra 1.6 olarak güncellendi" }
+                }
+            };
+            var diffWin = new RevisionDiffWindow(sampleReport, onAddToReply: _ => { }, aiRunner: (_, _) => Task.FromResult("İmalat etkisi: delik çapı 20 mm için delik işleme takımı değişecek."));
+            diffWin.Show(); await Task.Delay(400);
+            Check(diffWin.IsVisible && Field<ListView>(diffWin, "_diffList").Items.Count == 3, "RevisionDiffWindow opens and populates 3 diff items");
+            Audit(diffWin, "RevisionDiffWindow");
+            Capture(diffWin, "revision-diff-window.png");
+            diffWin.Close();
+            Console.WriteLine("PASS revision comparison window UI and actions"); _passed++;
+        }
+
+        // ---- 3.6 Teklif Masası UI Test
+        {
+            var testQuoteStore = new QuoteStore(Path.Combine(AppPaths.Root, "test-ui-quotes.json"));
+            testQuoteStore.Quotes.Clear();
+            testQuoteStore.AddOrUpdate(new QuoteItem
+            {
+                Customer = "Siemens Energy",
+                Contact = "Anna Keller",
+                PartNumber = "NW-1042",
+                Revision = "C",
+                Quantity = 120,
+                Material = "Alüminyum 6061-T6",
+                Status = QuoteStatus.InProgress,
+                Deadline = DateTime.Today.AddDays(2)
+            });
+            testQuoteStore.AddOrUpdate(new QuoteItem
+            {
+                Customer = "Contoso Aero",
+                Contact = "Tom Becker",
+                PartNumber = "bracket-revC",
+                Revision = "C",
+                Quantity = 250,
+                Material = "7075-T6",
+                Status = QuoteStatus.New,
+                Deadline = DateTime.Today.AddDays(1)
+            });
+            testQuoteStore.AddOrUpdate(new QuoteItem
+            {
+                Customer = "Delta Makina",
+                Contact = "Mustafa Yılmaz",
+                PartNumber = "shaft-pin-M12",
+                Revision = "01",
+                Quantity = 5000,
+                Material = "St52",
+                Status = QuoteStatus.Won,
+                Deadline = DateTime.Today.AddDays(-3)
+            });
+
+            var dummyHost = new DummyQuoteHost();
+            var quoteDesk = new QuoteDeskView(testQuoteStore, dummyHost);
+            var hostWin = new Window { Width = 900, Height = 600, Content = quoteDesk };
+            hostWin.Show(); await Task.Delay(300);
+
+            var list = Field<ListView>(quoteDesk, "_list");
+            Check(hostWin.IsVisible && list.Items.Count == 3, "QuoteDeskView displays 3 quote items");
+
+            // Filter test
+            Set(quoteDesk, "_filter", QuoteFilter.Won);
+            quoteDesk.Refresh();
+            Check(list.Items.Count == 1, "QuoteDeskView filters by status (Won -> 1 item)");
+
+            // Reset filter and search test
+            Set(quoteDesk, "_filter", QuoteFilter.All);
+            var searchBox = Field<TextBox>(quoteDesk, "_search");
+            searchBox.Text = "bracket";
+            Check(list.Items.Count == 1, "QuoteDeskView live search filters by part name");
+            searchBox.Text = "";
+
+            Audit(hostWin, "QuoteDeskView");
+            Capture(hostWin, "quote-desk-view.png");
+            hostWin.Close();
+
+            // QuoteEditDialog test
+            var sampleQuote = testQuoteStore.Quotes[0];
+            var editDlg = new QuoteEditDialog(sampleQuote, isNew: false);
+            editDlg.Show(); await Task.Delay(200);
+            Check(editDlg.IsVisible && Field<TextBox>(editDlg, "_customer").Text == sampleQuote.Customer, "QuoteEditDialog opens with pre-filled fields");
+            Audit(editDlg, "QuoteEditDialog");
+            editDlg.Close();
+
+            Console.WriteLine("PASS Teklif Masası (Quote Desk) UI views and interactions"); _passed++;
+        }
+
+        // ---- 3.7 Hazır Yanıt Şablonları & Hızlı Adımlar UI Test
+        {
+            var testTmplStore = new TemplateStore(Path.Combine(AppPaths.Root, "ui-test-templates.json"));
+            var tmplWin = new TemplateManagerWindow(testTmplStore);
+            tmplWin.Show(); await Task.Delay(300);
+            var tmplList = Field<ListBox>(tmplWin, "_listBox");
+            Check(tmplWin.IsVisible && tmplList.Items.Count >= 6, "TemplateManagerWindow opens with seeded templates (>= 6)");
+
+            var searchBox = Field<TextBox>(tmplWin, "_searchBox");
+            searchBox.Text = "Teklif";
+            Check(tmplList.Items.Count >= 1, "TemplateManagerWindow filters templates by search query");
+            searchBox.Text = "";
+
+            Audit(tmplWin, "TemplateManagerWindow");
+            Capture(tmplWin, "template-manager-window.png");
+            tmplWin.Close();
+
+            // QuickStepManagerWindow
+            var testQsStore = new QuickStepStore(Path.Combine(AppPaths.Root, "ui-test-qs.json"));
+            var qsWin = new QuickStepManagerWindow(testQsStore, testTmplStore);
+            qsWin.Show(); await Task.Delay(300);
+            var qsList = Field<ListBox>(qsWin, "_stepListBox");
+            Check(qsWin.IsVisible && qsList.Items.Count >= 3, "QuickStepManagerWindow opens with default quick steps (>= 3)");
+
+            Audit(qsWin, "QuickStepManagerWindow");
+            Capture(qsWin, "quickstep-manager-window.png");
+            qsWin.Close();
+
+            // SnoozeCustomDateDialog
+            var snoozeWin = new SnoozeCustomDateDialog();
+            snoozeWin.Show(); await Task.Delay(300);
+            Check(snoozeWin.IsVisible, "SnoozeCustomDateDialog opens");
+            Audit(snoozeWin, "SnoozeCustomDateDialog");
+            Capture(snoozeWin, "snooze-custom-date-dialog.png");
+            snoozeWin.Close();
+
+            Console.WriteLine("PASS Şablonlar ve Hızlı Adımlar UI views and interactions"); _passed++;
+            Console.WriteLine("PASS Mail Erteleme (Snooze) UI views and interactions"); _passed++;
+        }
+
+        // ---- 3.9 Birleşik Gelen Kutusu ve Kayıtlı Aramalar UI Test
+        {
+            var testSf = new SearchFolderItem
+            {
+                Name = "Teklif Talepleri",
+                Criteria = new SearchFolderCriteria
+                {
+                    From = "anna.keller@northwind-machining.example",
+                    HasAttachments = true,
+                    AttachmentType = "pdf",
+                    DateRangePreset = "this_week",
+                    IsUnread = true
+                }
+            };
+            var sfDialog = new MailStudio.Views.SearchFolders.SearchFolderDialog(testSf);
+            sfDialog.Show(); await Task.Delay(300);
+            Check(sfDialog.IsVisible && Field<TextBox>(sfDialog, "_nameBox").Text == "Teklif Talepleri", "SearchFolderDialog opens with pre-filled name");
+            Check(Field<TextBox>(sfDialog, "_fromBox").Text == "anna.keller@northwind-machining.example", "SearchFolderDialog displays sender criteria");
+            Audit(sfDialog, "SearchFolderDialog");
+            Capture(sfDialog, "search-folder-dialog.png");
+            sfDialog.Close();
+
+            Console.WriteLine("PASS Birleşik Gelen Kutusu ve Kayıtlı Aramalar UI views and interactions"); _passed++;
+
+            // 3.10 Bültenler ve Abonelikten Çıkma UI check
+            var filterNewsTab = main.FindName("FilterNewsletters") as RadioButton;
+            Check(filterNewsTab != null, "FilterNewsletters radio button exists in MainWindow");
+
+            var unsubBar = main.FindName("UnsubscribeBar") as Border;
+            Check(unsubBar != null, "UnsubscribeBar exists in MainWindow reading pane");
+
+            var unsubBtn = main.FindName("UnsubscribeButton") as Button;
+            Check(unsubBtn != null && unsubBtn.Content != null, "UnsubscribeButton exists in UnsubscribeBar");
+
+            var moveNewsBtn = main.FindName("MoveToNewslettersButton") as Button;
+            Check(moveNewsBtn != null, "MoveToNewslettersButton exists in UnsubscribeBar");
+
+            Console.WriteLine("PASS Bültenler ve Abonelikten Çıkma UI elements verified"); _passed++;
+
+            // 3.11 Google / Outlook takvim eşitlemesi UI check
+            var accSync = new AccountConfig
+            {
+                DisplayName = "Eşitleme Hesabı",
+                Email = "sync@example.com",
+                AuthType = AuthType.Microsoft,
+                EnableCalendarSync = true
+            };
+            var accSyncWin = new AccountWindow(accSync, new AppSettings(), new OAuthService(() => new AppSettings()));
+            accSyncWin.Show(); await Task.Delay(300);
+            var calSyncCheck = accSyncWin.FindName("CalendarSyncCheck") as CheckBox;
+            var calNotice = accSyncWin.FindName("CalendarConsentNotice") as Border;
+            Check(calSyncCheck != null && calSyncCheck.IsChecked == true, "CalendarSyncCheck is checked in AccountWindow");
+            Check(calNotice != null && calNotice.Visibility == Visibility.Visible, "CalendarConsentNotice is visible for OAuth account");
+            Audit(accSyncWin, "AccountWindow-CalendarSync");
+            Capture(accSyncWin, "account-window-calendar-sync.png");
+            accSyncWin.Close();
+
+            // Calendar ribbon sync command
+            main.SwitchModule(PimModule.Calendar); await Task.Delay(400);
+            var calView = main.CalendarViewForTests;
+            Check(calView != null, "CalendarView initialized in MainWindow");
+            Check(calView.Ribbon.Children.OfType<FrameworkElement>().Any(g => g.ToString()!.Contains("Eşitle") || g.ToString()!.Contains("Sync")), "Calendar ribbon contains Eşitle group");
+            main.SwitchModule(PimModule.Mail);
+
+            Console.WriteLine("PASS Google / Outlook takvim eşitlemesi UI elements verified"); _passed++;
+        }
+
+        // ---- 3.12 Küçük Ama Değerli Olanlar (Büyük Ek Uyarısı, Kişi Kartı, @ Bahsetme) UI Test
+        {
+            // 1. ComposeWindow: Large attachment warning (>20MB) & ZIP compression
+            var largeFilePath = Path.Combine(Path.GetTempPath(), "test-large-attachment-" + Guid.NewGuid().ToString("N") + ".dat");
+            using (var fs = new FileStream(largeFilePath, FileMode.Create, FileAccess.Write))
+            {
+                fs.SetLength(22 * 1024 * 1024); // 22 MB
+            }
+            var largeCompose = new ComposeWindow(new[] { account }, account.Id, new() { Subject = "Large attachment test" }, mail, (_, _) => Task.FromResult(""), () => "Test");
+            largeCompose.Show(); await Until(() => largeCompose.IsEditorInitialized);
+            Invoke(largeCompose, "AddAttachmentFiles", (object)new[] { largeFilePath });
+            var largeWarningBorder = largeCompose.FindName("LargeAttachmentWarning") as Border;
+            var largeWarningText = largeCompose.FindName("LargeAttachmentText") as TextBlock;
+            Check(largeWarningBorder != null && largeWarningBorder.Visibility == Visibility.Visible, "LargeAttachmentWarning banner is visible for >20MB attachments");
+            Check(largeWarningText != null && largeWarningText.Text.Contains("20 MB"), "LargeAttachmentText mentions 20 MB");
+
+            Audit(largeCompose, "ComposeWindow-LargeAttachmentWarning");
+            Capture(largeCompose, "compose-large-attachment-warning.png");
+
+            // Test ZIP compression button
+            var zipBtn = largeCompose.FindName("ZipAttachmentsBtn") as Button;
+            Check(zipBtn != null, "ZipAttachmentsButton exists in LargeAttachmentWarning banner");
+            zipBtn!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check(largeWarningBorder.Visibility == Visibility.Collapsed, "LargeAttachmentWarning collapses after ZIP compression");
+            var attachmentsList = Field<System.Collections.ObjectModel.ObservableCollection<string>>(largeCompose, "_attachments");
+            Check(attachmentsList.Count == 1 && attachmentsList[0].EndsWith(".zip", StringComparison.OrdinalIgnoreCase), "Attachments replaced by a single .zip file");
+
+            try { if (File.Exists(largeFilePath)) File.Delete(largeFilePath); } catch { }
+            try { if (File.Exists(attachmentsList[0])) File.Delete(attachmentsList[0]); } catch { }
+            Close(largeCompose);
+
+            // 2. ComposeWindow: @ mention suggestion & insert
+            var mentionCompose = new ComposeWindow(new[] { account }, account.Id, new() { Subject = "Mention test" }, mail, (_, _) => Task.FromResult(""), () => "Test");
+            mentionCompose.Show(); await Until(() => mentionCompose.IsEditorInitialized);
+            var mentionSuccess = await mentionCompose.InsertMentionAsync("Anna Keller", "anna.keller@northwind-machining.example");
+            Check(mentionSuccess, "InsertMentionAsync returns true when editor is ready");
+            Check(mentionCompose.ToAddressText.Contains("anna.keller@northwind-machining.example"), "InsertMentionAsync adds mentioned contact to ToBox");
+            var mentionSnapshot = await mentionCompose.SnapshotAsync();
+            Check(mentionSnapshot.EditableHtml != null && mentionSnapshot.EditableHtml.Contains("class=\"ms-mention\"") && mentionSnapshot.EditableHtml.Contains("@Anna Keller"), "Editor HTML contains @ mention span element");
+            Audit(mentionCompose, "ComposeWindow-AtMention");
+            Capture(mentionCompose, "compose-at-mention.png");
+            Close(mentionCompose);
+
+            // 3. ContactCardWindow: Open and inspect elements
+            var cardWin = new ContactCardWindow("Anna Keller", "anna.keller@northwind-machining.example", Field<MailCache>(main, "_cache"), Field<TaskStore>(main, "_tasks"), Field<QuoteStore>(main, "_quoteStore"), Field<ContactBook>(main, "_contacts").Store);
+            cardWin.Show(); await Task.Delay(300);
+            Check(cardWin.ContactName == "Anna Keller" && cardWin.ContactAddress == "anna.keller@northwind-machining.example", "ContactCardWindow properties match contact");
+            Audit(cardWin, "ContactCardWindow");
+            Capture(cardWin, "contact-card-window.png");
+            cardWin.Close();
+
+            Console.WriteLine("PASS Küçük ama değerli olanlar (büyük ek uyarısı, kişi kartı, @ bahsetme) UI verified"); _passed++;
+        }
+
         if (L.IsEnglish)
         {
             foreach (var w in Application.Current.Windows.OfType<Window>().Where(w => w.IsVisible).ToList()) Audit(w, w.GetType().Name);
             var accWin = new AccountWindow(null, new AppSettings(), new OAuthService(() => new AppSettings())); accWin.Show(); await Task.Delay(300); Audit(accWin, "AccountWindow"); Capture(accWin, "account-window.png"); accWin.Close();
+            var auditAccSync = new AccountConfig { DisplayName = "Sync Account", Email = "sync@example.com", AuthType = AuthType.Microsoft, EnableCalendarSync = true };
+            var auditAccSyncWin = new AccountWindow(auditAccSync, new AppSettings(), new OAuthService(() => new AppSettings()));
+            auditAccSyncWin.Show(); await Task.Delay(300); Audit(auditAccSyncWin, "AccountWindow(CalendarSync-en)"); auditAccSyncWin.Close();
             var contactsWin = new ContactsWindow(false); contactsWin.Show(); await Task.Delay(300); Audit(contactsWin, "ContactsWindow"); contactsWin.Close();
             var pickWin = new ContactsWindow(true); pickWin.Show(); await Task.Delay(300); Audit(pickWin, "ContactsWindow(pick)"); pickWin.Close();
             var cardWin = new ContactEditWindow(new Contact()); cardWin.Show(); await Task.Delay(300); Audit(cardWin, "ContactEditWindow"); cardWin.Close();
             var groupWin = new GroupEditWindow(new ContactGroup()); groupWin.Show(); await Task.Delay(300); Audit(groupWin, "GroupEditWindow"); groupWin.Close();
+            var auditRulesWin = new RulesWindow(new RuleStore(Path.Combine(AppPaths.Root, "audit-rules.json")), new List<MailHeader>(), (_, _) => Task.FromResult(""), () => "Test"); auditRulesWin.Show(); await Task.Delay(300); Audit(auditRulesWin, "RulesWindow"); auditRulesWin.Close();
+
+            var auditDiffWin = new RevisionDiffWindow(new RevisionDiffReport
+            {
+                FileType = "STEP",
+                PartNumber = "NW-1042",
+                OldRevision = "B",
+                NewRevision = "C",
+                OldFileName = "flange-DN100-revB.pdf",
+                NewFileName = "flange-DN100-revC.pdf",
+                Items = new List<RevisionDiffItem>
+                {
+                    new() { Kind = RevisionDiffKind.Modified, Category = "Ölçü", Property = "Delik Çapı", OldValue = "Ø18 mm", NewValue = "Ø20 mm", Description = "8 adet flanş deliği Ø18 → Ø20" }
+                }
+            });
+            auditDiffWin.Show(); await Task.Delay(300); Audit(auditDiffWin, "RevisionDiffWindow(en)"); auditDiffWin.Close();
+
+            var auditMissingWin = new Window { Title = L.T("Ek unutulmuş olabilir") };
+            var sp = new StackPanel();
+            sp.Children.Add(new TextBlock { Text = L.T("Eki eklemeyi unuttunuz mu?") });
+            sp.Children.Add(new TextBlock { Text = L.T("İletinizde ekten bahsedilmiş ancak hiçbir dosya eklenmemiş. Yine de gönderilsin mi?") });
+            sp.Children.Add(new TextBlock { Text = L.F("Tespit edilen ifade: \"{0}\"", "attached") });
+            sp.Children.Add(new Button { Content = L.T("Dosya Ekle") });
+            sp.Children.Add(new Button { Content = L.T("Yine de Gönder") });
+            sp.Children.Add(new Button { Content = L.T("İptal") });
+            auditMissingWin.Content = sp;
+            auditMissingWin.Show(); await Task.Delay(200); Audit(auditMissingWin, "MissingAttachmentDialog"); auditMissingWin.Close();
+
+            var auditQuoteStore = new QuoteStore(Path.Combine(AppPaths.Root, "audit-quotes-en.json"));
+            var auditQuoteHost = new DummyQuoteHost();
+            var auditQuoteDesk = new QuoteDeskView(auditQuoteStore, auditQuoteHost);
+            var auditQuoteWin = new Window { Content = auditQuoteDesk, Width = 900, Height = 600 };
+            auditQuoteWin.Show(); await Task.Delay(300); Audit(auditQuoteWin, "QuoteDeskView(en)"); auditQuoteWin.Close();
+
+            var auditQuoteDlg = new QuoteEditDialog(new QuoteItem { Customer = "Test Corp", PartNumber = "NW-1042" }, isNew: true);
+            auditQuoteDlg.Show(); await Task.Delay(200); Audit(auditQuoteDlg, "QuoteEditDialog(en)"); auditQuoteDlg.Close();
+
+            var auditTmplStore = new TemplateStore(Path.Combine(AppPaths.Root, "audit-templates-en.json"));
+            var auditTmplWin = new TemplateManagerWindow(auditTmplStore);
+            auditTmplWin.Show(); await Task.Delay(300); Audit(auditTmplWin, "TemplateManagerWindow(en)"); auditTmplWin.Close();
+
+            var auditQsStore = new QuickStepStore(Path.Combine(AppPaths.Root, "audit-qs-en.json"));
+            var auditQsWin = new QuickStepManagerWindow(auditQsStore, auditTmplStore);
+            auditQsWin.Show(); await Task.Delay(300); Audit(auditQsWin, "QuickStepManagerWindow(en)"); auditQsWin.Close();
+
+            var auditSnoozeWin = new SnoozeCustomDateDialog();
+            auditSnoozeWin.Show(); await Task.Delay(300); Audit(auditSnoozeWin, "SnoozeCustomDateDialog(en)"); auditSnoozeWin.Close();
+
+            var auditSfWin = new MailStudio.Views.SearchFolders.SearchFolderDialog();
+            auditSfWin.Show(); await Task.Delay(300); Audit(auditSfWin, "SearchFolderDialog(en)"); auditSfWin.Close();
+
+            var auditCard = new ContactCardWindow("Anna Keller", "anna.keller@northwind-machining.example", Field<MailCache>(main, "_cache"), Field<TaskStore>(main, "_tasks"), Field<QuoteStore>(main, "_quoteStore"), Field<ContactBook>(main, "_contacts").Store);
+            auditCard.Show(); await Task.Delay(300); Audit(auditCard, "ContactCardWindow(en)"); auditCard.Close();
+
+            var auditLargeCompose = new ComposeWindow(new[] { account }, account.Id, new() { Subject = "Large attachment test en" }, mail, (_, _) => Task.FromResult(""), () => "Test");
+            auditLargeCompose.Show(); await Until(() => auditLargeCompose.IsEditorInitialized);
+            var auditLargeFile = Path.Combine(Path.GetTempPath(), "test-audit-large-" + Guid.NewGuid().ToString("N") + ".dat");
+            using (var fs = new FileStream(auditLargeFile, FileMode.Create, FileAccess.Write)) { fs.SetLength(22 * 1024 * 1024); }
+            Invoke(auditLargeCompose, "AddAttachmentFiles", (object)new[] { auditLargeFile });
+            Audit(auditLargeCompose, "ComposeWindow(LargeAttachment-en)");
+            try { if (File.Exists(auditLargeFile)) File.Delete(auditLargeFile); } catch { }
+            Close(auditLargeCompose);
+
             foreach (var t in TurkishLooking) Console.WriteLine("REVIEW " + t);
             foreach (var t in Untranslated) Console.WriteLine("UNTRANSLATED " + t);
             Check(Untranslated.Count == 0, "English UI: every visible UI string is translated");
@@ -639,4 +998,16 @@ internal static class Program
         Console.Out.Flush(); Environment.Exit(0);   // all checks passed; do not wait for leftover windows/threads
     }
 }
+
+sealed class DummyQuoteHost : IQuoteHost
+{
+    public Window HostWindow => new();
+    public string? PickAttendees(Window owner) => null;
+    public bool IsOwnAddress(string address) => false;
+    public void ComposeMeetingMail(CalendarEvent e, string method, string? partStat = null, IEnumerable<string>? to = null) { }
+    public void OpenSourceMail(string source) { }
+    public void Status(string text) { }
+    public void ComposeQuoteReply(QuoteItem quote) { }
+}
+
 

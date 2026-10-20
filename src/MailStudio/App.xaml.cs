@@ -80,7 +80,7 @@ public partial class App : Application
             Shutdown(); return;
         }
         base.OnStartup(e);
-        if (demo) { var demoStore = new Services.AccountStore(); demoStore.Load(); var demoCache = new Services.MailCache(); demoCache.Init(); Services.DemoData.Seed(demoStore, demoCache); Services.DemoData.SeedPim(new Services.Calendar.CalendarStore(), new Services.Calendar.TaskStore()); }
+        if (demo) { var demoStore = new Services.AccountStore(); demoStore.Load(); var demoCache = new Services.MailCache(); demoCache.Init(); Services.DemoData.Seed(demoStore, demoCache); Services.DemoData.SeedPim(new Services.Calendar.CalendarStore(), new Services.Calendar.TaskStore()); Services.DemoData.SeedQuotes(new Services.QuoteStore()); Services.DemoData.SeedTemplates(new Services.TemplateStore()); Services.DemoData.SeedQuickSteps(new Services.QuickStepStore()); Services.DemoData.SeedSnooze(new Services.SnoozeStore()); Services.DemoData.SeedSearchFolders(new Services.SearchFolderStore()); }
         var window = new MainWindow(startInTray: e.Args.Contains("--background"));
         MainWindow = window;
         _instance.Listen(Dispatcher, window.ShowFromTray);
@@ -113,6 +113,12 @@ public partial class App : Application
         {
             var target = System.IO.Path.GetFullPath(e.Args[videoAt + 1]);
             window.ContentRendered += async (_, _) => await Services.ShowcaseVideo.RunAsync(window, target);
+        }
+        var showcase18At = Array.IndexOf(e.Args, "--showcase-18");
+        if (demo && showcase18At >= 0 && showcase18At + 1 < e.Args.Length)
+        {
+            var target = System.IO.Path.GetFullPath(e.Args[showcase18At + 1]);
+            window.ContentRendered += async (_, _) => await Services.ShowcaseVideo.Run18Async(window, target);
         }
     }
 

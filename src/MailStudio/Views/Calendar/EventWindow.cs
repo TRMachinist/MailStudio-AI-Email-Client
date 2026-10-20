@@ -26,6 +26,8 @@ public sealed class EventWindow : Window
     readonly ComboBox _reminder = new() { MinWidth = 150 };
     readonly ComboBox _busy = new() { MinWidth = 130 };
     readonly ComboBox _category = new() { MinWidth = 130 };
+    readonly ComboBox _calendarBox = new() { MinWidth = 200 };
+    FrameworkElement? _calendarPart;
     readonly TextBlock _conflict = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 0), Visibility = Visibility.Collapsed };
     readonly TextBlock _repeatText = new() { Margin = new Thickness(0, 4, 0, 0), FontSize = 11.5, TextWrapping = TextWrapping.Wrap };
     readonly Button _send;
@@ -39,6 +41,8 @@ public sealed class EventWindow : Window
     public CalendarEvent Event => _e;
     /// <summary>Opens the address book; returns "Name &lt;addr&gt;; ..." to append, or null.</summary>
     public Func<Window, string?>? PickAttendees { get; set; }
+    /// <summary>Account calendars with sync turned on (id, display name). Empty: the choice is hidden, the event stays on this computer.</summary>
+    public IReadOnlyList<(string Id, string Name)>? SyncCalendars { get; set; }
 
     public EventWindow(CalendarEvent e, CalendarStore store, bool isNew, bool meeting)
     {
@@ -103,6 +107,8 @@ public sealed class EventWindow : Window
         options.Children.Add(Labeled(L.T("Anımsatıcı"), _reminder));
         options.Children.Add(Labeled(L.T("Durum"), _busy));
         options.Children.Add(Labeled(L.T("Kategori"), _category));
+        _calendarPart = Labeled(L.T("Takvim"), _calendarBox) as FrameworkElement;
+        if (_calendarPart != null) { _calendarPart.Visibility = Visibility.Collapsed; options.Children.Add(_calendarPart); }
         options.Children.Add(_private);
         Row(L.T("Seçenekler"), options);
         Row(L.T("Notlar"), _notes, stretch: true);
@@ -157,6 +163,7 @@ public sealed class EventWindow : Window
             if (k.Key == Key.S && Keyboard.Modifiers == ModifierKeys.Control) { Finish(send: false); k.Handled = true; }
             if (k.Key == Key.Escape) { DialogResult = false; k.Handled = true; }
         };
+        Loaded += (_, _) => FillCalendars();
         Loaded += (_, _) => { (_title.Text.Length == 0 ? _title : (Control)_title).Focus(); _title.SelectAll(); UpdateConflicts(); UpdateRepeatText(); };
         if (meeting && isNew) Loaded += (_, _) => _attendees.Focus();
     }
@@ -255,6 +262,20 @@ public sealed class EventWindow : Window
         _conflict.Visibility = c.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
     }
 
+    void FillCalendars()
+    {
+        var list = SyncCalendars ?? Array.Empty<(string, string)>();
+        var current = _e.AccountId ?? "";
+        if (list.Count == 0 && current.Length == 0) return;
+        _calendarBox.Items.Add(new ComboBoxItem { Content = L.T("Bu bilgisayar (eşitlenmez)"), Tag = "" });
+        foreach (var (id, name) in list) _calendarBox.Items.Add(new ComboBoxItem { Content = name, Tag = id });
+        if (current.Length > 0 && !list.Any(c => c.Id == current)) _calendarBox.Items.Add(new ComboBoxItem { Content = L.T("Eşitlenen hesap takvimi"), Tag = current });
+        _calendarBox.SelectedItem = _calendarBox.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == current) ?? _calendarBox.Items[0];
+        // An event that already lives on a server stays in that calendar
+        _calendarBox.IsEnabled = string.IsNullOrEmpty(_e.ExternalId);
+        if (_calendarPart != null) _calendarPart.Visibility = Visibility.Visible;
+    }
+
     void Finish(bool send)
     {
         if (!_start.IsValid || !_end.IsValid) { MessageBox.Show(this, L.T("Başlangıç veya bitiş tarihi okunamadı."), Title); return; }
@@ -274,6 +295,8 @@ public sealed class EventWindow : Window
         _e.Busy = _busy.SelectedItem is ComboBoxItem { Tag: BusyStatus b } ? b : BusyStatus.Busy;
         _e.Category = _category.SelectedItem is ComboBoxItem { Tag: string c } ? c : "";
         _e.Attendees = attendees;
+        if (_calendarBox.IsEnabled && _calendarBox.SelectedItem is ComboBoxItem { Tag: string calId })
+            _e.AccountId = calId.Length > 0 ? calId : null;
         if (send || timeChanged) _e.Sequence++;
         if (send && _e.Response == MeetingResponse.None) _e.Response = MeetingResponse.Organizer;
         SendInvitations = send;

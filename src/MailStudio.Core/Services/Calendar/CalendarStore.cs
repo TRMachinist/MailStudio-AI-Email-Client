@@ -7,6 +7,14 @@ namespace MailStudio.Services.Calendar;
 /// The local calendar (Outlook "Calendar"): appointments, meetings and their reminders, saved in
 /// %AppData%\MailStudio\calendar.json. Nothing leaves the computer; invitations are answered by mail only when the user sends them.
 /// </summary>
+public sealed class CalendarTombstone
+{
+    public string Id { get; set; } = "";
+    public string? ExternalId { get; set; }
+    public string? AccountId { get; set; }
+    public DateTime DeletedAt { get; set; } = DateTime.UtcNow;
+}
+
 public sealed class CalendarStore
 {
     sealed class Data
@@ -16,6 +24,8 @@ public sealed class CalendarStore
         public HashSet<string> Dismissed { get; set; } = new();
         /// <summary>Snoozed reminders: occurrence key → show again at.</summary>
         public Dictionary<string, DateTime> Snoozed { get; set; } = new();
+        /// <summary>Events deleted locally that need to be deleted on remote calendar server.</summary>
+        public List<CalendarTombstone> Tombstones { get; set; } = new();
     }
 
     static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
@@ -68,9 +78,41 @@ public sealed class CalendarStore
     }
 
     public IReadOnlyList<CalendarEvent> Events { get { lock (_lock) return _data.Events.ToList(); } }
+    public IReadOnlyList<CalendarTombstone> Tombstones { get { lock (_lock) return _data.Tombstones.ToList(); } }
 
     public CalendarEvent? Find(string id) { lock (_lock) return _data.Events.FirstOrDefault(e => e.Id == id); }
     public CalendarEvent? FindByUid(string uid) { lock (_lock) return _data.Events.FirstOrDefault(e => e.Uid.Equals(uid, StringComparison.OrdinalIgnoreCase)); }
+    public CalendarEvent? FindByExternalId(string externalId) { lock (_lock) return _data.Events.FirstOrDefault(e => string.Equals(e.ExternalId, externalId, StringComparison.OrdinalIgnoreCase)); }
+    public List<CalendarEvent> FindByAccount(string accountId) { lock (_lock) return _data.Events.Where(e => e.AccountId == accountId).ToList(); }
+
+    public List<CalendarTombstone> GetTombstones(string accountId) { lock (_lock) return _data.Tombstones.Where(t => t.AccountId == accountId).ToList(); }
+    public void RemoveTombstones(string accountId, IEnumerable<string> ids)
+    {
+        Sync();
+        lock (_lock)
+        {
+            var set = ids.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            _data.Tombstones.RemoveAll(t => t.AccountId == accountId && (set.Contains(t.Id) || (t.ExternalId != null && set.Contains(t.ExternalId))));
+        }
+        Write();
+    }
+
+    /// <summary>Saves an event written by calendar sync: not marked as a local change.</summary>
+    public void SaveSynced(CalendarEvent e)
+    {
+        Sync();
+        lock (_lock)
+        {
+            if (e.End < e.Start) e.End = e.Start;
+            e.SyncDirty = false;
+            e.LastSyncedUtc = DateTime.UtcNow;
+            var i = _data.Events.FindIndex(x => x.Id == e.Id);
+            if (i >= 0) _data.Events[i] = e; else _data.Events.Add(e);
+        }
+        Write();
+    }
+
+    public void DeleteSilently(string id) { Sync(); lock (_lock) _data.Events.RemoveAll(x => x.Id == id); Write(); }
 
     public void Save(CalendarEvent e)
     { Sync();
@@ -78,6 +120,7 @@ public sealed class CalendarStore
         {
             if (e.End < e.Start) e.End = e.Start;
             e.Modified = DateTime.Now;
+            if (!string.IsNullOrEmpty(e.AccountId)) e.SyncDirty = true;
             var i = _data.Events.FindIndex(x => x.Id == e.Id);
             if (i >= 0) _data.Events[i] = e; else _data.Events.Add(e);
             // A moved event reminds again
@@ -88,7 +131,25 @@ public sealed class CalendarStore
 
     static bool IsPastKey(string key) => long.TryParse(key[(key.IndexOf('|') + 1)..], out var t) && new DateTime(t) < DateTime.Now.AddHours(-1);
 
-    public void Delete(CalendarEvent e) { Sync(); lock (_lock) _data.Events.RemoveAll(x => x.Id == e.Id); Write(); }
+    public void Delete(CalendarEvent e)
+    {
+        Sync();
+        lock (_lock)
+        {
+            _data.Events.RemoveAll(x => x.Id == e.Id);
+            if (!string.IsNullOrEmpty(e.ExternalId) || !string.IsNullOrEmpty(e.AccountId))
+            {
+                _data.Tombstones.Add(new CalendarTombstone
+                {
+                    Id = e.Id,
+                    ExternalId = e.ExternalId,
+                    AccountId = e.AccountId,
+                    DeletedAt = DateTime.UtcNow
+                });
+            }
+        }
+        Write();
+    }
 
     /// <summary>Deletes one occurrence of a series (Outlook "delete this occurrence").</summary>
     public void DeleteOccurrence(CalendarEvent e, DateTime start)
@@ -157,6 +218,7 @@ public sealed class CalendarStore
         {
             _data.Dismissed.RemoveWhere(k => long.TryParse(k[(k.IndexOf('|') + 1)..], out var t) && new DateTime(t) < DateTime.Now.AddDays(-30));
             foreach (var k in _data.Snoozed.Where(kv => kv.Value < DateTime.Now.AddDays(-30)).Select(kv => kv.Key).ToList()) _data.Snoozed.Remove(k);
+            _data.Tombstones.RemoveAll(t => t.DeletedAt < DateTime.UtcNow.AddDays(-30));
         }
     }
 

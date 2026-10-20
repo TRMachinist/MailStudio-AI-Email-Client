@@ -45,6 +45,7 @@
             <RowDefinition Height="Auto"/>   <!-- sekmeler -->
             <RowDefinition Height="Auto"/>   <!-- ribbon -->
             <RowDefinition Height="*"/>      <!-- content -->
+            <RowDefinition Height="Auto"/>   <!-- undo send bar -->
             <RowDefinition Height="Auto"/>   <!-- status bar -->
         </Grid.RowDefinitions>
 
@@ -100,6 +101,15 @@
                             <Button Style="{StaticResource RibbonCmd}" Tag="&#xE8C2;" Click="OnReplyAll" Content="Tümünü Yanıtla" ToolTip="Tümünü yanıtla (Ctrl+Shift+R)"/>
                             <Button Style="{StaticResource RibbonCmd}" Tag="&#xE72D;" Click="OnForward" Content="İlet" ToolTip="İlet (Ctrl+F)"/>
                         </StackPanel>
+                    </HeaderedContentControl>
+                    <HeaderedContentControl Header="Hızlı Adımlar" Style="{StaticResource RibbonGroup}" x:Name="QuickStepsRibbonGroup">
+                        <StackPanel Orientation="Horizontal">
+                            <StackPanel Orientation="Horizontal" x:Name="QuickStepsButtonPanel"/>
+                            <Button Style="{StaticResource RibbonCmd}" Tag="&#xE713;" Click="OnManageQuickSteps" Content="Yönet…" ToolTip="Hızlı adımları düzenle"/>
+                        </StackPanel>
+                    </HeaderedContentControl>
+                    <HeaderedContentControl Header="Ertele" Style="{StaticResource RibbonGroup}">
+                        <Button Style="{StaticResource RibbonCmd}" Tag="&#xE823;" Click="OnSnoozeRibbonClick" Content="Ertele" ToolTip="Seçili maili ertele (okunmamış olarak geri döner)"/>
                     </HeaderedContentControl>
                     <HeaderedContentControl Header="Etiketler" Style="{StaticResource RibbonGroup}">
                         <StackPanel Orientation="Horizontal">
@@ -166,8 +176,11 @@
                             <Button Style="{StaticResource RibbonCmd}" Tag="&#xE99A;" Click="OnToggleAiPane" Content="AI Paneli"/>
                         </StackPanel>
                     </HeaderedContentControl>
-                    <HeaderedContentControl Header="Biçim" Style="{StaticResource RibbonGroup}">
-                        <Button Style="{StaticResource RibbonCmd}" Tag="&#xE790;" Click="OnFormatRules" Content="Koşullu Biçimlendirme" ToolTip="Gönderen, konu, okunmamış, ek… koşullarına göre listede renk ve kalınlık. Yapay zekayla da oluşturulabilir."/>
+                    <HeaderedContentControl Header="Kurallar ve Biçim" Style="{StaticResource RibbonGroup}">
+                        <StackPanel Orientation="Horizontal">
+                            <Button Style="{StaticResource RibbonCmd}" Tag="&#xE71E;" Click="OnRules" Content="Kurallar" ToolTip="Gelen iletiler için otomatik kurallar (taşı, bayrakla, görev yap). Yapay zekayla da oluşturulabilir."/>
+                            <Button Style="{StaticResource RibbonCmd}" Tag="&#xE790;" Click="OnFormatRules" Content="Koşullu Biçimlendirme" ToolTip="Gönderen, konu, okunmamış, ek… koşullarına göre listede renk ve kalınlık. Yapay zekayla da oluşturulabilir."/>
+                        </StackPanel>
                     </HeaderedContentControl>
                     <HeaderedContentControl Header="Tema" Style="{StaticResource RibbonGroup}">
                         <StackPanel Orientation="Horizontal" Margin="2,3,2,0">
@@ -239,6 +252,13 @@
                             <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
                         </Style>
                     </TreeView.ItemContainerStyle>
+                    <TreeView.ContextMenu>
+                        <ContextMenu Opened="OnFolderTreeContextMenuOpened">
+                            <MenuItem Header="Yeni Arama Klasörü..." Icon="&#xE721;" Click="OnNewSearchFolderClick"/>
+                            <MenuItem Header="Arama Klasörünü Düzenle..." x:Name="EditSearchFolderMenuItem" Click="OnEditSearchFolderClick"/>
+                            <MenuItem Header="Arama Klasörünü Sil" x:Name="DeleteSearchFolderMenuItem" Click="OnDeleteSearchFolderClick"/>
+                        </ContextMenu>
+                    </TreeView.ContextMenu>
                     <TreeView.ItemTemplate>
                         <HierarchicalDataTemplate DataType="{x:Type m:FolderNode}" ItemsSource="{Binding Children}">
                             <Grid Margin="0,1">
@@ -247,7 +267,11 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="{Binding Icon}" FontFamily="{StaticResource Icons}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,1,8,0" VerticalAlignment="Center"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,1,8,0" VerticalAlignment="Center">
+                                    <Border Width="8" Height="8" CornerRadius="4" Background="{Binding CustomColor, Converter={x:Static local:HexBrush.Instance}}"
+                                            Margin="0,0,6,0" VerticalAlignment="Center" Visibility="{Binding HasCustomColor, Converter={StaticResource BoolVis}}"/>
+                                    <TextBlock Text="{Binding Icon}" FontFamily="{StaticResource Icons}" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                                </StackPanel>
                                 <TextBlock Grid.Column="1" x:Name="nm" Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                                 <Border Grid.Column="2" x:Name="cnt" Background="{DynamicResource AccentFillBrush}" CornerRadius="8" Padding="6,0" MinWidth="20" Margin="8,0,6,0" VerticalAlignment="Center" Visibility="Collapsed">
                                     <TextBlock Text="{Binding UnreadText}" Foreground="{DynamicResource TextOnAccentBrush}" FontWeight="SemiBold" FontSize="12" HorizontalAlignment="Center"/>
@@ -255,6 +279,12 @@
                             </Grid>
                             <HierarchicalDataTemplate.Triggers>
                                 <DataTrigger Binding="{Binding IsAccountRoot}" Value="True">
+                                    <Setter TargetName="nm" Property="FontWeight" Value="SemiBold"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsSearchFolderRoot}" Value="True">
+                                    <Setter TargetName="nm" Property="FontWeight" Value="SemiBold"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsUnifiedInbox}" Value="True">
                                     <Setter TargetName="nm" Property="FontWeight" Value="SemiBold"/>
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding UnreadText, Converter={x:Static local:AttachmentIcon.NotEmpty}}" Value="True">
@@ -275,6 +305,7 @@
                         <Button Style="{StaticResource NavIcon}" x:Name="NavCalendar" Content="&#xE787;" ToolTip="Takvim (Ctrl+2)" Click="OnNavCalendar"/>
                         <Button Style="{StaticResource NavIcon}" x:Name="NavPeople" Content="&#xE77B;" ToolTip="Kişiler (Ctrl+3)" Tag="Kişiler" Click="OnNavSoon"/>
                         <Button Style="{StaticResource NavIcon}" x:Name="NavTasks" Content="&#xE762;" ToolTip="Görevler (Ctrl+4)" Click="OnNavTasks"/>
+                        <Button Style="{StaticResource NavIcon}" x:Name="NavQuotes" Content="&#xE8A1;" ToolTip="Teklif Masası (Ctrl+5)" Click="OnNavQuotes"/>
                     </UniformGrid>
                 </Border>
             </Grid>
@@ -300,6 +331,8 @@
                         <RadioButton x:Name="FilterAll" Style="{StaticResource FilterTab}" IsChecked="True" Checked="OnFilterChanged">Tümü</RadioButton>
                         <RadioButton x:Name="FilterUnread" Style="{StaticResource FilterTab}" Checked="OnFilterChanged">Okunmamış</RadioButton>
                         <RadioButton x:Name="FilterFlagged" Style="{StaticResource FilterTab}" Checked="OnFilterChanged">Bayraklı</RadioButton>
+                        <RadioButton x:Name="FilterSnoozed" Style="{StaticResource FilterTab}" Checked="OnFilterChanged">Ertelenen</RadioButton>
+                        <RadioButton x:Name="FilterNewsletters" Style="{StaticResource FilterTab}" Checked="OnFilterChanged">Bültenler</RadioButton>
                     </StackPanel>
                 </DockPanel>
                 <ListView Grid.Row="2" x:Name="MessageList" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource BorderSubtleBrush}" Background="Transparent"
@@ -316,9 +349,21 @@
                             <Separator/>
                             <MenuItem Header="Okunmadı / Okundu olarak işaretle" Icon="&#xE8C3;" InputGestureText="Ctrl+Q / Ctrl+U" Click="OnToggleRead"/>
                             <MenuItem Header="İzleme bayrağı" Icon="&#xE7C1;" Click="OnToggleFlag"/>
+                            <MenuItem Header="Ertele" Icon="&#xE823;" x:Name="SnoozeContextMenu" SubmenuOpened="OnSnoozeSubmenuOpened">
+                                <MenuItem Header="Bugün akşam (18:00)" Click="OnSnoozeThisEvening"/>
+                                <MenuItem Header="Yarın sabah (09:00)" Click="OnSnoozeTomorrowMorning"/>
+                                <MenuItem Header="Gelecek hafta (Pazartesi 09:00)" Click="OnSnoozeNextWeek"/>
+                                <Separator/>
+                                <MenuItem Header="Tarih ve saat seç…" Click="OnSnoozeCustomDate"/>
+                                <MenuItem Header="Ertelemeyi Kaldır" x:Name="UnsnoozeContextMenuItem" Click="OnUnsnooze" Visibility="Collapsed"/>
+                            </MenuItem>
                             <MenuItem Header="Taşı…" Icon="&#xE8DE;" Click="OnMoveMenu"/>
                             <MenuItem Header="Görev olarak ekle" Icon="&#xE762;" InputGestureText="Ctrl+Shift+K" Click="OnMailToTask"/>
                             <MenuItem Header="Toplantı ayarla" Icon="&#xE787;" Click="OnMailToMeeting"/>
+                            <MenuItem Header="Bunun gibi mailler için kural oluştur…" Icon="&#xE71E;" Click="OnCreateRuleFromMail"/>
+                            <MenuItem Header="Bu göndereni her zaman Bültenler klasörüne taşı" Icon="&#xE8DE;" Click="OnAlwaysMoveToNewslettersClick"/>
+                            <MenuItem Header="Teklif masasına ekle" Icon="&#xE8A1;" Click="OnMailAddToQuoteDesk"/>
+                            <MenuItem Header="Hızlı Adımlar" Icon="&#xE715;" x:Name="QuickStepsContextMenu" SubmenuOpened="OnQuickStepsSubmenuOpened"/>
                             <Separator/>
                             <MenuItem Header="AI ile özetle" Icon="&#xE8BD;" Click="OnAiSummarize"/>
                             <MenuItem Header="AI ile cevap yazdır" Icon="&#xE70F;" Click="OnAiDraftReply"/>
@@ -381,8 +426,13 @@
                                 </Border>
                                 <StackPanel Grid.Column="2" x:Name="body" Margin="2,7,4,8">
                                     <StackPanel Orientation="Horizontal">
-                                        <TextBlock x:Name="from" Text="{Binding FromDisplay}" FontSize="13.5" TextTrimming="CharacterEllipsis" MaxWidth="230"/>
+                                        <TextBlock x:Name="from" Text="{Binding FromDisplay}" FontSize="13.5" TextTrimming="CharacterEllipsis" MaxWidth="210"/>
                                         <TextBlock Text="{Binding ThreadCountText}" Foreground="{DynamicResource AccentPrimaryBrush}" FontSize="12" Margin="6,1,0,0"/>
+                                        <Border Background="{Binding AccountColor, Converter={x:Static local:HexBrush.Instance}}"
+                                                CornerRadius="3" Padding="4,1" Margin="6,1,0,0" VerticalAlignment="Center"
+                                                Visibility="{Binding ShowAccountBadge, Converter={StaticResource BoolVis}}">
+                                            <TextBlock Text="{Binding AccountName}" FontSize="10" Foreground="White" FontWeight="SemiBold"/>
+                                        </Border>
                                     </StackPanel>
                                     <TextBlock x:Name="subj" Text="{Binding SubjectDisplay}" TextTrimming="CharacterEllipsis" Margin="0,1,0,0"/>
                                     <TextBlock x:Name="prev" Text="{Binding Preview}" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" TextTrimming="CharacterEllipsis" Margin="0,1,0,0"/>
@@ -470,6 +520,18 @@
                             </DockPanel>
                         </Border>
                         <Border x:Name="InviteBar" Visibility="Collapsed" Background="{DynamicResource AccentSubtleBrush}" BorderBrush="{DynamicResource AccentSubtleBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,8"/>
+                        <Border x:Name="UnsubscribeBar" Visibility="Collapsed" Background="{DynamicResource BgSurfaceSecondaryBrush}" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" CornerRadius="6" Padding="10,6" Margin="0,0,0,8">
+                            <DockPanel>
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="8,0,0,0">
+                                    <Button x:Name="UnsubscribeButton" Content="Abonelikten çık" Click="OnUnsubscribeClick" Style="{StaticResource FlatButton}" Margin="0,0,6,0"/>
+                                    <Button x:Name="MoveToNewslettersButton" Content="Her zaman Bültenler'e taşı" Click="OnAlwaysMoveToNewslettersClick" Style="{StaticResource FlatButton}"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="&#xE715;" FontFamily="{StaticResource Icons}" Margin="0,1,6,0" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="UnsubscribeBarText" Text="Bu ileti bir bülten veya toplu listedir." Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
@@ -500,6 +562,7 @@
                                     <Button.ContextMenu>
                                         <ContextMenu>
                                             <MenuItem Header="{local:Tr 'MailStudio içinde aç / ölç'}" Icon="&#xE7B3;" Click="OnAttachmentMenuOpen"/>
+                                            <MenuItem Header="{local:Tr 'Önceki revizyonla karşılaştır...'}" Icon="&#xE8AB;" Click="OnAttachmentCompareRevision"/>
                                             <MenuItem Header="{local:Tr 'Farklı kaydet...'}" Icon="&#xE792;" Click="OnAttachmentSaveAs"/>
                                             <MenuItem Header="{local:Tr 'Tüm ekleri kaydet...'}" Icon="&#xE8B7;" Click="OnSaveAllAttachments"/>
                                         </ContextMenu>
@@ -633,8 +696,20 @@
             <ContentControl Grid.Column="2" Grid.ColumnSpan="5" x:Name="PimHost" Visibility="Collapsed" Panel.ZIndex="20" Focusable="False"/>
         </Grid>
 
+        <!-- ================= UNDO SEND NOTIFICATION BAR ================= -->
+        <Border Grid.Row="3" x:Name="UndoSendBar" Background="{DynamicResource AccentSubtleBrush}" BorderBrush="{DynamicResource AccentPrimaryBrush}" BorderThickness="0,1,0,1" MinHeight="36" Padding="14,4" Visibility="Collapsed">
+            <DockPanel LastChildFill="False">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="&#xE724;" FontFamily="{StaticResource Icons}" FontSize="15" Foreground="{DynamicResource AccentPrimaryBrush}" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="UndoSendText" Text="İleti 10 sn içinde gönderilecek..." FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,16,0" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                    <Button x:Name="UndoSendButton" Content="Geri Al" Click="OnUndoSendClick" Style="{StaticResource PrimaryButton}" Padding="12,2" Margin="0,0,8,0" FontWeight="SemiBold"/>
+                    <Button x:Name="SendNowButton" Content="Şimdi Gönder" Click="OnSendNowClick" Style="{StaticResource FlatButton}" Padding="8,2"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
         <!-- ================= STATUS BAR ================= -->
-        <Border Grid.Row="3" Background="{DynamicResource AccentHeaderBrush}" MinHeight="24">
+        <Border Grid.Row="4" Background="{DynamicResource AccentHeaderBrush}" MinHeight="24">
             <DockPanel Margin="10,0">
                 <TextBlock x:Name="ConnText" DockPanel.Dock="Right" Foreground="{DynamicResource TextOnAccentBrush}" FontSize="12" VerticalAlignment="Center" Text="Bağlı değil"/>
                 <TextBlock x:Name="OfflineText" DockPanel.Dock="Right" Foreground="{DynamicResource TextOnAccentBrush}" FontSize="12" Opacity="0.9" VerticalAlignment="Center" Margin="0,0,24,0"

@@ -78,6 +78,8 @@ public class AppSettings
     public bool DesktopAlerts { get; set; } = true;
     public bool ConversationView { get; set; } = true;
     public bool AiMailboxAccess { get; set; } = false;
+    /// <summary>Undo send delay in seconds (0 = off, 5, 10, 20, 30; default 10).</summary>
+    public int UndoSendSeconds { get; set; } = 10;
     /// <summary>System | Light | Dark</summary>
     public string Theme { get; set; } = "Light";
     public bool ShowFolderPane { get; set; } = true;

@@ -12,6 +12,11 @@ using MailStudio.Models;
 using MailStudio.Services;
 using MailStudio.Services.Ai;
 using MailStudio.Views;
+using MailStudio.Views.Calendar;
+using MailStudio.Views.Quotes;
+using MailStudio.Views.QuickSteps;
+using MailStudio.Views.Snooze;
+using MailStudio.Views.Templates;
 using Microsoft.Web.WebView2.Core;
 using MimeKit;
 
@@ -24,6 +29,21 @@ public partial class MainWindow : Window
     readonly MailService _mail;
     readonly OAuthService _oauth;
     readonly ContactBook _contacts;
+    readonly RuleStore _ruleStore = new();
+    readonly FollowUpStore _followUpStore = new();
+    public FollowUpStore FollowUpStore => _followUpStore;
+    readonly OutboxStore _outbox = new();
+    public OutboxStore OutboxStore => _outbox;
+    readonly TemplateStore _templateStore = new();
+    public TemplateStore TemplateStore => _templateStore;
+    readonly QuickStepStore _quickStepStore = new();
+    public QuickStepStore QuickStepStore => _quickStepStore;
+    readonly SnoozeStore _snoozeStore = new();
+    public SnoozeStore SnoozeStore => _snoozeStore;
+    readonly SearchFolderStore _searchFolderStore = new();
+    public SearchFolderStore SearchFolderStore => _searchFolderStore;
+    readonly DispatcherTimer _snoozeTimer = new() { Interval = TimeSpan.FromSeconds(15) };
+    readonly DispatcherTimer _queueTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     readonly Dictionary<string, InboxWatcher> _watchers = new();
     readonly HashSet<string> _alertReady = new();
     readonly AppSettings _settings = AppSettings.Shared;
@@ -68,6 +88,7 @@ public partial class MainWindow : Window
         AddressChips.Store = _contacts.Store;
         AddressChips.NewMailTo = to => OpenCompose(new ComposeRequest { To = to });
         AddressChips.FindMailsOf = FindMailsOf;
+        AddressChips.ShowContactCard = (name, addr) => OpenContactCard(name, addr);
         ContactsWindow.FindMailsOf = FindMailsOf;
         ContactsWindow.NewMailTo = c => OpenCompose(new ComposeRequest { To = c.Display + "; " });
         _mail = new MailService(_cache, _oauth);
@@ -95,6 +116,9 @@ public partial class MainWindow : Window
 
         SearchBox.TextChanged += (_, _) => SearchPlaceholder.Visibility = SearchBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         AiInput.TextChanged += (_, _) => AiPlaceholder.Visibility = AiInput.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        _queueTimer.Tick += (_, _) => QueueTick();
+        _snoozeTimer.Tick += (_, _) => CheckSnoozeDue();
+        _snoozeTimer.Start();
         TellMeBox.TextChanged += (_, _) => TellMePlaceholder.Visibility = TellMeBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         _themeInit = true;
         (ThemeManager.Parse(_settings.Theme) switch { ThemeMode.Dark => ThemeDark, ThemeMode.Light => ThemeLight, _ => ThemeSystem }).IsChecked = true;
@@ -115,7 +139,7 @@ public partial class MainWindow : Window
         Closing += OnMainClosing;
         Closed += (_, _) =>
         {
-            _closed = true; _lifetime.Cancel(); _syncTimer.Stop(); _aiCts?.Cancel(); _loadCts?.Cancel();
+            _closed = true; _lifetime.Cancel(); _syncTimer.Stop(); _snoozeTimer.Stop(); _aiCts?.Cancel(); _loadCts?.Cancel();
             foreach (var watcher in _watchers.Values) watcher.Dispose();
             _watchers.Clear(); _mail.Dispose(); _tray?.Dispose();
             MailWeb.Dispose();
@@ -174,11 +198,37 @@ public partial class MainWindow : Window
         {
             args.Cancel = true; HideToTray(); return;
         }
+        // A mail still in its undo-send window is never dropped silently
+        if (!_outboxConfirmedAtExit && !_exitRequested && HasPendingUndo)
+        {
+            args.Cancel = true;
+            Dispatcher.BeginInvoke(async () => { if (await ConfirmPendingOutboxAsync()) Close(); });
+            return;
+        }
         // Test hosts and session shutdown still protect a composer unless an explicit exit already closed it.
         var composers = OwnedWindows.OfType<ComposeWindow>().ToList();
         foreach (var composer in composers) composer.Close();
         if (composers.Any(w => !IsWindowClosed(w))) args.Cancel = true;
         else ClosePim();
+    }
+
+    bool _outboxConfirmedAtExit;
+    bool HasPendingUndo => !App.SelfTesting && _outbox.Items.Any(i => i.IsUndoSend && i.Status == OutboxStatus.Scheduled);
+
+    /// <summary>On exit with a mail in its undo window: send it now, keep it in the outbox (asked at next start) or cancel the exit.</summary>
+    async Task<bool> ConfirmPendingOutboxAsync()
+    {
+        if (_outboxConfirmedAtExit || !HasPendingUndo) return true;
+        var answer = MessageBox.Show(this, L.T("Gönderilmeyi bekleyen ileti var (geri alma süresi dolmadı).\n\nEvet: şimdi gönder ve kapat\nHayır: Giden Kutusu'nda kalsın, bir sonraki açılışta sorulsun\nİptal: kapatma"),
+            "MailStudio", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+        if (answer == MessageBoxResult.Cancel) return false;
+        if (answer == MessageBoxResult.Yes)
+        {
+            foreach (var i in _outbox.Items.Where(i => i.IsUndoSend && i.Status == OutboxStatus.Scheduled)) _outbox.Release(i.Id);
+            for (var n = 0; n < 400 && (_outbox.GetPendingDue().Count > 0 || _queueBusy); n++) { QueueTick(); await Task.Delay(250); }
+        }
+        _outboxConfirmedAtExit = true;
+        return true;
     }
 
     static bool IsWindowClosed(Window window) => !Application.Current.Windows.Cast<Window>().Contains(window);
@@ -190,6 +240,7 @@ public partial class MainWindow : Window
         _exiting = true;
         try
         {
+            if (HasPendingUndo) { ShowFromTray(); if (!await ConfirmPendingOutboxAsync()) return false; }
             var composers = OwnedWindows.OfType<ComposeWindow>().ToList();
             if (composers.Count > 0) ShowFromTray();
             foreach (var composer in composers)
@@ -220,6 +271,12 @@ public partial class MainWindow : Window
         InitPim();
         _cache.Corrupted += () => Dispatcher.BeginInvoke(() => AddSystemChat(L.T("Yerel posta önbelleğinde bozuk bir bölüm bulundu. İletiler şimdilik sunucudan açılıyor; MailStudio'yu kapatıp açtığınızda önbellek kendiliğinden onarılır (hesaplar, taslaklar ve ekler etkilenmez).")));
         _store.Load();
+        _queueTimer.Start();   // after the accounts are loaded
+        RevisionLookup.Resolver = PickOlderRevisionAsync;
+        RevisionLookup.ShowDiff = (oldPath, newPath) =>
+            ShowRevisionDiffAsync(oldPath, newPath, _attachmentOrigins.TryGetValue(Path.GetFullPath(newPath), out var o) ? o.Header : null);
+        _outbox.Changed += () => Dispatcher.BeginInvoke(UpdateUndoBar);
+        Dispatcher.BeginInvoke(AskHeldOutbox, DispatcherPriority.ApplicationIdle);
         if (_cache.RepairedBackup != null)
             AddSystemChat(L.T("Yerel posta önbelleği bozuk bulundu (SQLite bütünlük hatası). Eski dosya silinmedi, şuraya taşındı:\n") + _cache.RepairedBackup +
                           L.T("\nİletiler sunucudan yeniden indiriliyor; hesaplar, taslaklar ve ekler etkilenmez."));
@@ -231,6 +288,7 @@ public partial class MainWindow : Window
         SetFolderPaneVisible(_settings.ShowFolderPane);
         SetAiPaneVisible(_settings.ShowAiPane);
         ApplyPaneThresholds();
+        PopulateQuickStepButtons();
 
         foreach (var p in _providers) ProviderBox.Items.Add(p.Name);
         ProviderBox.SelectedItem = _providers.Any(p => p.Name == _settings.AiProvider) ? _settings.AiProvider : "Ollama";
@@ -306,26 +364,94 @@ public partial class MainWindow : Window
     {
         _roots.Clear();
         NoAccountHint.Visibility = _store.Accounts.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        foreach (var acc in _store.Accounts)
+        if (_store.Accounts.Count > 0)
         {
-            var root = new FolderNode { AccountId = acc.Id, Name = acc.Email, FullName = "", Icon = "", IsAccountRoot = true };
-            _roots.Add(root);
-            // Add the Inbox first so it can work from the cache
-            root.Children.Add(new FolderNode { AccountId = acc.Id, FullName = "INBOX", Name = L.T("Gelen Kutusu"), Icon = "", SortOrder = 0,
-                                               UnreadCount = _cache.UnreadCount(acc.Id, "INBOX") });
+            var unifiedNode = new FolderNode
+            {
+                AccountId = "",
+                FullName = "UNIFIED_INBOX",
+                Name = L.T("Tüm Gelen Kutuları"),
+                Icon = "\uE715",
+                IsUnifiedInbox = true,
+                SortOrder = -100,
+                CustomColor = AccountColorHelper.GetAccountColor(_store.Accounts[0], 0),
+                UnreadCount = _cache.GetUnifiedInboxUnreadCount()
+            };
+            _roots.Add(unifiedNode);
+
+            int accIdx = 0;
+            foreach (var acc in _store.Accounts)
+            {
+                var color = AccountColorHelper.GetAccountColor(acc, accIdx++);
+                var root = new FolderNode
+                {
+                    AccountId = acc.Id,
+                    Name = acc.Email,
+                    FullName = "",
+                    Icon = "\uE77B",
+                    IsAccountRoot = true,
+                    CustomColor = color
+                };
+                _roots.Add(root);
+                root.Children.Add(new FolderNode
+                {
+                    AccountId = acc.Id,
+                    FullName = "INBOX",
+                    Name = L.T("Gelen Kutusu"),
+                    Icon = "\uE80C",
+                    SortOrder = 0,
+                    CustomColor = color,
+                    UnreadCount = _cache.UnreadCount(acc.Id, "INBOX")
+                });
+            }
+
+            var searchRoot = new FolderNode
+            {
+                AccountId = "",
+                FullName = "SEARCH_FOLDERS_ROOT",
+                Name = L.T("Arama Klasörleri"),
+                Icon = "\uE721",
+                IsSearchFolderRoot = true,
+                IsExpanded = true,
+                SortOrder = 1000
+            };
+            foreach (var sf in _searchFolderStore.Folders)
+            {
+                searchRoot.Children.Add(new FolderNode
+                {
+                    AccountId = "",
+                    FullName = $"SEARCH_{sf.Id}",
+                    Name = L.T(sf.Name),
+                    Icon = sf.Icon,
+                    IsSearchFolder = true,
+                    SearchFolderId = sf.Id,
+                    UnreadCount = _searchFolderStore.CountMatching(sf, _cache, unreadOnly: true)
+                });
+            }
+            _roots.Add(searchRoot);
         }
 
         foreach (var acc in _store.Accounts.ToList())
         {
-            var root = _roots.First(r => r.AccountId == acc.Id);
+            var root = _roots.FirstOrDefault(r => r.IsAccountRoot && r.AccountId == acc.Id);
+            if (root == null) continue;
             try
             {
                 Connection(L.F("{0} bağlanıyor...", acc.Email));
                 var folders = await _mail.GetFoldersAsync(acc);
                 root.Children.Clear();
+                var color = AccountColorHelper.GetAccountColor(acc, _store.Accounts.IndexOf(acc));
                 foreach (var f in folders)
-                    root.Children.Add(new FolderNode { AccountId = acc.Id, FullName = f.FullName, Name = f.DisplayName, Icon = f.Icon,
-                                                       SortOrder = f.Sort, UnreadCount = _cache.UnreadCount(acc.Id, f.FullName) });
+                    root.Children.Add(new FolderNode
+                    {
+                        AccountId = acc.Id,
+                        FullName = f.FullName,
+                        Name = f.DisplayName,
+                        Icon = f.Icon,
+                        CustomColor = f.FullName.Equals("INBOX", StringComparison.OrdinalIgnoreCase) ? color : null,
+                        SortOrder = f.Sort,
+                        UnreadCount = _cache.UnreadCount(acc.Id, f.FullName)
+                    });
                 Connection(L.T("Bağlı: ") + string.Join(", ", _store.Accounts.Select(a => a.Email)));
             }
             catch (Exception ex)
@@ -338,16 +464,23 @@ public partial class MainWindow : Window
         StartWatchers();
         RebuildContacts();
 
-        if (_currentFolder == null && _roots.FirstOrDefault()?.Children.FirstOrDefault() is { } inbox)
-            SelectFolder(inbox);
+        if (_currentFolder == null)
+        {
+            var defaultNode = _roots.FirstOrDefault(r => r.IsUnifiedInbox)
+                           ?? _roots.FirstOrDefault(r => r.IsAccountRoot)?.Children.FirstOrDefault();
+            if (defaultNode != null)
+                SelectFolder(defaultNode);
+        }
     }
 
     void SelectFolder(FolderNode node)
     {
-        if (FolderTree.ItemContainerGenerator.ContainerFromItem(_roots.First(r => r.AccountId == node.AccountId)) is TreeViewItem rootItem)
+        var root = _roots.FirstOrDefault(r => r == node || r.Children.Contains(node) || (r.IsAccountRoot && r.AccountId == node.AccountId));
+        if (root != null && FolderTree.ItemContainerGenerator.ContainerFromItem(root) is TreeViewItem rootItem)
         {
             rootItem.IsExpanded = true;
             rootItem.UpdateLayout();
+            if (root == node) { rootItem.IsSelected = true; return; }
             if (rootItem.ItemContainerGenerator.ContainerFromItem(node) is TreeViewItem child) { child.IsSelected = true; return; }
         }
         _ = OpenFolderAsync(node);
@@ -355,7 +488,7 @@ public partial class MainWindow : Window
 
     async void OnFolderSelected(object sender, RoutedPropertyChangedEventArgs<object> e)
     {
-        if (e.NewValue is FolderNode n && !n.IsAccountRoot) await OpenFolderAsync(n);
+        if (e.NewValue is FolderNode n && !n.IsAccountRoot && !n.IsSearchFolderRoot) await OpenFolderAsync(n);
     }
 
     async Task OpenFolderAsync(FolderNode node)
@@ -363,7 +496,14 @@ public partial class MainWindow : Window
         _currentFolder = node;
         _searchQuery = "";
         SearchBox.Text = "";
-        var folderTitle = $"{node.Name} - {Acc(node.AccountId)?.Email} - {L.ProductName}";
+        string folderTitle;
+        if (node.IsUnifiedInbox)
+            folderTitle = $"{node.Name} - {L.ProductName}";
+        else if (node.IsSearchFolder)
+            folderTitle = $"{node.Name} - {L.T("Arama Klasörü")} - {L.ProductName}";
+        else
+            folderTitle = $"{node.Name} - {Acc(node.AccountId)?.Email} - {L.ProductName}";
+
         if (_module == PimModule.Mail) Title = folderTitle; else _mailTitle = folderTitle;
         LoadMessagesFromCache();
         if (node.FullName.StartsWith("[Gmail]/", StringComparison.OrdinalIgnoreCase) && node.SortOrder == 50)
@@ -371,12 +511,47 @@ public partial class MainWindow : Window
         await SyncFolderAsync(node);
     }
 
+    void EnrichWithAccountInfo(List<MailHeader> list)
+    {
+        var accList = _store.Accounts.ToList();
+        var accDict = accList.ToDictionary(a => a.Id, a => a);
+        for (int i = 0; i < list.Count; i++)
+        {
+            var h = list[i];
+            if (accDict.TryGetValue(h.AccountId, out var acc))
+            {
+                var idx = accList.IndexOf(acc);
+                h.AccountName = !string.IsNullOrEmpty(acc.DisplayName) ? acc.DisplayName : acc.Email;
+                h.AccountColor = AccountColorHelper.GetAccountColor(acc, idx);
+                h.ShowAccountBadge = true;
+            }
+        }
+    }
+
     void LoadMessagesFromCache()
     {
         if (_currentFolder == null) return;
-        var list = string.IsNullOrWhiteSpace(_searchQuery)
-            ? _cache.GetHeaders(_currentFolder.AccountId, _currentFolder.FullName)
-            : _cache.Search(_currentFolder.AccountId, _searchQuery);
+        List<MailHeader> list;
+        if (_currentFolder.IsUnifiedInbox)
+        {
+            list = string.IsNullOrWhiteSpace(_searchQuery)
+                ? _cache.GetUnifiedInboxHeaders()
+                : _cache.Search(null, _searchQuery);
+            EnrichWithAccountInfo(list);
+        }
+        else if (_currentFolder.IsSearchFolder && _currentFolder.SearchFolderId != null)
+        {
+            var sf = _searchFolderStore.Find(_currentFolder.SearchFolderId);
+            list = sf != null ? _searchFolderStore.ExecuteSearch(sf, _cache) : new List<MailHeader>();
+            EnrichWithAccountInfo(list);
+        }
+        else
+        {
+            list = string.IsNullOrWhiteSpace(_searchQuery)
+                ? _cache.GetHeaders(_currentFolder.AccountId, _currentFolder.FullName)
+                : _cache.Search(_currentFolder.AccountId, _searchQuery);
+        }
+
         var selectedUid = _current?.Uid;
         FormatRuleEngine.Apply(_settings.FormatRules, list);
         _lastTotal = list.Count;
@@ -436,6 +611,18 @@ public partial class MainWindow : Window
 
     async Task SyncFolderAsync(FolderNode node, bool silent = false)
     {
+        if (node.IsUnifiedInbox)
+        {
+            foreach (var a in _store.Accounts)
+            {
+                var inbox = _roots.FirstOrDefault(r => r.IsAccountRoot && r.AccountId == a.Id)?.Children.FirstOrDefault(c => c.SortOrder == 0);
+                if (inbox != null) await SyncFolderAsync(inbox, silent: true);
+            }
+            LoadMessagesFromCache();
+            return;
+        }
+        if (node.IsSearchFolder || node.IsSearchFolderRoot) return;
+
         var acc = Acc(node.AccountId);
         if (acc == null || _lifetime.IsCancellationRequested) return;
         try
@@ -450,10 +637,25 @@ public partial class MainWindow : Window
             }));
             if (before != null)
             {
-                if (_alertReady.Contains(acc.Id) && _settings.DesktopAlerts && added > 0)
+                if (_alertReady.Contains(acc.Id) && added > 0)
                 {
-                    var fresh = _cache.GetHeaders(acc.Id, node.FullName, 50).Where(m => !m.IsRead && !before.Contains(m.Uid)).ToList();
-                    if (fresh.Count > 0) { ShowDesktopAlert(node, fresh); _ = AutoRunSkillsAsync(fresh); }
+                    var newMail = _cache.GetHeaders(acc.Id, node.FullName, 50).Where(m => !before.Contains(m.Uid)).ToList();
+                    var fresh = newMail.Where(m => !m.IsRead).ToList();
+                    if (_settings.DesktopAlerts && fresh.Count > 0)
+                    {
+                        ShowDesktopAlert(node, fresh);
+                        _ = AutoRunSkillsAsync(fresh);
+                    }
+                    // Mail rules run on every new Inbox message (independent of desktop alerts)
+                    if (newMail.Count > 0) _ = RunRulesOnFreshAsync(acc, newMail);
+                }
+                if (added > 0)
+                {
+                    var freshAll = _cache.GetHeaders(acc.Id, node.FullName, 50).Where(m => before == null || !before.Contains(m.Uid)).ToList();
+                    if (freshAll.Count > 0 && _followUpStore.CheckReplies(freshAll, _tasks) > 0)
+                    {
+                        _tasksView?.Refresh();
+                    }
                 }
                 _alertReady.Add(acc.Id);
             }
@@ -535,7 +737,7 @@ public partial class MainWindow : Window
     string OfflineSummary()
     {
         int total = 0, bodies = 0;
-        foreach (var f in _roots.SelectMany(r => r.Children))
+        foreach (var f in _roots.Where(r => r.IsAccountRoot).SelectMany(r => r.Children))
         {
             var (m, b) = _cache.Stats(f.AccountId, f.FullName);
             total += m; bodies += b;
@@ -554,11 +756,13 @@ public partial class MainWindow : Window
         {
             if (!silent) Status(L.T("Gönder/Al: tüm klasörler..."));
             // All folders like Outlook (Gmail's "All Mail" only when opened, because it is a copy of everything)
-            foreach (var root in _roots.ToList())
+            foreach (var root in _roots.Where(r => r.IsAccountRoot).ToList())
                 foreach (var f in root.Children.Where(c => c.SortOrder != 60).OrderBy(c => c.SortOrder).ToList())
                     await SyncFolderAsync(f, silent: true);
             if (_currentFolder != null && _currentFolder.SortOrder == 60)
                 await SyncFolderAsync(_currentFolder, silent: true);
+            if (_roots.FirstOrDefault(r => r.IsUnifiedInbox) is { } uInbox)
+                uInbox.UnreadCount = _cache.GetUnifiedInboxUnreadCount();
             Status(L.F("Son güncelleme: {0:HH:mm}", DateTime.Now));
             LastSyncText.Text = L.F("Son eşitleme: {0:dd.MM.yyyy HH:mm}", DateTime.Now);
             RebuildContacts();
@@ -625,6 +829,10 @@ public partial class MainWindow : Window
     bool FilterMessage(object o)
     {
         if (o is not MailHeader h) return false;
+        bool isSnoozed = _snoozeStore.IsSnoozed(h.AccountId, h.Folder, h.Uid);
+        if (FilterSnoozed?.IsChecked == true) return isSnoozed;
+        if (isSnoozed) return false;
+        if (FilterNewsletters?.IsChecked == true) return NewsletterHelper.IsNewsletter(h, _ruleStore);
         if (FilterUnread?.IsChecked == true) return !h.IsRead;
         if (FilterFlagged?.IsChecked == true) return h.IsFlagged;
         return true;
@@ -663,10 +871,18 @@ public partial class MainWindow : Window
 
     void UpdateCounts()
     {
-        // In conversation view the list holds only headers; take the counts from the real number of mails
-        var unread = _currentFolder != null && string.IsNullOrEmpty(_searchQuery)
-            ? _cache.UnreadCount(_currentFolder.AccountId, _currentFolder.FullName)
-            : _messages.Count(m => !m.IsRead);
+        int unread;
+        if (_currentFolder == null)
+            unread = 0;
+        else if (_currentFolder.IsUnifiedInbox)
+            unread = _cache.GetUnifiedInboxUnreadCount();
+        else if (_currentFolder.IsSearchFolder)
+            unread = _messages.Count(m => !m.IsRead);
+        else if (string.IsNullOrEmpty(_searchQuery))
+            unread = _cache.UnreadCount(_currentFolder.AccountId, _currentFolder.FullName);
+        else
+            unread = _messages.Count(m => !m.IsRead);
+
         CountText.Text = L.F("Öğeler: {0}    Okunmamış: {1}", Math.Max(_lastTotal, _messages.Count), unread);
         EmptyListText.Visibility = _view.IsEmpty ? Visibility.Visible : Visibility.Collapsed;
         if (_currentFolder != null && string.IsNullOrEmpty(_searchQuery)) _currentFolder.UnreadCount = unread;
@@ -680,6 +896,12 @@ public partial class MainWindow : Window
         _searchQuery = address;
         LoadMessagesFromCache();
         Status(L.F("Arama: \"{0}\" ({1} sonuç)", _searchQuery, _messages.Count));
+    }
+
+    public void OpenContactCard(string name, string address)
+    {
+        var win = new ContactCardWindow(name, address, _cache, _tasks, _quoteStore, _contacts.Store) { Owner = this };
+        win.ShowDialog();
     }
 
     void OnSearchKey(object sender, KeyEventArgs e)
@@ -718,6 +940,7 @@ public partial class MainWindow : Window
         AvatarBorder.Background = AvatarBrush(h.FromAddress);
         AttachmentList.ItemsSource = null;
         InviteBar.Visibility = Visibility.Collapsed;
+        UnsubscribeBar.Visibility = Visibility.Collapsed;
         IncludeMailText.Text = L.T("Bağlam: ") + h.SubjectDisplay;
 
         // The attachment list was saved during sync: show it immediately
@@ -761,10 +984,143 @@ public partial class MainWindow : Window
         CcText.Text = string.IsNullOrWhiteSpace(c.Cc) ? "" : L.T("Bilgi: ") + c.Cc;
         AddressChips.Fill(CcPanel, L.T("Bilgi: "), c.Cc);
         try { ShowInvitation(h, c); } catch (Exception ex) { InviteBar.Visibility = Visibility.Collapsed; Status(L.T("Davet okunamadı: ") + ex.Message); }
+        try { UpdateUnsubscribeBar(h, c); } catch { UnsubscribeBar.Visibility = Visibility.Collapsed; }
         if (c.Attachments.Count > 0) AttachmentList.ItemsSource = c.Attachments;
         if (!_webReady) return;
 
         MailHtml.Show(MailWeb, c.Html);
+    }
+
+    void UpdateUnsubscribeBar(MailHeader h, MailContent c)
+    {
+        var unsubHeader = !string.IsNullOrEmpty(c.ListUnsubscribe) ? c.ListUnsubscribe : h.ListUnsubscribe;
+        var unsubPost = !string.IsNullOrEmpty(c.ListUnsubscribePost) ? c.ListUnsubscribePost : h.ListUnsubscribePost;
+        var info = NewsletterHelper.ParseUnsubscribe(unsubHeader, unsubPost);
+        bool isNewsletter = info != null || NewsletterHelper.IsNewsletter(h, _ruleStore, c);
+
+        if (isNewsletter)
+        {
+            UnsubscribeBar.Visibility = Visibility.Visible;
+            UnsubscribeButton.Visibility = info != null ? Visibility.Visible : Visibility.Collapsed;
+            UnsubscribeButton.Tag = info;
+            UnsubscribeBarText.Text = info != null
+                ? L.T("Bu ileti bir bülten veya toplu listedir.")
+                : L.T("Bu ileti bir bülten olarak algılandı.");
+        }
+        else
+        {
+            UnsubscribeBar.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    async void OnUnsubscribeClick(object sender, RoutedEventArgs e)
+    {
+        var h = _current;
+        if (h == null) return;
+        var info = (sender as FrameworkElement)?.Tag as UnsubscribeInfo
+                   ?? NewsletterHelper.ParseUnsubscribe(_currentContent?.ListUnsubscribe ?? h.ListUnsubscribe,
+                                                        _currentContent?.ListUnsubscribePost ?? h.ListUnsubscribePost);
+
+        if (info == null)
+        {
+            Status(L.T("Abonelikten çıkma bağlantısı bulunamadı."));
+            return;
+        }
+
+        if (!string.IsNullOrEmpty(info.HttpUri))
+        {
+            var msg = L.F("Abonelikten çıkmak için web sitesi açılsın mı?\n\n{0}", info.HttpUri);
+            var title = L.T("Abonelikten Çık");
+            var res = MessageBox.Show(this, msg, title, MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (res == MessageBoxResult.Yes)
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo { FileName = info.HttpUri, UseShellExecute = true });
+                    Status(L.T("Web sitesi tarayıcıda açıldı."));
+                }
+                catch (Exception ex)
+                {
+                    Status(L.T("Bağlantı açılamadı: ") + ex.Message);
+                }
+                return;
+            }
+            else if (string.IsNullOrEmpty(info.MailtoUri))
+            {
+                return;
+            }
+        }
+
+        if (!string.IsNullOrEmpty(info.MailtoUri))
+        {
+            OpenUnsubscribeMailDraft(info.MailtoUri);
+        }
+    }
+
+    public void OpenUnsubscribeMailDraft(string mailtoUri)
+    {
+        var (to, subject, body) = NewsletterHelper.ParseMailto(mailtoUri);
+        var acc = Acc(_current?.AccountId ?? "") ?? _store.Accounts.FirstOrDefault();
+        if (acc == null) return;
+
+        var req = new ComposeRequest
+        {
+            To = to,
+            Subject = string.IsNullOrWhiteSpace(subject) ? "Unsubscribe" : subject,
+            BodyHtml = string.IsNullOrWhiteSpace(body) ? "<p>Unsubscribe</p>" : $"<p>{System.Net.WebUtility.HtmlEncode(body)}</p>",
+            Body = string.IsNullOrWhiteSpace(body) ? "Unsubscribe" : body
+        };
+        OpenCompose(req, acc.Id);
+        Status(L.T("Abonelikten çıkma e-postası taslak olarak açıldı."));
+    }
+
+    async void OnAlwaysMoveToNewslettersClick(object sender, RoutedEventArgs e)
+    {
+        var h = _current ?? MessageList.SelectedItem as MailHeader;
+        if (h == null) return;
+        await AlwaysMoveSenderToNewslettersAsync(h);
+    }
+
+    public async Task AlwaysMoveSenderToNewslettersAsync(MailHeader h)
+    {
+        var senderAddr = !string.IsNullOrEmpty(h.FromAddress) ? h.FromAddress : h.FromName;
+        if (string.IsNullOrWhiteSpace(senderAddr)) return;
+
+        // an existing "Bültenler"/"Newsletters" folder is reused whatever the interface language
+        var existingFolder = _roots.SelectMany(r => r.Children).FirstOrDefault(f => f.AccountId == h.AccountId &&
+            (f.Name.Equals("Bültenler", StringComparison.OrdinalIgnoreCase) || f.Name.Equals("Newsletters", StringComparison.OrdinalIgnoreCase)));
+        var folderName = existingFolder?.FullName ?? (L.IsEnglish ? "Newsletters" : "Bültenler");
+        var acc = Acc(h.AccountId);
+        if (acc == null) return;
+        try { folderName = await _mail.EnsureFolderAsync(acc, folderName); }
+        catch (Exception ex) { Status(L.T("Bülten klasörü oluşturulamadı: ") + ex.Message); return; }
+
+        // one rule per sender (also when it was made in the other language)
+        _ruleStore.ReloadIfChanged();
+        var existing = _ruleStore.Rules.FirstOrDefault(r =>
+            r.Conditions.Any(c => c.Field == "from" && c.Value.Equals(senderAddr, StringComparison.OrdinalIgnoreCase)) &&
+            r.Actions.Any(a => a.Type == "move_to_folder" && a.Value != null &&
+                               (a.Value.Equals(folderName, StringComparison.OrdinalIgnoreCase) ||
+                                a.Value.EndsWith("Newsletters", StringComparison.OrdinalIgnoreCase) ||
+                                a.Value.EndsWith("Bültenler", StringComparison.OrdinalIgnoreCase))));
+        if (existing == null)
+        {
+            _ruleStore.Rules.Add(NewsletterHelper.CreateMoveToNewslettersRule(h, folderName));
+            try { _ruleStore.Save(); } catch (IOException ex) { Status(L.T("Kurallar kaydedilemedi: ") + ex.Message); }
+        }
+
+        var matching = _messages.Where(m => m.AccountId == h.AccountId && m.FromAddress.Equals(h.FromAddress, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (!matching.Contains(h)) matching.Add(h);
+        int moved = 0, failed = 0;
+        foreach (var m in matching)
+        {
+            try { await _mail.MoveAsync(acc, m, folderName); moved++; } catch (Exception) { failed++; }
+        }
+        LoadMessagesFromCache();
+        Status(failed == 0
+            ? L.F("'{0}' göndereni için kural oluşturuldu; {1} ileti \"{2}\" klasörüne taşındı.", h.FromDisplay, moved, folderName)
+            : L.F("'{0}' göndereni için kural oluşturuldu; {1} ileti taşındı, {2} ileti taşınamadı.", h.FromDisplay, moved, failed));
+        if (existingFolder == null) { try { await RebuildTreeAsync(); } catch (Exception ex) { Status(ex.Message); } }
     }
 
     async void OnMessageDoubleClick(object sender, MouseButtonEventArgs e)
@@ -799,7 +1155,13 @@ public partial class MainWindow : Window
         var ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
         var shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
-        if (ctrl && !shift && key is >= Key.D1 and <= Key.D4) { SwitchModule((PimModule)(key - Key.D1)); e.Handled = true; return; }
+        if (ctrl && !shift && key is >= Key.D1 and <= Key.D5) { SwitchModule((PimModule)(key - Key.D1)); e.Handled = true; return; }
+        if (ctrl && shift && key is >= Key.D1 and <= Key.D9)
+        {
+            var shortcutStr = $"Ctrl+Shift+{(int)(key - Key.D0)}";
+            var step = _quickStepStore.FindByShortcut(shortcutStr);
+            if (step != null && _module == PimModule.Mail) { _ = ExecuteQuickStepAsync(step); e.Handled = true; return; }
+        }
         if (_module != PimModule.Mail) { if (key == Key.F9) { OnSyncAll(this, e); e.Handled = true; } return; } // the calendar / task view handles its own keys
         if (e.OriginalSource is TextBox && !ctrl && key != Key.F9) return; // do not interfere while typing
         bool h = true;
@@ -852,12 +1214,13 @@ public partial class MainWindow : Window
         if (h == null || Acc(h.AccountId) is not { } acc) return null;
         var dir = AttachmentDir(h);
         var local = AttachmentPath(h, att);
-        if (File.Exists(local)) return local;
+        if (File.Exists(local)) { _attachmentOrigins[Path.GetFullPath(local)] = (h, att); return local; }
         try
         {
             Status(L.F("{0} indiriliyor ({1})...", att.FileName, att.SizeDisplay));
             var path = await _mail.DownloadAttachmentAsync(acc, h, att, dir);
             Status(L.F("{0} indirildi.", att.FileName));
+            _attachmentOrigins[Path.GetFullPath(path)] = (h, att);
             return path;
         }
         catch (Exception ex) { Status(L.T("Ek indirilemedi: ") + ex.Message); return null; }
@@ -901,6 +1264,71 @@ public partial class MainWindow : Window
             File.Copy(p, Path.Combine(dlg.FolderName, name), true);
         }
         Status(failed == 0 ? L.T("Tüm ekler kaydedildi: ") + dlg.FolderName : L.F("{0} ek kaydedilemedi; diğerleri: {1}", failed, dlg.FolderName));
+    }
+
+    async void OnAttachmentCompareRevision(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not AttachmentInfo att) return;
+        await CompareAttachmentRevisionAsync(att);
+    }
+
+    /// <summary>Which mail a downloaded attachment file belongs to (for "compare with previous revision" in the viewers).</summary>
+    readonly Dictionary<string, (MailHeader Header, AttachmentInfo Attachment)> _attachmentOrigins = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Earlier revisions of the same part in this correspondent's mails; the folder / a file dialog otherwise.</summary>
+    async Task<string?> PickOlderRevisionAsync(Window owner, string path)
+    {
+        if (!_attachmentOrigins.TryGetValue(Path.GetFullPath(path), out var origin)) return RevisionLookup.PickFromDisk(owner, path);
+        var candidates = RevisionService.FindCandidates(_cache, origin.Header, origin.Attachment.FileName);
+        if (candidates.Count == 0)
+        {
+            Status(L.T("Bu parçanın başka bir revizyonu maillerde bulunamadı; dosyayı kendiniz seçin."));
+            return RevisionLookup.Browse(owner, path);
+        }
+        var (choice, browse) = RevisionLookup.Choose(owner, candidates, origin.Attachment.FileName);
+        if (browse) return RevisionLookup.Browse(owner, path);
+        if (choice?.Header == null || choice.Attachment == null) return choice?.FilePath;
+        return await DownloadAttachmentAsync(choice.Header, choice.Attachment);
+    }
+
+    async Task CompareAttachmentRevisionAsync(AttachmentInfo att)
+    {
+        var h = _current;
+        var path = await DownloadAttachmentAsync(h, att);
+        if (path == null || h == null) return;
+        var oldPath = await PickOlderRevisionAsync(this, path);
+        if (string.IsNullOrEmpty(oldPath) || !File.Exists(oldPath)) return;
+        await ShowRevisionDiffAsync(oldPath, path, h);
+    }
+
+    /// <summary>Runs the comparison and opens the result; "add to reply" answers the mail the file came from.</summary>
+    async Task ShowRevisionDiffAsync(string oldPath, string newPath, MailHeader? mail)
+    {
+        Status(L.T("Revizyonlar karşılaştırılıyor..."));
+        try
+        {
+            var report = await RevisionService.CompareAsync(oldPath, newPath, SkillWorker, _lifetime.Token);
+            var win = new RevisionDiffWindow(report,
+                onAddToReply: text =>
+                {
+                    if (mail != null && _current == mail && _currentContent != null) Reply(false, text);
+                    else
+                    {
+                        try { Clipboard.SetText(text); Status(L.T("Fark özeti panoya kopyalandı (yanıtlanacak ileti açık değil).")); }
+                        catch (System.Runtime.InteropServices.COMException) { }
+                    }
+                },
+                aiRunner: async (prompt, ct) => await AiCompleteAsync(prompt, ct))
+            { Owner = this };
+            win.Show();
+            Status(L.F("Revizyon karşılaştırma tamamlandı: {0} fark bulundu.", report.TotalChanges));
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            Status(L.T("Revizyon karşılaştırılamadı: ") + ex.Message);
+            MessageBox.Show(this, ex.Message, L.T("Revizyon Karşılaştırma Hatası"), MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
     // =====================================================================
@@ -950,6 +1378,18 @@ public partial class MainWindow : Window
             var dir = Path.Combine(AppPaths.Root, "submissions"); Directory.CreateDirectory(dir);
             Process.Start(new ProcessStartInfo(dir) { UseShellExecute = true });
         });
+        var outboxCount = _outbox.Items.Count(i => !i.IsUndoSend);
+        Add(outboxCount > 0 ? L.F("Giden Kutusu ({0} ileti)…", outboxCount) : L.T("Giden Kutusu (Zamanlanmış)…"), (_, _) =>
+ ShowOutboxWindow());
+        var undoSendMenu = new MenuItem { Header = L.T("Göndermeyi geri alma süresi") };
+        foreach (var (sec, label) in new[] { (0, L.T("Kapalı")), (5, L.F("{0} saniye", 5)), (10, L.F("{0} saniye", 10)), (20, L.F("{0} saniye", 20)), (30, L.F("{0} saniye", 30)) })
+        {
+            var item = new MenuItem { Header = label, IsCheckable = true, IsChecked = _settings.UndoSendSeconds == sec };
+            var s = sec;
+            item.Click += (_, _) => { _settings.UndoSendSeconds = s; _settings.Save(); Status(L.F("Göndermeyi geri alma: {0}", label)); };
+            undoSendMenu.Items.Add(item);
+        }
+        menu.Items.Add(undoSendMenu);
         Add(L.T("Veri klasörünü aç"), (_, _) => Process.Start("explorer.exe", AppPaths.Root));
         var lang = new MenuItem { Header = "Dil / Language" };
         foreach (var (code, name) in new[] { ("tr", "Türkçe"), ("en", "English") })
@@ -1077,10 +1517,31 @@ public partial class MainWindow : Window
         var w = new ComposeWindow(_store.Accounts, accId, req, _mail, AiCompleteAsync, () => CurrentProvider.Name,
             aiOptions:new ComposeAiOptions(_providers,CurrentProvider.Name,CurrentModel),saveAccounts:_store.Save) { Owner = this };
         FileViewers.ReturnFocusOnClose(w);
+        w.UndoSendAction = (acc, r, secs) => QueueSend(acc, r, secs);
+        w.ScheduleSendAction = (acc, r, time) => ScheduleSend(acc, r, time);
         w.Closed += (_, _) => _openDrafts.Remove(req.DraftId);
         w.Sent += async (_, _) =>
         {
             Status(w.LastSendResult?.Warning ?? L.T("İleti sunucu tarafından kabul edildi."));
+            if (w.LastSendResult != null && w.FollowUpDays > 0)
+            {
+                var due = DateTimeOffset.Now.AddDays(w.FollowUpDays);
+                _followUpStore.Add(new FollowUpItem
+                {
+                    AccountId = accId,
+                    MessageId = w.LastSendResult.MessageId ?? "",
+                    Subject = w.SubjectText,
+                    Recipients = w.ToAddressText,
+                    SentDate = DateTimeOffset.Now,
+                    DueDays = w.FollowUpDays,
+                    DueDate = due
+                });
+            }
+            if (w.AttachmentPaths.Count > 0)
+            {
+                if (_quoteStore.CheckSentMail(w.ToAddressText, req.InReplyTo, w.SubjectText, w.AttachmentPaths.Count))
+                    _quoteDeskView?.Refresh();
+            }
             var sent = _roots.SelectMany(r => r.Children).FirstOrDefault(f => f.AccountId == accId && f.SortOrder == 2);
             if (sent != null) await SyncFolderAsync(sent, silent: true);
         };
@@ -1093,6 +1554,138 @@ public partial class MainWindow : Window
             _ = StartInlineSafeAsync(w);
         }
         else w.Show();
+    }
+
+    /// <summary>Sends now (outbox "send now", agent-free paths). Errors are shown, never thrown.</summary>
+    public async Task DoSendAsync(AccountConfig acc, ComposeRequest req)
+    {
+        try { await SendAndRecordAsync(acc, req); }
+        catch (Exception ex) { Status(L.T("Gönderilemedi: ") + ex.Message); }
+    }
+
+    /// <summary>SMTP send + the work after a send (follow-up, quote desk, Sent folder). Throws only when the send itself failed.</summary>
+    async Task SendAndRecordAsync(AccountConfig acc, ComposeRequest req)
+    {
+        Status(L.T("Gönderiliyor..."));
+        var res = await _mail.SendAsync(acc, req, _lifetime.Token);
+        Status(res.Warning ?? L.T("İleti sunucu tarafından kabul edildi."));
+        try
+        {
+            if (req.FollowUpDays > 0)
+                _followUpStore.Add(new FollowUpItem
+                {
+                    AccountId = acc.Id, MessageId = res.MessageId ?? "", Subject = req.Subject, Recipients = req.To,
+                    SentDate = DateTimeOffset.Now, DueDays = req.FollowUpDays, DueDate = DateTimeOffset.Now.AddDays(req.FollowUpDays)
+                });
+            var attCount = req.AttachmentPaths?.Count ?? 0;
+            if (attCount > 0 && _quoteStore.CheckSentMail(req.To, req.InReplyTo, req.Subject, attCount)) _quoteDeskView?.Refresh();
+            var sent = _roots.SelectMany(r => r.Children).FirstOrDefault(f => f.AccountId == acc.Id && f.SortOrder == 2);
+            if (sent != null) await SyncFolderAsync(sent, silent: true);
+        }
+        catch (Exception ex) { Status(L.T("İleti gönderildi; sonrasındaki kayıt işlemi tamamlanamadı: ") + ex.Message); }
+    }
+
+    /// <summary>"Undo send": the mail waits N seconds in the outbox (on disk); SMTP is not contacted until then.</summary>
+    public void QueueSend(AccountConfig acc, ComposeRequest req, int undoSeconds)
+    {
+        if (undoSeconds <= 0) { _ = DoSendAsync(acc, req); return; }
+        _outbox.Add(new OutboxItem { AccountId = acc.Id, Request = req, ScheduledTime = DateTimeOffset.Now.AddSeconds(undoSeconds), IsUndoSend = true });
+        UpdateUndoBar();
+    }
+
+    public void ScheduleSend(AccountConfig acc, ComposeRequest req, DateTimeOffset scheduledTime)
+    {
+        _outbox.Add(new OutboxItem { AccountId = acc.Id, Request = req, ScheduledTime = scheduledTime });
+        // The outbox now holds the mail; a local recovery copy would let it be sent twice by hand.
+        try { new LocalDraftStore().Delete(req.DraftId); } catch (IOException) { }
+        Status(L.F("İleti zamanlandı: {0:g}", scheduledTime.LocalDateTime));
+    }
+
+    void ShowOutboxWindow()
+    {
+        var w = new OutboxWindow(_outbox, (r, a) => OpenCompose(r, a, popOut: true), () => QueueTick(), this);
+        w.ShowDialog();
+    }
+
+    OutboxItem? NewestUndo => _outbox.Items.Where(i => i.IsUndoSend && i.Status == OutboxStatus.Scheduled).OrderByDescending(i => i.ScheduledTime).FirstOrDefault();
+
+    void UpdateUndoBar()
+    {
+        var undo = _outbox.Items.Where(i => i.IsUndoSend && i.Status == OutboxStatus.Scheduled).OrderByDescending(i => i.ScheduledTime).ToList();
+        if (undo.Count == 0) { UndoSendBar.Visibility = Visibility.Collapsed; return; }
+        var secs = Math.Max(0, (int)Math.Ceiling((undo[0].ScheduledTime - DateTimeOffset.Now).TotalSeconds));
+        UndoSendText.Text = undo.Count == 1
+            ? L.F("İleti {0} sn içinde gönderilecek...", secs)
+            : L.F("{0} ileti gönderilmeyi bekliyor; sonuncusu {1} sn içinde gidecek...", undo.Count, secs);
+        UndoSendBar.Visibility = Visibility.Visible;
+    }
+
+    void OnUndoSendClick(object sender, RoutedEventArgs e)
+    {
+        if (NewestUndo is not { } item) return;
+        if (!_outbox.Remove(item.Id)) { Status(L.T("İleti gönderilmeye başladı; geri alınamadı.")); return; }
+        UpdateUndoBar();
+        Status(L.T("Gönderim geri alındı."));
+        OpenCompose(item.Request, item.AccountId, popOut: true);
+    }
+
+    void OnSendNowClick(object sender, RoutedEventArgs e)
+    {
+        foreach (var i in _outbox.Items.Where(i => i.IsUndoSend && i.Status == OutboxStatus.Scheduled)) _outbox.Release(i.Id);
+        QueueTick();
+    }
+
+    bool _queueBusy;
+    async void QueueTick()
+    {
+        if (_queueBusy) return;
+        _queueBusy = true;
+        try
+        {
+            UpdateUndoBar();
+            if (_outbox.GetPendingDue().Count == 0) return;
+            await _outbox.ProcessDueSendsAsync(Acc, async (acc, item) =>
+            {
+                await SendAndRecordAsync(acc, item.Request);
+                if (!item.IsUndoSend) Status(L.F("Zamanlanmış ileti gönderildi: {0}", item.Request.Subject));
+            }, onFailed: OnOutboxFailed, ct: _lifetime.Token);
+            UpdateUndoBar();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { Status(L.T("Giden Kutusu: ") + ex.Message); }
+        finally { _queueBusy = false; }
+    }
+
+    void OnOutboxFailed(OutboxItem item, Exception ex)
+    {
+        Status(L.F("Gönderilemedi: {0} – {1}", item.Request.Subject, ex.Message));
+        if (item.Status == OutboxStatus.Failed && item.IsUndoSend && _outbox.Remove(item.Id))
+        {
+            // The composer is already closed: give the mail back instead of losing it
+            OpenCompose(item.Request, item.AccountId, popOut: true);
+            return;
+        }
+        _tray?.ShowReminder(L.T("Giden Kutusu"), L.F("\"{0}\" gönderilemedi. Giden Kutusu'nu açıp kontrol edin.", item.Request.Subject), ShowOutboxWindow);
+    }
+
+    /// <summary>Mails whose send time passed while MailStudio was closed are never sent without asking.</summary>
+    void AskHeldOutbox()
+    {
+        var held = _outbox.Held;
+        var uncertain = _outbox.Items.Where(i => i.Status == OutboxStatus.Uncertain).ToList();
+        if (held.Count == 0 && uncertain.Count == 0) return;
+        if (App.SelfTesting) return;
+        var lines = string.Join("\n", held.Take(8).Select(i => $"• {i.Request.Subject} → {i.Request.To} ({i.ScheduledTime.LocalDateTime:g})"));
+        if (held.Count > 0)
+        {
+            var answer = MessageBox.Show(this,
+                L.F("Program kapalıyken gönderim zamanı gelen {0} ileti var:\n\n{1}\n\nŞimdi gönderilsinler mi?\n(Hayır: Giden Kutusu'nda bekler, oradan gönderebilir, düzenleyebilir ya da silebilirsiniz.)", held.Count, lines),
+                L.T("Giden Kutusu"), MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (answer == MessageBoxResult.Yes) { foreach (var i in held) _outbox.Release(i.Id); QueueTick(); }
+        }
+        if (uncertain.Count > 0)
+            MessageBox.Show(this, L.F("{0} ileti gönderilirken program kapandı; gitmiş olabilir. Tekrar göndermeden önce Gönderilmiş Öğeler'i kontrol edin (Dosya → Giden Kutusu).", uncertain.Count),
+                L.T("Gönderim sonucu belirsiz"), MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
     async Task StartInlineSafeAsync(ComposeWindow composer){try{await composer.StartInlineAsync();}catch(Exception ex){Status(L.T("Yanıt editörü açılamadı: ")+ex.Message);}}
@@ -1320,6 +1913,533 @@ public partial class MainWindow : Window
     }
 
     void Reformat(MailHeader h) => FormatRuleEngine.Apply(_settings.FormatRules, new[] { h });
+
+    void OnRules(object sender, RoutedEventArgs e)
+    {
+        _ruleStore.ReloadIfChanged();
+        var sample = _messages.Take(200).ToList();
+        var w = new RulesWindow(_ruleStore, sample, (prompt, ct) =>
+        {
+            var provider = CurrentProvider; var model = CurrentModel;
+            return AiStream.CompleteAsync(token => provider.StreamAsync(prompt, model, token), ct);
+        }, () => CurrentProvider.Name, null, RunRuleOnFolderAsync) { Owner = this };
+        w.ShowDialog();
+        Status(L.F("Kurallar: {0} kural kayıtlı.", _ruleStore.Rules.Count));
+    }
+
+    void OnCreateRuleFromMail(object sender, RoutedEventArgs e)
+    {
+        if (_current == null) return;
+        var h = _current;
+        var newRule = new MailRule
+        {
+            Name = L.F("{0} iletileri için kural", (h.FromName ?? h.FromAddress) ?? ""),
+            Enabled = true,
+            MatchAll = true,
+            StopProcessing = true,
+            Conditions = {
+                new RuleCondition { Field = "from", Value = !string.IsNullOrEmpty(h.FromAddress) ? h.FromAddress : h.FromName }
+            },
+            Actions = {
+                new RuleAction { Type = "move_to_folder", Value = "" }   // the user picks the folder
+            }
+        };
+        var sample = _messages.Take(200).ToList();
+        var w = new RulesWindow(_ruleStore, sample, (prompt, ct) =>
+        {
+            var provider = CurrentProvider; var model = CurrentModel;
+            return AiStream.CompleteAsync(token => provider.StreamAsync(prompt, model, token), ct);
+        }, () => CurrentProvider.Name, newRule, RunRuleOnFolderAsync) { Owner = this };
+        w.ShowDialog();
+    }
+
+    void OnMailAddToQuoteDesk(object sender, RoutedEventArgs e)
+    {
+        var m = _current;
+        if (m == null && MessageList.SelectedItem is MailHeader sel) m = sel;
+        if (m == null) { Status(L.T("Önce listeden bir ileti seçin.")); return; }
+
+        var content = _cache.GetBody(m.AccountId, m.Folder, m.Uid);
+        var body = content?.Text ?? "";
+        var atts = content?.Attachments?.Select(a => a.FileName).ToList() ?? new List<string>();
+
+        var (isRfq, item) = QuoteStore.DetectRfq(m.Subject, body, m.FromDisplay ?? m.FromAddress ?? "", atts);
+        item.SourceMail = $"{m.AccountId}|{m.Folder}|{m.Uid}";
+        item.SourceSubject = m.Subject;
+        item.SourceMessageId = m.MessageId;
+
+        var dlg = new QuoteEditDialog(item, isNew: true) { Owner = this };
+        if (dlg.ShowDialog() == true)
+        {
+            _quoteStore.AddOrUpdate(dlg.Item);
+            Status(L.F("Teklif masasına eklendi: {0}", dlg.Item.PartNumber.Length > 0 ? dlg.Item.PartNumber : dlg.Item.Customer));
+            _quoteDeskView?.Refresh();
+        }
+    }
+
+    void OnManageQuickSteps(object sender, RoutedEventArgs e)
+    {
+        var win = new QuickStepManagerWindow(_quickStepStore, _templateStore, this);
+        win.ShowDialog();
+        PopulateQuickStepButtons();
+    }
+
+    void OnQuickStepsSubmenuOpened(object sender, RoutedEventArgs e)
+    {
+        QuickStepsContextMenu.Items.Clear();
+        var steps = _quickStepStore.Steps;
+        foreach (var s in steps)
+        {
+            var mi = new MenuItem
+            {
+                Header = L.T(s.Name),
+                Icon = new TextBlock { Text = s.Icon, FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 13 },
+                InputGestureText = s.Shortcut
+            };
+            var curStep = s;
+            mi.Click += async (_, _) => await ExecuteQuickStepAsync(curStep);
+            QuickStepsContextMenu.Items.Add(mi);
+        }
+
+        if (steps.Count == 0)
+        {
+            QuickStepsContextMenu.Items.Add(new MenuItem { Header = L.T("(Hızlı adım yok)"), IsEnabled = false });
+        }
+
+        QuickStepsContextMenu.Items.Add(new Separator());
+        var manage = new MenuItem { Header = L.T("Hızlı Adımları Yönet…"), Icon = new TextBlock { Text = "\uE713", FontFamily = new FontFamily("Segoe MDL2 Assets") } };
+        manage.Click += OnManageQuickSteps;
+        QuickStepsContextMenu.Items.Add(manage);
+    }
+
+    public void PopulateQuickStepButtons()
+    {
+        if (QuickStepsButtonPanel == null) return;
+        QuickStepsButtonPanel.Children.Clear();
+        foreach (var step in _quickStepStore.Steps)
+        {
+            var btn = new Button
+            {
+                Style = (Style)FindResource("RibbonCmd"),
+                Tag = step.Icon,
+                Content = L.T(step.Name),
+                ToolTip = string.IsNullOrEmpty(step.Shortcut) ? L.T(step.Description) : $"{L.T(step.Description)} ({step.Shortcut})"
+            };
+            var curStep = step;
+            btn.Click += async (_, _) => await ExecuteQuickStepAsync(curStep);
+            QuickStepsButtonPanel.Children.Add(btn);
+        }
+    }
+
+    public async Task<bool> ExecuteQuickStepAsync(QuickStepItem step, MailHeader? targetMail = null)
+    {
+        var mail = targetMail ?? _current ?? MessageList.SelectedItems.OfType<MailHeader>().FirstOrDefault();
+        if (mail == null)
+        {
+            Status(L.T("Önce listeden bir ileti seçin."));
+            return false;
+        }
+
+        var acc = Acc(mail.AccountId);
+        if (acc == null)
+        {
+            Status(L.T("İletinin hesabı bulunamadı."));
+            return false;
+        }
+
+        Status(L.F("Hızlı Adım çalıştırılıyor: {0}", L.T(step.Name)));
+        try
+        {
+        // moves and delete run last: afterwards the message is no longer in this folder
+        foreach (var act in step.Actions.OrderBy(a => a.Type is QuickStepActionType.MoveToArchive or QuickStepActionType.MoveToFolder or QuickStepActionType.Delete ? 1 : 0))
+        {
+            switch (act.Type)
+            {
+                case QuickStepActionType.MarkRead:
+                    await _mail.SetReadAsync(acc, mail, true);
+                    mail.IsRead = true;
+                    Reformat(mail);
+                    UpdateCounts();
+                    break;
+
+                case QuickStepActionType.MarkUnread:
+                    await _mail.SetReadAsync(acc, mail, false);
+                    mail.IsRead = false;
+                    Reformat(mail);
+                    UpdateCounts();
+                    break;
+
+                case QuickStepActionType.Flag:
+                    await _mail.SetFlaggedAsync(acc, mail, true);
+                    mail.IsFlagged = true;
+                    Reformat(mail);
+                    break;
+
+                case QuickStepActionType.Unflag:
+                    await _mail.SetFlaggedAsync(acc, mail, false);
+                    mail.IsFlagged = false;
+                    Reformat(mail);
+                    break;
+
+                case QuickStepActionType.MoveToArchive:
+                    var folders = _roots.SelectMany(r => r.Children).Where(f => f.AccountId == mail.AccountId).ToList();
+                    var arch = folders.FirstOrDefault(f => f.SortOrder == 5) ?? folders.FirstOrDefault(f => f.SortOrder == 60);
+                    if (arch != null)
+                    {
+                        await _mail.MoveAsync(acc, mail, arch.FullName);
+                        _messages.Remove(mail);
+                        ClearReading();
+                    }
+                    break;
+
+                case QuickStepActionType.MoveToFolder:
+                    if (!string.IsNullOrWhiteSpace(act.Parameter))
+                    {
+                        var target = _roots.SelectMany(r => r.Children)
+                            .FirstOrDefault(f => f.AccountId == mail.AccountId && (f.FullName.Equals(act.Parameter, StringComparison.OrdinalIgnoreCase) || f.Name.Equals(act.Parameter, StringComparison.OrdinalIgnoreCase)));
+                        if (target != null)
+                        {
+                            await _mail.MoveAsync(acc, mail, target.FullName);
+                            _messages.Remove(mail);
+                            ClearReading();
+                        }
+                    }
+                    break;
+
+                case QuickStepActionType.Delete:
+                    await DeleteMessagesAsync(new[] { mail });
+                    break;
+
+                case QuickStepActionType.CreateTask:
+                    var key = $"{mail.AccountId}|{mail.Folder}|{mail.Uid}";
+                    if (_tasks.FindBySource(key) is not { Completed: false })
+                    {
+                        var task = TasksView.FromMail(mail, DateTime.Today);
+                        if (!string.IsNullOrWhiteSpace(act.Parameter))
+                        {
+                            task.Category = act.Parameter;
+                        }
+                        _tasks.Save(task);
+                    }
+                    break;
+
+                case QuickStepActionType.ReplyWithTemplate:
+                    EmailTemplate? tmpl = null;
+                    if (!string.IsNullOrWhiteSpace(act.Parameter))
+                    {
+                        tmpl = _templateStore.FindById(act.Parameter) ??
+                               _templateStore.Templates.FirstOrDefault(t => t.Title.Equals(act.Parameter, StringComparison.OrdinalIgnoreCase));
+                    }
+                    if (tmpl == null) { Status(L.F("Şablon bulunamadı: {0}", act.Parameter ?? "")); break; }
+                    if (tmpl != null)
+                    {
+                        var sig = _store.Accounts.FirstOrDefault(a => a.Id == mail.AccountId)?.Signature ?? "";
+                        var sigText = System.Text.RegularExpressions.Regex.Replace(sig, "<.*?>", string.Empty).Trim();
+                        var ctx = TemplateContext.Create(
+                            to: $"\"{mail.FromName}\" <{mail.FromAddress}>",
+                            subject: mail.Subject,
+                            signature: sigText,
+                            bodyForPartExtraction: _currentContent?.Text ?? mail.Preview
+                        );
+                        var rendered = TemplateEngine.Render(tmpl.Body, ctx);
+                        var content = _currentContent ?? _cache.GetBody(mail.AccountId, mail.Folder, mail.Uid) ?? new MailContent { Html = "<p>" + System.Net.WebUtility.HtmlEncode(mail.Preview) + "</p>" };
+                        Reply(mail, content, all: false, body: rendered);
+                    }
+                    break;
+
+                case QuickStepActionType.SetCategory:
+                    if (!string.IsNullOrWhiteSpace(act.Parameter))
+                    {
+                        _cache.SetCategory(mail.AccountId, mail.Folder, mail.Uid, act.Parameter);
+                        mail.Category = act.Parameter;
+                        Reformat(mail);
+                    }
+                    break;
+            }
+        }
+
+        }
+        catch (OperationCanceledException) { return false; }
+        catch (Exception ex)
+        {
+            Status(L.F("Hızlı Adım tamamlanamadı: {0} – {1}", L.T(step.Name), ex.Message));
+            return false;
+        }
+        Status(L.F("Hızlı Adım tamamlandı: {0}", L.T(step.Name)));
+        return true;
+    }
+
+    // =========================================================================
+    // Snooze (Erteleme)
+    // =========================================================================
+
+    void OnSnoozeRibbonClick(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu { PlacementTarget = (UIElement)sender, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        var thisEve = new MenuItem { Header = L.T("Bugün akşam (18:00)") };
+        thisEve.Click += (_, _) => SnoozeSelected(SnoozeStore.GetThisEvening());
+        var tomorrow = new MenuItem { Header = L.T("Yarın sabah (09:00)") };
+        tomorrow.Click += (_, _) => SnoozeSelected(SnoozeStore.GetTomorrowMorning());
+        var nextWeek = new MenuItem { Header = L.T("Gelecek hafta (Pazartesi 09:00)") };
+        nextWeek.Click += (_, _) => SnoozeSelected(SnoozeStore.GetNextWeek());
+        var custom = new MenuItem { Header = L.T("Tarih ve saat seç…") };
+        custom.Click += (_, _) => OnSnoozeCustomDate(this, new RoutedEventArgs());
+
+        menu.Items.Add(thisEve);
+        menu.Items.Add(tomorrow);
+        menu.Items.Add(nextWeek);
+        menu.Items.Add(new Separator());
+        menu.Items.Add(custom);
+
+        var selected = MessageList.SelectedItems.OfType<MailHeader>().ToList();
+        if (selected.Count == 0 && _current != null) selected = new() { _current };
+        if (selected.Any(m => _snoozeStore.IsSnoozed(m.AccountId, m.Folder, m.Uid)))
+        {
+            menu.Items.Add(new Separator());
+            var un = new MenuItem { Header = L.T("Ertelemeyi Kaldır") };
+            un.Click += (_, _) => UnsnoozeSelected();
+            menu.Items.Add(un);
+        }
+
+        menu.IsOpen = true;
+    }
+
+    void OnSnoozeSubmenuOpened(object sender, RoutedEventArgs e)
+    {
+        var selected = MessageList.SelectedItems.OfType<MailHeader>().ToList();
+        if (selected.Count == 0 && _current != null) selected = new() { _current };
+        bool anySnoozed = selected.Any(m => _snoozeStore.IsSnoozed(m.AccountId, m.Folder, m.Uid));
+        if (UnsnoozeContextMenuItem != null)
+        {
+            UnsnoozeContextMenuItem.Visibility = anySnoozed ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+
+    void OnSnoozeThisEvening(object sender, RoutedEventArgs e) => SnoozeSelected(SnoozeStore.GetThisEvening());
+    void OnSnoozeTomorrowMorning(object sender, RoutedEventArgs e) => SnoozeSelected(SnoozeStore.GetTomorrowMorning());
+    void OnSnoozeNextWeek(object sender, RoutedEventArgs e) => SnoozeSelected(SnoozeStore.GetNextWeek());
+
+    void OnSnoozeCustomDate(object sender, RoutedEventArgs e)
+    {
+        var picked = SnoozeCustomDateDialog.Show(this);
+        if (picked.HasValue)
+        {
+            SnoozeSelected(picked.Value);
+        }
+    }
+
+    void OnUnsnooze(object sender, RoutedEventArgs e) => UnsnoozeSelected();
+
+    public void SnoozeSelected(DateTimeOffset until)
+    {
+        var selected = MessageList.SelectedItems.OfType<MailHeader>().ToList();
+        if (selected.Count == 0 && _current != null) selected = new() { _current };
+        if (selected.Count == 0) return;
+
+        foreach (var m in selected)
+        {
+            _snoozeStore.Snooze(m.AccountId, m.Folder, m.Uid, until, m.Subject, m.FromName, m.IsRead);
+            m.IsSnoozed = true;
+            m.SnoozedUntil = until;
+        }
+        _view.Refresh();
+        UpdateCounts();
+        Status(selected.Count == 1
+            ? L.F("İleti ertelendi ({0:g}): {1}", until, selected[0].Subject)
+            : L.F("{0} ileti ertelendi ({1:g})", selected.Count, until));
+    }
+
+    public void UnsnoozeSelected()
+    {
+        var selected = MessageList.SelectedItems.OfType<MailHeader>().ToList();
+        if (selected.Count == 0 && _current != null) selected = new() { _current };
+        if (selected.Count == 0) return;
+
+        foreach (var m in selected)
+        {
+            _snoozeStore.Unsnooze(m.AccountId, m.Folder, m.Uid);
+            m.IsSnoozed = false;
+            m.SnoozedUntil = null;
+        }
+        _view.Refresh();
+        UpdateCounts();
+        Status(L.F("Erteleme kaldırıldı ({0} ileti).", selected.Count));
+    }
+
+    /// <summary>Snoozed mail whose time has come: back in the list, marked unread (on the server too) and announced.
+    /// The mail keeps its real date (the cache is never rewritten).</summary>
+    public async void CheckSnoozeDue()
+    {
+        var due = _snoozeStore.CheckDue(DateTimeOffset.Now);
+        if (due.Count == 0) return;
+        foreach (var item in due)
+        {
+            var inMemory = _messages.FirstOrDefault(m =>
+                string.Equals(m.AccountId, item.AccountId, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(m.Folder, item.Folder, StringComparison.OrdinalIgnoreCase) && m.Uid == item.Uid);
+            if (inMemory != null) { inMemory.IsSnoozed = false; inMemory.SnoozedUntil = null; }
+            if (!item.RestoreAsUnread) continue;
+            var header = inMemory ?? _cache.GetHeaders(item.AccountId, item.Folder, 5000).FirstOrDefault(m => m.Uid == item.Uid);
+            if (header == null || Acc(item.AccountId) is not { } acc) continue;
+            try
+            {
+                await _mail.SetReadAsync(acc, header, false);
+                header.IsRead = false;
+            }
+            catch (Exception ex) { Status(L.T("Ertelenen ileti okunmadı yapılamadı: ") + ex.Message); }
+        }
+        _view.Refresh();
+        UpdateCounts();
+        var text = due.Count == 1 ? L.F("Ertelenen mail geri döndü: {0}", due[0].Subject) : L.F("Ertelenen {0} ileti geri döndü.", due.Count);
+        Status(text);
+        _tray?.ShowReminder(L.T("Ertelenen ileti"), text, ShowFromTray);
+    }
+
+    // ---------------- Search Folders ----------------
+
+    void OnFolderTreeContextMenuOpened(object sender, RoutedEventArgs e)
+    {
+        var sel = FolderTree.SelectedItem as FolderNode;
+        var isSearch = sel != null && sel.IsSearchFolder;
+        var isCustomSearch = isSearch && sel?.SearchFolderId != null && _searchFolderStore.Find(sel.SearchFolderId)?.IsBuiltIn != true;
+
+        if (EditSearchFolderMenuItem != null)
+        {
+            EditSearchFolderMenuItem.Visibility = isSearch ? Visibility.Visible : Visibility.Collapsed;
+        }
+        if (DeleteSearchFolderMenuItem != null)
+        {
+            DeleteSearchFolderMenuItem.Visibility = isCustomSearch ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+
+    void OnNewSearchFolderClick(object sender, RoutedEventArgs e)
+    {
+        var item = Views.SearchFolders.SearchFolderDialog.ShowDialog(this);
+        if (item != null)
+        {
+            _searchFolderStore.AddOrUpdate(item);
+            _ = RefreshSearchFoldersInTreeAsync(item.Id);
+        }
+    }
+
+    void OnEditSearchFolderClick(object sender, RoutedEventArgs e)
+    {
+        if (FolderTree.SelectedItem is not FolderNode node || !node.IsSearchFolder || node.SearchFolderId == null) return;
+        var existing = _searchFolderStore.Find(node.SearchFolderId);
+        if (existing == null) return;
+        var updated = Views.SearchFolders.SearchFolderDialog.ShowDialog(this, existing);
+        if (updated != null)
+        {
+            _searchFolderStore.AddOrUpdate(updated);
+            _ = RefreshSearchFoldersInTreeAsync(updated.Id);
+        }
+    }
+
+    void OnDeleteSearchFolderClick(object sender, RoutedEventArgs e)
+    {
+        if (FolderTree.SelectedItem is not FolderNode node || !node.IsSearchFolder || node.SearchFolderId == null) return;
+        var existing = _searchFolderStore.Find(node.SearchFolderId);
+        if (existing == null || existing.IsBuiltIn) return;
+
+        var res = MessageBox.Show(this,
+            L.F("\"{0}\" arama klasörünü silmek istediğinizden emin misiniz?", existing.Name),
+            L.T("Arama Klasörünü Sil"),
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+
+        if (res == MessageBoxResult.Yes)
+        {
+            _searchFolderStore.Delete(existing.Id);
+            _ = RefreshSearchFoldersInTreeAsync();
+        }
+    }
+
+    async Task RefreshSearchFoldersInTreeAsync(string? selectFolderId = null)
+    {
+        var searchRoot = _roots.FirstOrDefault(r => r.IsSearchFolderRoot);
+        if (searchRoot == null) return;
+
+        searchRoot.Children.Clear();
+        FolderNode? targetNode = null;
+        foreach (var sf in _searchFolderStore.Folders)
+        {
+            var fn = new FolderNode
+            {
+                AccountId = "",
+                FullName = $"SEARCH_{sf.Id}",
+                Name = L.T(sf.Name),
+                Icon = sf.Icon,
+                IsSearchFolder = true,
+                SearchFolderId = sf.Id,
+                UnreadCount = _searchFolderStore.CountMatching(sf, _cache, unreadOnly: true)
+            };
+            searchRoot.Children.Add(fn);
+            if (selectFolderId != null && sf.Id == selectFolderId) targetNode = fn;
+        }
+
+        if (targetNode != null)
+        {
+            SelectFolder(targetNode);
+        }
+        else if (_currentFolder?.IsSearchFolder == true)
+        {
+            var fallback = _roots.FirstOrDefault(r => r.IsUnifiedInbox);
+            if (fallback != null) SelectFolder(fallback);
+        }
+        await Task.CompletedTask;
+    }
+
+    async Task RunRuleOnFolderAsync(MailRule rule)
+    {
+        if (_currentFolder == null || _currentFolder.IsUnifiedInbox || _currentFolder.IsSearchFolder || _currentFolder.IsSearchFolderRoot)
+        { MessageBox.Show(this, L.T("Kuralı çalıştırmak için önce bir hesap klasörü seçin."), L.T("Kurallar")); return; }
+        if (RuleEngine.Validate(rule) is { } problem) { MessageBox.Show(this, problem, L.T("Kurallar")); return; }
+        var acc = Acc(_currentFolder.AccountId);
+        if (acc == null) return;
+        var list = _messages.Where(m => m.AccountId == acc.Id).ToList();
+        var preview = list.Count(m => RuleEngine.Matches(new MailRule { Enabled = true, MatchAll = rule.MatchAll, Conditions = rule.Conditions }, m, null, _cache.GetAttachments(m.AccountId, m.Folder, m.Uid)));
+        if (MessageBox.Show(this, L.F("\"{0}\" kuralı \"{1}\" klasöründeki {2} iletiye uygulanacak (önizlemede {3} ileti uyuyor).\n\nEylemler: {4}\n\nDevam edilsin mi?",
+                rule.Name, _currentFolder.Name, list.Count, preview, string.Join(", ", rule.Actions.Select(RuleEngine.DescribeAction))),
+                L.T("Klasörde şimdi çalıştır"), MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        var runnable = rule.Clone(); runnable.Enabled = true;
+        int affected = 0, failed = 0;
+        foreach (var m in list)
+        {
+            try
+            {
+                var results = await RuleEngine.ApplyRulesAsync(new[] { runnable }, m, acc, _mail, _cache, _tasks, null, _lifetime.Token);
+                if (results.Count > 0) affected++;
+            }
+            catch (OperationCanceledException) { break; }
+            catch (Exception) { failed++; }
+        }
+        LoadMessagesFromCache();
+        Status(failed == 0 ? L.F("Kural çalıştırıldı: {0} ileti etkilendi.", affected) : L.F("Kural çalıştırıldı: {0} ileti etkilendi, {1} iletide hata oluştu.", affected, failed));
+    }
+
+    async Task RunRulesOnFreshAsync(AccountConfig acc, List<MailHeader> fresh)
+    {
+        try
+        {
+            _ruleStore.ReloadIfChanged();
+            var rules = _ruleStore.Rules.Where(r => r.Enabled && RuleEngine.Validate(r) == null).ToList();
+            if (rules.Count == 0) return;
+            bool anyMoved = false;
+            foreach (var h in fresh)
+            {
+                try
+                {
+                    var res = await RuleEngine.ApplyRulesAsync(rules, h, acc, _mail, _cache, _tasks, null, _lifetime.Token);
+                    if (res.Any(r => r.Moved)) anyMoved = true;
+                }
+                catch (OperationCanceledException) { return; }
+                catch (Exception ex) { Status(L.F("Kural uygulanamadı ({0}): {1}", h.Subject, ex.Message)); }
+            }
+            if (anyMoved) LoadMessagesFromCache();
+        }
+        catch (Exception ex) { Status(L.T("Kurallar: ") + ex.Message); }
+    }
 
     void OnFormatRules(object sender, RoutedEventArgs e)
     {

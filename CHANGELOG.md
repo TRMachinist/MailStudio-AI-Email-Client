@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.8.0 – Revisions, quotes and a safer outbox (2026-10-20)
+
+- **Revision comparison**: "Compare with previous revision" on an attachment (and in the PDF / STEP / CAD viewers) looks for
+  earlier revisions of the same part in the mails of the same correspondent (`-revC`, `Rev.D`, `_R02`, `wk44` …) and lets you pick one.
+  - **Excel**: rows matched by their first column (an inserted row does not shift the rest), changed / added / removed cells.
+  - **STEP**: exact bounding box, volume, surface and body count from the B-Rep, **holes by diameter** (real holes only, not fillets or bosses), PMI.
+  - **DXF/DWG**: layers, dimension values and texts (e.g. `8x Ø18` → `8x Ø20`, title block `REV B` → `REV C`).
+  - **PDF drawings**: dimensions, tolerances, fits, Ra, title block fields and notes (text layer, or OCR – then marked as such).
+  - Nothing is estimated: if a file cannot be read, the window says so. "Add to reply" writes the change list into the answer; "Ask the manufacturing impact" asks the AI.
+- **Quote desk** (Ctrl+5): add a request from the mail (right-click) – part, revision, quantity, material and dates are filled in; statuses New / In progress / Sent / Won / Lost, search, filters, Excel export, deadline reminders. Answering the customer with an attachment marks the quote as sent.
+- **Mail rules**: from / to / subject / body / attachment / type / account / folder / importance / size conditions; move, Deleted Items, read, flag, category, task, skill actions; write a rule in plain words with AI. Empty conditions are refused (they would match every mail), moves always run last, "Run in folder now" asks first.
+- **Follow-up**: "remind me if there is no answer in N days" in the composer; an answer closes it, otherwise a task appears under *Waiting for reply* with a one-click reminder draft in the same thread.
+- **Undo send** (0–30 s) and **Send later** (Outbox): the mail waits on disk, SMTP is not contacted until then. Closing MailStudio during the undo time asks; mails that became due while MailStudio was closed are never sent without asking; a send interrupted by a crash is marked *uncertain* and never repeated automatically.
+- **Missing attachment warning** (Turkish and English, quoted text and signature ignored), **large attachment** (> 20 MB) ZIP offer.
+- **Templates** with `{Ad} {Soyad} {Firma} {Konu} {ParçaNo} {Tarih} {İmza}` (and English names) and **Quick steps** (Ctrl+Shift+1…9).
+- **Snooze**: tonight / tomorrow / next week / pick a date; the mail comes back unread with a notification.
+- **All inboxes** and **search folders** (Unread, Flagged, This week's attachments, your own).
+- **Newsletters**: unsubscribe from the `List-Unsubscribe` header – the web page opens only after you confirm, a mail address opens a draft you send yourself; nothing is ever requested automatically. "Always move this sender to Newsletters".
+- **Calendar sync** with Microsoft 365 / Outlook.com, Google Calendar and CalDAV – **off by default** per account. Calendar access is a separate consent asked on the first "Sync now". 60 days back and 400 days ahead are read completely (nothing is deleted from an incomplete listing); only events you put in that account's calendar are uploaded; on a conflict the server wins and your version is kept in the notes.
+- **Contact card** (recent mails, attachments, tasks, quotes), **@mentions** in the composer.
+- **Agent (MCP) tools**: `list_rules`, `list_followups`, `list_quotes`, `compare_revisions` (attachments only), `add_rule` (added disabled), `update_quote_status`. Still no send tool.
+- Self-test: an empty (white/black) screenshot is now a failure – a locked screen can no longer produce a "passed" run without pictures.
+
 ## 1.7.1 – Fixes found by the new self-test (2026-10-19)
 
 - Fixed: closing a new mail with "don't save" on a fresh installation raised an error and kept the window open.

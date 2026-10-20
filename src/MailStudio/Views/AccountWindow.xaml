@@ -81,8 +81,8 @@
             <Expander x:Name="OAuthExpander" Header="OAuth ayarları (uygulama kimlikleri)" Margin="0,12,0,0" Visibility="Collapsed">
                 <StackPanel Margin="0,4,0,0">
                     <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,4,0,0">
-                        Microsoft/Google, tarayıcıyla girişe izin vermek için bir "uygulama kaydı" ister. Bir kez oluşturulur, tüm hesaplar için kullanılır.
-                        <Hyperlink Click="OnOAuthHelp">Nasıl alınır?</Hyperlink>
+                        <Run x:Name="OAuthInfoRun" Text="Microsoft/Google, tarayıcıyla girişe izin vermek için bir &quot;uygulama kaydı&quot; ister. Bir kez oluşturulur, tüm hesaplar için kullanılır."/>
+                        <Hyperlink Click="OnOAuthHelp"><Run x:Name="OAuthHowRun" Text="Nasıl alınır?"/></Hyperlink>
                     </TextBlock>
                     <TextBlock Text="Microsoft uygulama (istemci) kimliği" Style="{StaticResource Lbl}"/>
                     <TextBox x:Name="MsClientBox"/>
@@ -117,6 +117,23 @@
                 <CheckBox Grid.Column="2" x:Name="OfflineAttCheck" Content="Ekleri de indir (30 MB'a kadar)" IsChecked="True"
                           VerticalAlignment="Center" Margin="12,0,0,0"/>
             </Grid>
+
+            <Expander Header="Takvim Eşitlemesi (Google / Outlook / CalDAV)" Margin="0,12,0,0" x:Name="CalendarExpander">
+                <StackPanel Margin="0,4,0,0">
+                    <CheckBox x:Name="CalendarSyncCheck" Content="Takvim etkinliklerini eşitle"
+                              Checked="OnCalendarSyncCheckChanged" Unchecked="OnCalendarSyncCheckChanged"/>
+                    <Border x:Name="CalendarConsentNotice" Visibility="Collapsed" Background="{DynamicResource StatusWarningBgBrush}" BorderBrush="{DynamicResource StatusWarningBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="10,7" Margin="0,8,0,0">
+                        <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource StatusWarningBrush}"
+                                   Text="Takvim izni ayrıca istenir: ilk kez Takvim → Şimdi Eşitle'ye bastığında tarayıcıda onay penceresi açılır. Yalnızca etkinlik formunda bu hesabın takvimine koyduğun etkinlikler sunucuya gönderilir."/>
+                    </Border>
+                    <Grid x:Name="CalDavGrid" Margin="0,8,0,0" Visibility="Collapsed">
+                        <StackPanel>
+                            <TextBlock Text="CalDAV takvim adresi (https://..., zorunlu)" Style="{StaticResource Lbl}"/>
+                            <TextBox x:Name="CalDavUrlBox"/>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Expander>
 
             <Expander Header="Sunucu ayarları" Margin="0,12,0,0" x:Name="ServerExpander">
                 <StackPanel Margin="0,4,0,0">

@@ -130,6 +130,7 @@ public sealed partial class PdfAttachmentWindow : Window
         var wrap = new WrapPanel(); bar.Child = wrap;
         wrap.Children.Add(IconBtn("", L.T("Sayfa küçük resimlerini göster/gizle"), () => _thumbCol.Width = _thumbCol.Width.Value > 0 ? new GridLength(0) : new GridLength(150)));
         wrap.Children.Add(IconBtn("", L.T("Farklı kaydet… (Ctrl+S) — düzenlemeler yeni PDF'ye yazılır, ek dosyası değişmez"), async () => await SaveAsAsync()));
+        wrap.Children.Add(IconBtn("⚖", L.T("Önceki revizyonla karşılaştır"), async () => await CompareRevisionAsync()));
         wrap.Children.Add(IconBtn("", _sourceDocument != null ? L.T("Belgeyi kendi programında (Word/Excel/PowerPoint) aç") : L.T("Varsayılan PDF programında aç"), () => { try { Process.Start(new ProcessStartInfo(_sourceDocument ?? _path) { UseShellExecute = true }); } catch (Exception ex) { _status.Text = ex.Message; } }));
         if (_sourceDocument != null)
         {
@@ -521,5 +522,25 @@ public sealed partial class PdfAttachmentWindow : Window
         else if (e.Key == Key.PageUp && !ctrl && _scroll.IsKeyboardFocusWithin == false) { GoToPage(_page - 1); e.Handled = true; }
         else if (e.Key == Key.Home && ctrl) { GoToPage(0); e.Handled = true; }
         else if (e.Key == Key.End && ctrl) { GoToPage(_pages - 1); e.Handled = true; }
+    }
+
+    async Task CompareRevisionAsync()
+    {
+        var oldPath = await RevisionLookup.PickOlderAsync(this, _path);
+        if (string.IsNullOrEmpty(oldPath) || !File.Exists(oldPath)) return;
+        if (RevisionLookup.ShowDiff != null) { await RevisionLookup.ShowDiff(oldPath, _path); return; }
+
+        _status.Text = L.T("Önceki revizyonla karşılaştırılıyor...");
+        try
+        {
+            var report = await RevisionService.CompareAsync(oldPath, _path, () => _worker, _life.Token);
+            var win = new RevisionDiffWindow(report) { Owner = this };
+            win.Show();
+            _status.Text = L.F("Revizyon karşılaştırma tamamlandı: {0} fark bulundu.", report.TotalChanges);
+        }
+        catch (Exception ex)
+        {
+            _status.Text = L.T("Karşılaştırma hatası: ") + ex.Message;
+        }
     }
 }

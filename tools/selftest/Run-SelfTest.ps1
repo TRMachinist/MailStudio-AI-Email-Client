@@ -109,7 +109,9 @@ if (Test-Path $mcp) {
             @{ n = 'list_accounts'; a = @{} }, @{ n = 'list_messages'; a = @{ limit = 5 } }, @{ n = 'search_messages'; a = @{ query = 'flange' } },
             @{ n = 'read_message'; a = @{ account = 'demo'; folder = 'INBOX'; uid = 1 } }, @{ n = 'list_skills'; a = @{} },
             @{ n = 'list_events'; a = @{ days = 7 } }, @{ n = 'find_free_time'; a = @{ minutes = 30 } }, @{ n = 'list_tasks'; a = @{} },
-            @{ n = 'add_task'; a = @{ title = 'MCP self-test task' } }
+            @{ n = 'list_rules'; a = @{} }, @{ n = 'list_followups'; a = @{ filter = 'all' } }, @{ n = 'list_quotes'; a = @{ filter = 'all' } },
+            @{ n = 'add_task'; a = @{ title = 'MCP self-test task' } },
+            @{ n = 'add_rule'; a = @{ name = 'Smoke Rule'; conditionField = 'from'; conditionValue = 'smoke@example.com'; actionType = 'flag' } }
         )
         $id = 10
         foreach ($c in $calls) {

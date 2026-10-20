@@ -8,18 +8,21 @@ using MailStudio.Services;
 using MailStudio.Services.Calendar;
 using MailStudio.Views;
 using MailStudio.Views.Calendar;
+using MailStudio.Views.Quotes;
 
 namespace MailStudio;
 
-public enum PimModule { Mail, Calendar, People, Tasks }
+public enum PimModule { Mail, Calendar, People, Tasks, Quotes }
 
 /// <summary>Calendar, tasks and reminders inside the main window (Outlook's module bar).</summary>
-public partial class MainWindow : ITaskHost
+public partial class MainWindow : ITaskHost, IQuoteHost
 {
     readonly CalendarStore _calendar = new();
     readonly TaskStore _tasks = new();
+    readonly QuoteStore _quoteStore = new();
     CalendarView? _calendarView;
     TasksView? _tasksView;
+    QuoteDeskView? _quoteDeskView;
     PimModule _module = PimModule.Mail;
     ReminderWindow? _reminderWindow;
     readonly DispatcherTimer _reminderTimer = new() { Interval = TimeSpan.FromSeconds(30) };
@@ -29,8 +32,24 @@ public partial class MainWindow : ITaskHost
     public PimModule Module => _module;
     public CalendarStore CalendarStore => _calendar;
     public TaskStore TaskStore => _tasks;
+    public QuoteStore QuoteStore => _quoteStore;
     public CalendarView? CalendarViewForTests => _calendarView;
     public TasksView? TasksViewForTests => _tasksView;
+    public QuoteDeskView? QuoteDeskViewForTests => _quoteDeskView;
+    CalendarSyncService? _calendarSync;
+    public CalendarSyncService CalendarSync => _calendarSync ??= new CalendarSyncService(_calendar, _oauth);
+
+    /// <summary>"Sync now" in the calendar: only accounts the user turned calendar sync on for; nothing else touches the network.</summary>
+    async Task SyncCalendarsAsync()
+    {
+        var accounts = _store.Accounts.Where(a => a.EnableCalendarSync).ToList();
+        if (accounts.Count == 0)
+            throw new InvalidOperationException(L.T("Takvim eşitlemesi açık bir hesap yok. Hesap ayarlarında 'Takvim etkinliklerini eşitle' seçeneğini aç."));
+        var r = await CalendarSync.SyncAllAccountsAsync(accounts);
+        try { _store.Save(); } catch (IOException) { }
+        _calendarView?.Refresh();
+        if (!r.Success) throw new InvalidOperationException(r.Error ?? r.StatusMessage ?? "");
+    }
 
     void InitPim()
     {
@@ -42,6 +61,7 @@ public partial class MainWindow : ITaskHost
     void OnNavMail(object sender, RoutedEventArgs e) => SwitchModule(PimModule.Mail);
     void OnNavCalendar(object sender, RoutedEventArgs e) => SwitchModule(PimModule.Calendar);
     void OnNavTasks(object sender, RoutedEventArgs e) => SwitchModule(PimModule.Tasks);
+    void OnNavQuotes(object sender, RoutedEventArgs e) => SwitchModule(PimModule.Quotes);
 
     void OnRibbonTabClick(object sender, RoutedEventArgs e)
     {
@@ -63,12 +83,16 @@ public partial class MainWindow : ITaskHost
         FolderTree.Visibility = mail ? Visibility.Visible : Visibility.Collapsed;
         if (!mail) NoAccountHint.Visibility = Visibility.Collapsed;
         else if (_store.Accounts.Count == 0) NoAccountHint.Visibility = Visibility.Visible;
-        foreach (var (button, module) in new[] { (NavMail, PimModule.Mail), (NavCalendar, PimModule.Calendar), (NavTasks, PimModule.Tasks) })
+        foreach (var (button, module) in new[] { (NavMail, PimModule.Mail), (NavCalendar, PimModule.Calendar), (NavTasks, PimModule.Tasks), (NavQuotes, PimModule.Quotes) })
             if (module == m) button.SetResourceReference(ForegroundProperty, "AccentPrimaryBrush"); else button.ClearValue(ForegroundProperty);
         switch (m)
         {
             case PimModule.Calendar:
-                _calendarView ??= new CalendarView(_calendar, this);
+                _calendarView ??= new CalendarView(_calendar, this)
+                {
+                    SyncHandler = SyncCalendarsAsync,
+                    SyncCalendars = () => _store.Accounts.Where(a => a.EnableCalendarSync).Select(a => (a.Id, a.Email)).ToList()
+                };
                 PimHost.Content = _calendarView; PimSide.Content = _calendarView.SidePanel;
                 Title = L.T("Takvim") + " - " + L.ProductName;
                 _calendarView.Refresh();
@@ -80,6 +104,12 @@ public partial class MainWindow : ITaskHost
                 Title = L.T("Görevler") + " - " + L.ProductName;
                 _tasksView.Refresh();
                 break;
+            case PimModule.Quotes:
+                _quoteDeskView ??= new QuoteDeskView(_quoteStore, this);
+                PimHost.Content = _quoteDeskView; PimSide.Content = _quoteDeskView.SidePanel;
+                Title = L.T("Teklif Masası") + " - " + L.ProductName;
+                _quoteDeskView.Refresh();
+                break;
             default:
                 PimHost.Content = null; PimSide.Content = null;
                 if (_mailTitle != null) Title = _mailTitle;
@@ -90,7 +120,7 @@ public partial class MainWindow : ITaskHost
 
     void ShowModuleRibbon()
     {
-        foreach (var r in new UIElement?[] { _calendarView?.Ribbon, _tasksView?.Ribbon })
+        foreach (var r in new UIElement?[] { _calendarView?.Ribbon, _tasksView?.Ribbon, _quoteDeskView?.Ribbon })
             if (r != null) { RibbonGrid.Children.Remove(r); }
         var mail = _module == PimModule.Mail;
         foreach (var p in new UIElement[] { RibbonHome, RibbonSendRecv, RibbonFolder, RibbonView, RibbonAi }) p.Visibility = Visibility.Collapsed;
@@ -101,7 +131,13 @@ public partial class MainWindow : ITaskHost
         }
         if (TabHome.IsChecked != true) TabHome.IsChecked = true;
         foreach (var p in new UIElement[] { RibbonHome, RibbonSendRecv, RibbonFolder, RibbonView, RibbonAi }) p.Visibility = Visibility.Collapsed;
-        var ribbon = _module == PimModule.Calendar ? _calendarView?.Ribbon : _tasksView?.Ribbon;
+        var ribbon = _module switch
+        {
+            PimModule.Calendar => _calendarView?.Ribbon,
+            PimModule.Tasks => _tasksView?.Ribbon,
+            PimModule.Quotes => _quoteDeskView?.Ribbon,
+            _ => null
+        };
         if (ribbon != null) { RibbonGrid.Children.Add(ribbon); ribbon.Visibility = Visibility.Visible; }
     }
 
@@ -111,6 +147,33 @@ public partial class MainWindow : ITaskHost
     {
         // Items an agent added through the MCP server appear without a restart
         _calendar.ReloadIfChanged(); _tasks.ReloadIfChanged();
+        var expiredCount = _followUpStore.CheckExpired(_tasks);
+        if (expiredCount > 0) _tasksView?.Refresh();
+        // Quote deadlines check
+        var quoteOverdueCount = 0;
+        foreach (var q in _quoteStore.Quotes)
+        {
+            if ((q.IsDeadlineToday || q.IsDeadlineOverdue) && q.Status is QuoteStatus.New or QuoteStatus.InProgress)
+            {
+                var sourceKey = $"quote|{q.Id}";
+                if (_tasks.FindBySource(sourceKey) == null)
+                {
+                    _tasks.Save(new TaskItem
+                    {
+                        Title = L.F("Teklif Son Tarihi: {0} ({1})", q.PartNumber, q.Customer),
+                        DueDate = q.Deadline?.Date ?? DateTime.Today,
+                        Priority = TaskPriority.High,
+                        Notes = L.F("Parça: {0}, Rev: {1}, Adet: {2}\n{3}", q.PartNumber, q.Revision, q.QuantityDisplay, q.Notes),
+                        SourceMail = sourceKey,
+                        SourceSubject = q.SourceSubject ?? q.PartNumber,
+                        SourceFrom = q.ContactEmail ?? q.Contact,
+                        ReminderAt = DateTime.Today.AddHours(9)
+                    });
+                    quoteOverdueCount++;
+                }
+            }
+        }
+        if (quoteOverdueCount > 0) _tasksView?.Refresh();
         var now = DateTime.Now;
         var due = _calendar.DueReminders(now).Select(o => "e" + o.Key).Concat(_tasks.DueReminders(now).Select(t => "t" + t.Id)).ToHashSet();
         if (due.Count > 0)
@@ -367,5 +430,91 @@ public partial class MainWindow : ITaskHost
                 openAttachment: att => OpenAttachmentAsync(h, att)) { Owner = this }.Also(FileViewers.ReturnFocusOnClose).Show();
         }
         catch (Exception ex) { Status(L.T("İleti yüklenemedi: ") + ex.Message); }
+    }
+
+    void ITaskHost.ComposeReminder(TaskItem task)
+    {
+        if (_store.Accounts.Count == 0) { MessageBox.Show(this, L.T("Önce bir hesap ekleyin."), "MailStudio"); return; }
+        var account = (_store.Accounts.FirstOrDefault(a => a.Id == task.FollowUpAccountId))
+                      ?? (_store.Accounts.FirstOrDefault(a => task.SourceMail != null && task.SourceMail.StartsWith(a.Id + "|")))
+                      ?? (_current != null ? Acc(_current.AccountId) : null)
+                      ?? _store.Accounts[0];
+
+        var to = task.SourceFrom;
+        var subj = task.SourceSubject.Length > 0 ? task.SourceSubject : task.Title;
+        if (!subj.StartsWith("Re:", StringComparison.OrdinalIgnoreCase) &&
+            !subj.StartsWith("Ynt:", StringComparison.OrdinalIgnoreCase) &&
+            !subj.StartsWith("Hatırlatma:", StringComparison.OrdinalIgnoreCase) &&
+            !subj.StartsWith("Reminder:", StringComparison.OrdinalIgnoreCase))
+        {
+            subj = (L.IsEnglish ? "Reminder: " : "Hatırlatma: ") + subj;
+        }
+
+        var body = L.T("Merhaba,\n\nAşağıdaki konuda geri dönüşünüzü rica ederim.\n\nİyi çalışmalar.");
+        if (task.SourceMail != null)
+        {
+            var parts = task.SourceMail.Split('|');
+            if (parts.Length >= 3 && uint.TryParse(parts[2], out var uid))
+            {
+                var content = _cache.GetBody(parts[0], parts[1], uid);
+                if (content != null && !string.IsNullOrWhiteSpace(content.Text))
+                {
+                    body += "\n\n--- " + L.T("Önceki İleti") + " ---\n" + content.Text;
+                }
+            }
+        }
+
+        var req = new ComposeRequest
+        {
+            To = to,
+            Subject = subj,
+            Body = body
+        };
+        if (!string.IsNullOrWhiteSpace(task.FollowUpMessageId))
+        {
+            // answer in the same thread, so the recipient sees the original mail
+            var mid = task.FollowUpMessageId.Trim().Trim('<', '>');
+            req.InReplyTo = mid;
+            req.References = new List<string> { mid };
+        }
+        OpenCompose(req, account.Id);
+        Status(L.T("Hatırlatma maili hazır; kontrol edip Gönder'e basın."));
+    }
+
+    void IQuoteHost.ComposeQuoteReply(QuoteItem quote)
+    {
+        if (_store.Accounts.Count == 0) { MessageBox.Show(this, L.T("Önce bir hesap ekleyin."), "MailStudio"); return; }
+        var account = (_store.Accounts.FirstOrDefault(a => quote.SourceMail != null && quote.SourceMail.StartsWith(a.Id + "|")))
+                      ?? (_current != null ? Acc(_current.AccountId) : null)
+                      ?? _store.Accounts[0];
+
+        var to = !string.IsNullOrEmpty(quote.ContactEmail) ? quote.ContactEmail : quote.Contact;
+        var subj = !string.IsNullOrEmpty(quote.SourceSubject)
+            ? (!quote.SourceSubject.StartsWith("Re:", StringComparison.OrdinalIgnoreCase) && !quote.SourceSubject.StartsWith("Ynt:", StringComparison.OrdinalIgnoreCase) ? "Re: " + quote.SourceSubject : quote.SourceSubject)
+            : L.F("Teklif: {0} ({1})", quote.PartNumber, quote.Customer);
+
+        var body = L.T("Merhaba,\n\nTalep ettiğiniz parçaya ilişkin fiyat teklifimiz ektedir.\n\nİyi çalışmalar.");
+        if (quote.SourceMail != null)
+        {
+            var parts = quote.SourceMail.Split('|');
+            if (parts.Length >= 3 && uint.TryParse(parts[2], out var uid))
+            {
+                var content = _cache.GetBody(parts[0], parts[1], uid);
+                if (content != null && !string.IsNullOrWhiteSpace(content.Text))
+                {
+                    body += "\n\n--- " + L.T("Önceki İleti") + " ---\n" + content.Text;
+                }
+            }
+        }
+
+        var req = new ComposeRequest
+        {
+            To = to,
+            Subject = subj,
+            Body = body,
+            InReplyTo = quote.SourceMessageId
+        };
+        OpenCompose(req, account.Id);
+        Status(L.T("Teklif yanıtı taslağı hazır; teklif dosyasını ekleyip gönderin."));
     }
 }

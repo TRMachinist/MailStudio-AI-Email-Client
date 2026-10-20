@@ -52,8 +52,11 @@ zeka asla kendi başına mail gönderemez.
 - Mail **ve eklerin** çevrimdışı kopyası, anında açılış, anlık bildirim (IMAP IDLE), masaüstü uyarıları, tepsi modu
 - İmzalı zengin HTML düzenleyici, satır içi yanıt, ayrı pencere, kişi otomatik tamamlama, güvenli taslak ve kurtarma
 - **Adres defteri**: kişiler, gruplar, Outlook/Gmail CSV ve vCard içe/dışa aktarma, Kime/Bilgi/Gizli seçici; maildeki her adres tıklanabilir (kopyala, yeni mail, kişilere ekle, maillerini bul)
-- **Takvim** (gün / iş haftası / hafta / ay, sürükle-bırak, yinelenen öğeler, anımsatıcılar, renk kategorileri) ve toplantı davetleri: maildeki daveti tek tıkla Kabul et / Belki / Reddet, davet ve güncelleme gönderme, .ics içe/dışa aktarma (Outlook, Google)
-- **Görevler**: hızlı ekleme ("teklifi gönder yarın"), son tarih grupları, bayraklı mailler, mailden görev, yapay zekanın çıkardığı görevleri listeye ekleme, anımsatıcılar
+- **Takvim** (gün / iş haftası / hafta / ay, sürükle-bırak, yinelenen öğeler, anımsatıcılar, renk kategorileri) ve toplantı davetleri: maildeki daveti tek tıkla Kabul et / Belki / Reddet, davet ve güncelleme gönderme, .ics içe/dışa aktarma – isteğe bağlı Microsoft 365, Google ve CalDAV eşitlemesi (varsayılan kapalı)
+- **Görevler**: hızlı ekleme ("teklifi gönder yarın"), son tarih grupları, bayraklı mailler, mailden görev, yapay zekanın çıkardığı görevler, anımsatıcılar ve **cevap takibi** ("cevap gelmezse hatırlat")
+- İmalatçılar için **revizyon karşılaştırma**: eski revizyonu aynı müşterinin maillerinde bulur ve neyin değiştiğini listeler – STEP (ölçüler, hacim, çapa göre delikler, PMI), DXF/DWG (ölçüler, yazılar), PDF teknik resim (ölçü, tolerans, antet, notlar) ve Excel planları
+- **Teklif masası**: mailden gelen teklif talepleri; parça, revizyon, adet, malzeme ve tarihler kendiliğinden dolar; durumlar, hatırlatma, Excel'e aktarma
+- **Kurallar, şablonlar ve hızlı adımlar**, **göndermeyi geri al / sonra gönder**, **erteleme**, **tüm gelen kutuları ve arama klasörleri**, bültenlerden **abonelikten çıkma** (her zaman senin onayınla), ek unutma uyarısı
 - Outlook'taki gibi **koşullu biçimlendirme** — kuralları yapay zekaya düz cümleyle de yazdırabilirsiniz
 - Gmail / Outlook.com / Microsoft 365 (OAuth veya uygulama parolası), Yandex ve her IMAP/SMTP sunucusu
 - Açık ve koyu tema

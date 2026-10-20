@@ -125,6 +125,9 @@
                             <Button Style="{StaticResource SmallCmd}" Tag="&#xE80A;" Click="OnInsertTable" Content="Tablo"/>
                             <Button Style="{StaticResource SmallCmd}" Tag="&#xE8AC;" Click="OnSignature" Content="İmza"/>
                         </StackPanel>
+                        <StackPanel>
+                            <Button x:Name="InsertTemplateBtn" Style="{StaticResource SmallCmd}" Tag="&#xE8F1;" Click="OnInsertTemplateMenu" Content="Şablon" ToolTip="Hazır yanıt şablonu ekle"/>
+                        </StackPanel>
                     </StackPanel>
                 </HeaderedContentControl>
 
@@ -162,6 +165,7 @@
                 <Button Style="{StaticResource FlatButton}" Margin="0,0,4,0" MinHeight="26" Content="Düzelt" Click="OnAiFix" ToolTip="Yazım/dilbilgisi; sayılar korunur"/>
                 <Button Style="{StaticResource FlatButton}" Margin="0,0,4,0" MinHeight="26" Content="Dosya ekle" Click="OnAttach"/>
                 <Button Style="{StaticResource FlatButton}" Margin="0,0,4,0" MinHeight="26" Content="İmza" Click="OnSignature"/>
+                <Button x:Name="InlineTemplateBtn" Style="{StaticResource FlatButton}" Margin="0,0,4,0" MinHeight="26" Content="Şablon" Click="OnInsertTemplateMenu" ToolTip="Hazır yanıt şablonu ekle"/>
                 <Button Style="{StaticResource FlatButton}" Margin="0,0,4,0" MinHeight="26" Content="Resimleri yükle" Click="OnLoadComposeImages" ToolTip="Bu taslakta internetten resim yükle"/>
                 <Button Style="{StaticResource FlatButton}" Margin="0,0,4,0" MinHeight="26" Content="Kaydet" Click="OnSaveDraft"/>
                 <Button x:Name="PopOutButton" Style="{StaticResource FlatButton}" Visibility="Collapsed" Margin="8,0,4,0" MinHeight="26" Click="OnPopOut" ToolTip="Taslağı tam boy pencerede düzenle">
@@ -184,13 +188,23 @@
                 <RowDefinition Height="30"/>
                 <RowDefinition Height="30"/>
                 <RowDefinition Height="30"/>
+                <RowDefinition Height="28"/>
             </Grid.RowDefinitions>
-            <Button Grid.RowSpan="3" x:Name="SendButton" Click="OnSend" Style="{StaticResource MsPrimaryButtonStyle}" Margin="0,2,12,2" Padding="4" ToolTip="Gönder (Ctrl+Enter)">
-                <StackPanel>
-                    <TextBlock Text="&#xE724;" FontFamily="{StaticResource Icons}" FontSize="24" HorizontalAlignment="Center"/>
-                    <TextBlock Text="Gönder" HorizontalAlignment="Center" Margin="0,5,0,0"/>
-                </StackPanel>
-            </Button>
+            <Grid Grid.RowSpan="3" Margin="0,2,12,2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="20"/>
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" x:Name="SendButton" Click="OnSend" Style="{StaticResource MsPrimaryButtonStyle}" Padding="2,4" ToolTip="Gönder (Ctrl+Enter)">
+                    <StackPanel>
+                        <TextBlock Text="&#xE724;" FontFamily="{StaticResource Icons}" FontSize="24" HorizontalAlignment="Center"/>
+                        <TextBlock Text="Gönder" HorizontalAlignment="Center" Margin="0,5,0,0"/>
+                    </StackPanel>
+                </Button>
+                <Button Grid.Column="1" x:Name="SendMenuButton" Click="OnSendMenuClick" Style="{StaticResource MsPrimaryButtonStyle}" Margin="1,0,0,0" Padding="0" ToolTip="Gönderme seçenekleri (Zamanlanmış gönder)">
+                    <TextBlock Text="&#xE70D;" FontFamily="{StaticResource Icons}" FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Button>
+            </Grid>
             <TextBlock Grid.Column="1" Text="Kimden" VerticalAlignment="Center" Margin="0,0,10,0" Width="62" Foreground="{DynamicResource TextSecondaryBrush}"/>
             <ComboBox Grid.Column="2" x:Name="FromBox" MinHeight="26" Margin="0,2" DisplayMemberPath="Email"/>
             <Button Grid.Row="1" Grid.Column="1" Content="Kime…" Style="{StaticResource HeaderBtn}" Click="OnPickTo"/>
@@ -201,22 +215,50 @@
             <v:RecipientBox Grid.Row="3" Grid.Column="2" x:Name="BccBox" AutomationProperties.Name="Gizli alıcılar"/>
             <TextBlock Grid.Row="4" Grid.Column="1" Text="Konu" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
             <TextBox Grid.Row="4" Grid.Column="2" x:Name="SubjectBox" MinHeight="26" Margin="0,2" Padding="6,1" FontWeight="SemiBold" TextChanged="OnSubjectChanged"/>
+            <StackPanel Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="2" Orientation="Horizontal" VerticalAlignment="Center">
+                <CheckBox x:Name="FollowUpCheck" Content="Cevap gelmezse hatırlat" VerticalAlignment="Center" Margin="0,0,8,0" Checked="OnFollowUpCheckChanged" Unchecked="OnFollowUpCheckChanged"/>
+                <ComboBox x:Name="FollowUpDaysBox" Width="100" Height="24" IsEnabled="False">
+                    <ComboBoxItem Content="2 gün" Tag="2"/>
+                    <ComboBoxItem Content="3 gün" Tag="3" IsSelected="True"/>
+                    <ComboBoxItem Content="5 gün" Tag="5"/>
+                    <ComboBoxItem Content="1 hafta" Tag="7"/>
+                    <ComboBoxItem Content="2 hafta" Tag="14"/>
+                </ComboBox>
+            </StackPanel>
         </Grid>
 
-        <ItemsControl Grid.Row="4" x:Name="AttachList" Margin="100,2,12,2">
-            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-            <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                    <Border Background="{DynamicResource AccentSubtleBrush}" BorderBrush="{DynamicResource AccentSubtleBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="8,2" Margin="0,0,6,4">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE723;" FontFamily="{StaticResource Icons}" Margin="0,1,6,0" Foreground="{DynamicResource IconBrush}"/>
-                            <TextBlock Text="{Binding Converter={x:Static v:FileNameConverter.Instance}}" VerticalAlignment="Center"/>
-                            <Button Content="&#xE711;" FontFamily="{StaticResource Icons}" FontSize="9" Margin="8,0,0,0" Padding="2,0" MinHeight="0" Style="{StaticResource SubtleButton}" Click="OnRemoveAttach" Tag="{Binding}" ToolTip="{local:Tr 'Eki kaldır'}"/>
-                        </StackPanel>
-                    </Border>
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
-        </ItemsControl>
+        <StackPanel Grid.Row="4" Margin="100,2,12,2">
+            <ItemsControl x:Name="AttachList">
+                <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Background="{DynamicResource AccentSubtleBrush}" BorderBrush="{DynamicResource AccentSubtleBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="8,2" Margin="0,0,6,4">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE723;" FontFamily="{StaticResource Icons}" Margin="0,1,6,0" Foreground="{DynamicResource IconBrush}"/>
+                                <TextBlock Text="{Binding Converter={x:Static v:FileNameConverter.Instance}}" VerticalAlignment="Center"/>
+                                <Button Content="&#xE711;" FontFamily="{StaticResource Icons}" FontSize="9" Margin="8,0,0,0" Padding="2,0" MinHeight="0" Style="{StaticResource SubtleButton}" Click="OnRemoveAttach" Tag="{Binding}" ToolTip="{local:Tr 'Eki kaldır'}"/>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <Border x:Name="LargeAttachmentWarning" Visibility="Collapsed"
+                    Background="{DynamicResource StatusWarningBgBrush}" BorderBrush="{DynamicResource StatusWarningBorderBrush}"
+                    BorderThickness="1" CornerRadius="4" Padding="8,4" Margin="0,2,0,4">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button x:Name="ZipAttachmentsBtn" Click="OnZipAttachments" Style="{StaticResource PrimaryButton}" Margin="0,0,6,0" Padding="8,2" Content="ZIP Olarak Sıkıştır"/>
+                        <Button x:Name="DismissWarningBtn" Click="OnDismissLargeAttachmentWarning" Style="{StaticResource SubtleButton}" Padding="4,2" Content="Yoksay"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="&#xE7BA;" FontFamily="{StaticResource Icons}" Foreground="{DynamicResource StatusWarningBrush}" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="LargeAttachmentText" VerticalAlignment="Center" Foreground="{DynamicResource StatusWarningBrush}" FontWeight="SemiBold"
+                                   Text="Eklerin toplam boyutu 20 MB'ı aşıyor. Dosyaları ZIP olarak sıkıştırmanız önerilir."/>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+        </StackPanel>
 
         <Border Grid.Row="5" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="0,1,0,0">
             <wv2:WebView2 x:Name="Editor" DefaultBackgroundColor="White"/>

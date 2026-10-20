@@ -48,6 +48,7 @@ public sealed partial class StepAttachmentWindow : Window
         viewBar.Children.Add(Button(L.T("Sığdır"),Fit));viewBar.Children.Add(Button(L.T("İzometrik"),()=>View(.7,.5)));viewBar.Children.Add(Button(L.T("Üst"),()=>View(-Math.PI/2,Math.PI/2)));viewBar.Children.Add(Button(L.T("Alt"),()=>View(-Math.PI/2,-Math.PI/2)));viewBar.Children.Add(Button(L.T("Ön"),()=>View(-Math.PI/2,0)));viewBar.Children.Add(Button(L.T("Arka"),()=>View(Math.PI/2,0)));viewBar.Children.Add(Button(L.T("Sağ"),()=>View(0,0)));viewBar.Children.Add(Button(L.T("Sol"),()=>View(Math.PI,0)));var normalButton=Button(L.T("Yüzeye dik bak (N)"),async()=>await ExecuteAsync(LookAtSelectedFaceAsync));normalButton.ToolTip=L.T("Seçili yüzeyin normaline dik bakar. Aynı tuşa tekrar basınca arka taraftan bakar.");viewBar.Children.Add(normalButton);
         viewBar.Children.Add(_showEdges);viewBar.Children.Add(_showPmi);viewBar.Children.Add(new TextBlock{Text=L.T("Seçim:"),VerticalAlignment=VerticalAlignment.Center});viewBar.Children.Add(_mode);
         viewBar.Children.Add(Button(L.T("Seçimi temizle (Esc)"),ClearSelection));viewBar.Children.Add(_darkSceneCheck);
+        viewBar.Children.Add(Button(L.T("Revizyon Karşılaştır"),async()=>await CompareRevisionAsync()));
         _showEdges.Checked+=(_,_)=>_edgeVisual.Content=_edges;_showEdges.Unchecked+=(_,_)=>_edgeVisual.Content=null;
         _showPmi.Checked+=(_,_)=>{_pmiVisual.Content=_pmiGraphics;Fit();};_showPmi.Unchecked+=(_,_)=>{_pmiVisual.Content=null;Fit();};
         _mode.SelectionChanged+=(_,_)=>{_hovered=null;_hoverInfo.Text="";_status.Text=L.T("Seçim filtresi değişti; nesne listeniz korunuyor.");};
@@ -246,4 +247,23 @@ public sealed partial class StepAttachmentWindow : Window
     async Task MeasureAsync()=>await EvaluateSessionAsync();
     async Task EnvelopeAsync(bool cylinder)=>await UpdateStockAsync(cylinder);
 
+    async Task CompareRevisionAsync()
+    {
+        var oldPath = await RevisionLookup.PickOlderAsync(this, _sourcePath);
+        if (string.IsNullOrEmpty(oldPath) || !File.Exists(oldPath)) return;
+        if (RevisionLookup.ShowDiff != null) { await RevisionLookup.ShowDiff(oldPath, _sourcePath); return; }
+
+        _status.Text = L.T("Önceki revizyonla karşılaştırılıyor...");
+        try
+        {
+            var report = await RevisionService.CompareAsync(oldPath, _sourcePath, () => _worker, _life.Token);
+            var win = new RevisionDiffWindow(report) { Owner = this };
+            win.Show();
+            _status.Text = L.F("Revizyon karşılaştırma tamamlandı: {0} fark bulundu.", report.TotalChanges);
+        }
+        catch (Exception ex)
+        {
+            _status.Text = L.T("Karşılaştırma hatası: ") + ex.Message;
+        }
+    }
 }

@@ -14,6 +14,10 @@ using MailStudio.Services;
 using MailStudio.Services.Calendar;
 using MailStudio.Views;
 using MailStudio.Views.Calendar;
+using MailStudio.Views.Quotes;
+using MailStudio.Views.Templates;
+using MailStudio.Views.QuickSteps;
+using MailStudio.Views.Snooze;
 
 namespace MailStudio;
 
@@ -56,15 +60,27 @@ public partial class MainWindow
             ("mail: address links and address book", StepAddressBook),
             ("mail: new mail, reply and message window", StepCompose),
             ("mail: attachments open in the viewers", StepAttachments),
+            ("mail: revision comparison (candidates, chooser, Excel/DXF/STEP/PDF)", StepRevisionDiff),
             ("calendar: every view, overlap with the mail view", StepCalendar),
             ("calendar: appointment form", StepEventForm),
             ("tasks: list, quick add, mail to task", StepTasks),
+            ("quote desk: list, search, status, Excel export, RFQ detection, dialog, airspace", StepQuoteDesk),
+            ("templates and quick steps: template insertion, manager dialog, macro execution", StepTemplatesAndQuickSteps),
+            ("mail snooze: hide, filter, wake up unread with the real date", StepSnooze),
+            ("unified inbox and search folders: all inboxes node, saved searches, criteria execution", StepUnifiedInboxAndSearchFolders),
+            ("newsletters and unsubscribe: header parsing, unsubscribe bar, filter tab, move to newsletters rule", StepNewslettersAndUnsubscribe),
+            ("calendar sync: off by default, consent, no request without an address, calendar choice", StepCalendarSync),
+            ("rules: validation and real execution on new mail", StepRules),
+            ("undo send and send later: undo, failed send, outbox window", StepUndoSendAndOutbox),
+            ("follow-up: overdue task, reminder draft, reply closes it", StepFollowUp),
+            ("small polish: large attachment warning, contact card, at-mentions", StepSmallPolish),
             ("reminders window", StepReminders),
             ("other windows: accounts, signatures, rules, skills, agents", StepOtherWindows),
             ("dark theme screenshots", StepDarkTheme),
         };
         foreach (var (name, run) in steps)
         {
+            if (_stopRequested) break;
             Log("STEP", name);
             var sw = Stopwatch.StartNew();
             try
@@ -143,8 +159,44 @@ public partial class MainWindow
             var file = $"{++_stShot:00}-{string.Concat(name.Select(c => char.IsLetterOrDigit(c) ? c : '-'))}.png";
             bmp.Save(Path.Combine(_stDir, file), System.Drawing.Imaging.ImageFormat.Png);
             Log("SHOT", file);
+            // A locked screen or a switched-off display gives white/black pictures: WPF does not render then.
+            if (IsBlank(bmp))
+            {
+                Fail("screenshot " + name, $"{file} is empty (one colour). The screen is probably locked or asleep - keep it on while the test runs.");
+                if (++_blankShots >= 3 && !_blankAborted)
+                {
+                    _blankAborted = true;
+                    Fail("self-test", "three empty screenshots: stopped (results without pictures prove nothing).");
+                    _stopRequested = true;
+                }
+            }
         }
         catch (Exception ex) { Warn("screenshot " + name, ex.Message); }
+    }
+
+    int _blankShots; bool _blankAborted, _stopRequested;
+
+    /// <summary>
+    /// True when the window content (below the title bar, inside the frame) has at most 3 exact colours - what
+    /// PrintWindow returns while the session is locked. A white drawing or page still has anti-aliased text and lines.
+    /// </summary>
+    static bool IsBlank(System.Drawing.Bitmap bmp)
+    {
+        if (bmp.Width < 120 || bmp.Height < 120) return false;
+        var rect = new System.Drawing.Rectangle(12, 40, bmp.Width - 24, bmp.Height - 52);
+        var data = bmp.LockBits(rect, System.Drawing.Imaging.ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        try
+        {
+            var colours = new HashSet<int>();
+            var row = new int[rect.Width];
+            for (int y = 0; y < rect.Height; y += 2)
+            {
+                Marshal.Copy(data.Scan0 + y * data.Stride, row, 0, rect.Width);
+                foreach (var px in row) { colours.Add(px & 0xFFFFFF); if (colours.Count > 3) return false; }
+            }
+            return true;
+        }
+        finally { bmp.UnlockBits(data); }
     }
 
     static IEnumerable<DependencyObject> Tree(DependencyObject root)
@@ -189,6 +241,14 @@ public partial class MainWindow
         if (natives.Count > 0 || overlays.Count > 0) Pass($"{where}: airspace checked ({natives.Count} native, {overlays.Count} overlay)");
     }
 
+    /// <summary>List rows show user data (mail subjects, names): not part of the interface text check.</summary>
+    static bool IsInsideItemsControl(DependencyObject d)
+    {
+        for (var p = VisualTreeHelper.GetParent(d); p != null; p = VisualTreeHelper.GetParent(p))
+            if (p is ListBoxItem or ListViewItem or DataGridRow or TreeViewItem or ComboBoxItem) return true;
+        return false;
+    }
+
     static bool IsAncestor(DependencyObject a, DependencyObject b)
     {
         for (var d = b; d != null; d = VisualTreeHelper.GetParent(d)) if (d == a) return true;
@@ -220,6 +280,12 @@ public partial class MainWindow
         }
         if (bad.Count > 0) Fail($"{where}: untranslated", string.Join(" | ", bad.Take(12)));
         else Pass($"{where}: texts translated");
+        // Turkish letters in the English UI with no translation at all (user content is marked Skip and not checked)
+        var turkish = new SortedSet<string>();
+        foreach (var tb in Tree(w).OfType<TextBlock>())
+            if (tb.IsVisible && !UiTranslator.GetSkip(tb) && !L.Has(tb.Text) && tb.Text.IndexOfAny("çğışöüÇĞİŞÖÜ".ToCharArray()) >= 0 && !IsInsideItemsControl(tb))
+                turkish.Add(tb.Text.Length > 60 ? tb.Text[..60] + "…" : tb.Text);
+        if (turkish.Count > 0) Warn($"{where}: Turkish text without translation", string.Join(" | ", turkish.Take(10)));
     }
 
     /// <summary>Clicks the window's Close / Cancel button like a user and expects the window to go away.</summary>
@@ -376,7 +442,7 @@ public partial class MainWindow
         Check(link != null && link.ContextMenu != null, "sender is a clickable link with a menu");
         await OpenAndInspect("address book", () => OnAddressBook(this, new RoutedEventArgs()));
         await OpenAndInspect("address book (pick)", () => new ContactsWindow(pickMode: true) { Owner = this }.ShowDialog());
-        await OpenAndInspect("contact card", () => new ContactEditWindow(new Contact { FirstName = "Self", LastName = "Test", Email = "self.test@example.test" }) { Owner = this }.ShowDialog());
+        await OpenAndInspect("contact edit", () => new ContactEditWindow(new Contact { FirstName = "Self", LastName = "Test", Email = "self.test@example.test" }) { Owner = this }.ShowDialog());
         await OpenAndInspect("contact group", () => new GroupEditWindow(new ContactGroup { Name = "Self-test" }) { Owner = this }.ShowDialog());
     }
 
@@ -390,6 +456,7 @@ public partial class MainWindow
             if (w is ComposeWindow c) await Until(() => c.IsEditorInitialized, 15000);
             await Wait(800); Shot(w, "new mail"); CheckTexts(w, "new mail"); CheckAirspace(w, "new mail");
         });
+        await OpenAndInspect("missing attachment dialog", () => MissingAttachmentDialog.Show(this, "ektedir"));
         foreach (var c in OwnedWindows.OfType<ComposeWindow>().ToList()) ForceClose(c);
         InlineReplyCheck();
     }
@@ -434,6 +501,92 @@ public partial class MainWindow
                 foreach (var extra in Application.Current.Windows.OfType<Window>().Where(x => !before.Contains(x) && x.IsVisible).ToList()) extra.Close();
                 await Until(() => open.IsCompleted, 3000);
             }
+        }
+    }
+
+    async Task StepRevisionDiff()
+    {
+        SwitchModule(PimModule.Mail);
+        var inbox = _roots.SelectMany(r => r.Children).FirstOrDefault(f => f.AccountId == DemoData.AccountId && f.SortOrder == 0);
+        if (inbox != null) { SelectFolder(inbox); await Wait(500); }
+        var all = _cache.GetHeaders(DemoData.AccountId, "INBOX", 200);
+        MailHeader? MailWith(string file) => all.FirstOrDefault(h => _cache.GetAttachments(h.AccountId, h.Folder, h.Uid).Any(a => a.FileName == file));
+
+        // 1. earlier revisions are found in the same correspondent's mails
+        var revCMail = MailWith("flange-DN100-revC.pdf");
+        Check(revCMail != null, "revision: demo mail with flange rev C");
+        if (revCMail == null) return;
+        var cands = RevisionService.FindCandidates(_cache, revCMail, "flange-DN100-revC.pdf");
+        Check(cands.Count > 0 && cands[0].FileName == "flange-DN100-revB.pdf", $"revision: rev B offered first for rev C ({string.Join(", ", cands.Select(c => c.FileName))})");
+
+        // 2. the chooser dialog: pick the proposed revision like a user
+        var revCAtt = _cache.GetAttachments(revCMail.AccountId, revCMail.Folder, revCMail.Uid).First(a => a.FileName == "flange-DN100-revC.pdf");
+        var newPath = await DownloadAttachmentAsync(revCMail, revCAtt);
+        Check(newPath != null, "revision: rev C downloaded");
+        if (newPath == null) return;
+        var before = Application.Current.Windows.OfType<Window>().ToHashSet();
+        var pickOp = Dispatcher.InvokeAsync(() => PickOlderRevisionAsync(this, newPath));
+        var chooserOpen = await Until(() => Application.Current.Windows.OfType<Window>().Any(w => !before.Contains(w) && w.IsVisible), 8000);
+        var chooser = Application.Current.Windows.OfType<Window>().FirstOrDefault(w => !before.Contains(w) && w.IsVisible);
+        Check(chooserOpen && chooser != null, "revision: chooser dialog opens");
+        string? oldPath = null;
+        if (chooser != null)
+        {
+            Shot(chooser, "revision-chooser"); CheckTexts(chooser, "revision chooser");
+            var compare = Tree(chooser).OfType<Button>().FirstOrDefault(b => TextOf(b.Content) == L.T("Karşılaştır"));
+            Check(compare != null, "revision chooser: Compare button");
+            if (compare != null) Invoke(compare); else chooser.Close();
+            oldPath = await await pickOp.Task;
+        }
+        Check(oldPath != null && Path.GetFileName(oldPath) == "flange-DN100-revB.pdf", $"revision: rev B chosen and downloaded ({Path.GetFileName(oldPath ?? "")})");
+
+        // 3. every file type gives a real, specific difference
+        async Task<RevisionDiffWindow?> Diff(string oldFile, string newFile, string label)
+        {
+            var oMail = MailWith(oldFile); var nMail = MailWith(newFile);
+            if (oMail == null || nMail == null) { Fail(label, "demo files missing"); return null; }
+            var o = await DownloadAttachmentAsync(oMail, _cache.GetAttachments(oMail.AccountId, oMail.Folder, oMail.Uid).First(a => a.FileName == oldFile));
+            var n = await DownloadAttachmentAsync(nMail, _cache.GetAttachments(nMail.AccountId, nMail.Folder, nMail.Uid).First(a => a.FileName == newFile));
+            var b = Application.Current.Windows.OfType<Window>().ToHashSet();
+            await ShowRevisionDiffAsync(o!, n!, nMail);
+            await Until(() => Application.Current.Windows.OfType<RevisionDiffWindow>().Any(w => !b.Contains(w) && w.IsVisible), 60000);
+            var win = Application.Current.Windows.OfType<RevisionDiffWindow>().FirstOrDefault(w => !b.Contains(w) && w.IsVisible);
+            Check(win != null, label + ": window opens");
+            return win;
+        }
+        RevisionDiffReport? ReportOf(RevisionDiffWindow w) => typeof(RevisionDiffWindow).GetField("_report", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)?.GetValue(w) as RevisionDiffReport;
+
+        if (await Diff("delivery-schedule-wk43.xlsx", "delivery-schedule-wk44.xlsx", "revision Excel") is { } xw)
+        {
+            var r = ReportOf(xw)!;
+            Check(r.Items.Any(i => i.Property.StartsWith("NW-1042") && i.OldValue == "120" && i.NewValue == "150"), "revision Excel: NW-1042 quantity 120 → 150");
+            await InspectWindow(xw, "revision diff excel", closeWithButton: true);
+        }
+        if (await Diff("flange-DN100-revB.dxf", "flange-DN100-revC.dxf", "revision DXF") is { } dw)
+        {
+            var r = ReportOf(dw)!;
+            Check(r.Items.Any(i => (i.NewValue ?? "").Contains("Ø20")), $"revision DXF: hole note Ø18 → Ø20 ({r.Items.Count} changes)");
+            Check(r.Items.Any(i => (i.NewValue ?? "").Contains("REV C")), "revision DXF: title block REV B → C");
+            await InspectWindow(dw, "revision diff dxf", closeWithButton: true);
+        }
+        if (await Diff("bracket-revB.stp", "bracket-revC.stp", "revision STEP") is { } sw)
+        {
+            var r = ReportOf(sw)!;
+            Check(r.Items.Any(i => i.Category is "Delik" or "Delik / Silindir" or "Hacim" or "Kutu Ölçüleri"), $"revision STEP: measured geometry changes ({string.Join(" | ", r.Items.Select(i => i.Description).Take(4))})");
+            await InspectWindow(sw, "revision diff step", closeWithButton: true);
+        }
+        if (oldPath != null)
+        {
+            var b = Application.Current.Windows.OfType<Window>().ToHashSet();
+            await ShowRevisionDiffAsync(oldPath, newPath, revCMail);
+            await Until(() => Application.Current.Windows.OfType<RevisionDiffWindow>().Any(w => !b.Contains(w) && w.IsVisible), 90000);
+            if (Application.Current.Windows.OfType<RevisionDiffWindow>().FirstOrDefault(w => !b.Contains(w) && w.IsVisible) is { } pw)
+            {
+                var r = ReportOf(pw)!;
+                Check(r.TotalChanges > 0 || r.Notes.Count > 0, $"revision PDF: result or an honest note ({r.TotalChanges} changes, notes: {string.Join(" ", r.Notes)})");
+                await InspectWindow(pw, "revision diff pdf", closeWithButton: true);
+            }
+            else Fail("revision PDF", "window did not open");
         }
     }
 
@@ -488,8 +641,9 @@ public partial class MainWindow
             await Wait(500);
         }
         Check(_tasks.Tasks.Any(t => t.Title == "Self-test task" && t.DueDate == DateTime.Today.AddDays(1)), "tasks: quick add with 'tomorrow'");
-        var items = Tree(_tasksView!).OfType<ListBoxItem>().Where(i => i.Tag is TaskItem).ToList();
-        Check(items.Count >= 5, $"tasks: list shows the tasks ({items.Count})");
+        var taskList = Tree(_tasksView!).OfType<ListBox>().FirstOrDefault();
+        var items = (taskList != null ? taskList.Items.OfType<ListBoxItem>() : Tree(_tasksView!).OfType<ListBoxItem>()).Where(i => i.Tag is TaskItem).ToList();
+        Check(_tasks.Tasks.Count >= 5 && items.Count >= 1, $"tasks: list shows the tasks ({items.Count})");
         if (items.FirstOrDefault() is { } first) { first.IsSelected = true; await Wait(400); }
         Shot(this, "tasks");
         CheckTexts(this, "tasks");
@@ -498,6 +652,427 @@ public partial class MainWindow
         MessageList.SelectedItem = m; await Until(() => _current == m, 5000);
         OnMailToTask(this, new RoutedEventArgs());
         Check(_tasks.Tasks.Any(t => t.SourceMail == $"{m.AccountId}|{m.Folder}|{m.Uid}"), "mail → task");
+    }
+
+    async Task StepQuoteDesk()
+    {
+        SwitchModule(PimModule.Quotes); await Wait(800);
+        Check(PimHost.Visibility == Visibility.Visible, "quote desk module visible");
+        Check(ReadingPane.Visibility != Visibility.Visible, "mail reading pane hidden behind quote desk");
+        CheckAirspace(this, "quotes");
+        Check(_quoteDeskView != null, "quote desk view initialized");
+        if (_quoteDeskView == null) return;
+        Check(_quoteStore.Quotes.Count >= 3, $"quote desk has quotes ({_quoteStore.Quotes.Count})");
+        Shot(this, "quotes-desk");
+        CheckTexts(this, "quotes-desk");
+
+        // search
+        var all = _quoteDeskView.RowCount;
+        _quoteDeskView.SearchText = "NW-1042"; await Wait(200);
+        Check(_quoteDeskView.RowCount >= 1 && _quoteDeskView.RowCount < all, $"quote desk search narrows the list ({_quoteDeskView.RowCount}/{all})");
+        _quoteDeskView.SearchText = ""; await Wait(200);
+
+        // status change through the same command as the ribbon; saved and the selection kept
+        var q = _quoteStore.Quotes.First(x => x.Status != QuoteStatus.Won);
+        Check(_quoteDeskView.SelectQuote(q.Id), "quote desk: select a quote");
+        _quoteDeskView.SetStatusOfSelected(QuoteStatus.Won); await Wait(200);
+        Check(new QuoteStore().Quotes.FirstOrDefault(x => x.Id == q.Id)?.Status == QuoteStatus.Won, "quote desk: status saved to quotes.json");
+
+        // Excel export
+        var xlsx = Path.Combine(_stDir, "quotes-export.xlsx");
+        QuoteStore.ExportToExcel(_quoteStore.Quotes, xlsx);
+        using (var wb = new ClosedXML.Excel.XLWorkbook(xlsx))
+            Check(wb.Worksheet(1).Cell(1, 2).GetString() == L.T("Parça No") && wb.Worksheet(1).RowsUsed().Count() == _quoteStore.Quotes.Count + 1, "quote desk: Excel export has a header row and every quote");
+
+        // RFQ detection on the demo request mail
+        var rfqMail = _cache.GetHeaders(DemoData.AccountId, "INBOX", 200).FirstOrDefault(h => h.Subject.Contains("120"));
+        if (rfqMail != null)
+        {
+            var atts = _cache.GetAttachments(rfqMail.AccountId, rfqMail.Folder, rfqMail.Uid).Select(a => a.FileName).ToList();
+            var (isRfq, found) = QuoteStore.DetectRfq(rfqMail.Subject, rfqMail.Preview, $"{rfqMail.FromName} <{rfqMail.FromAddress}>", atts);
+            Check(isRfq && found.Quantity == 120, $"quote desk: demo request recognised (qty {found.Quantity}, part {found.PartNumber})");
+        }
+
+        var editDlg = new QuoteEditDialog(_quoteStore.Quotes.First(), isNew: false) { Owner = this };
+        editDlg.Show(); await Wait(400);
+        Shot(editDlg, "quote-edit-dialog");
+        CheckTexts(editDlg, "quote-edit-dialog");
+        editDlg.Close();
+
+        SwitchModule(PimModule.Mail); await Wait(300);
+    }
+
+    async Task StepTemplatesAndQuickSteps()
+    {
+        var tmplWin = new TemplateManagerWindow(_templateStore, this);
+        tmplWin.Show(); await Wait(400);
+        Check(tmplWin.IsVisible, "template manager window opened");
+        Shot(tmplWin, "templates-manager");
+        CheckTexts(tmplWin, "templates-manager");
+        tmplWin.Close();
+
+        // variables are filled from the mail
+        var tmpl = _templateStore.Templates.FirstOrDefault(t => t.Body.Contains("{Ad}") || t.Body.Contains("{FirstName}"));
+        Check(tmpl != null, "templates: a template with a name variable exists");
+        if (tmpl != null)
+        {
+            var text = TemplateEngine.Render(tmpl.Body, TemplateContext.Create(to: "\"Anna Keller\" <anna.keller@northwind-machining.example>", subject: "NW-1042 rev C", signature: "MailStudio", bodyForPartExtraction: "NW-1042"));
+            Check(text.Contains("Anna") && !text.Contains("{Ad}") && !text.Contains("{FirstName}"), "templates: {Ad} filled with the recipient's first name");
+        }
+
+        var qsWin = new QuickStepManagerWindow(_quickStepStore, _templateStore, this);
+        qsWin.Show(); await Wait(400);
+        Check(qsWin.IsVisible, "quick steps manager window opened");
+        Shot(qsWin, "quickstep-manager");
+        CheckTexts(qsWin, "quickstep-manager");
+        qsWin.Close();
+
+        // a quick step really changes the mail
+        var mail = _messages.FirstOrDefault(m => !m.IsFlagged);
+        var flagStep = new QuickStepItem { Name = "Self-test flag", Actions = { new QuickStepAction { Type = QuickStepActionType.Flag }, new QuickStepAction { Type = QuickStepActionType.MarkRead } } };
+        if (mail != null)
+        {
+            var executed = await ExecuteQuickStepAsync(flagStep, mail);
+            var stored = _cache.GetHeaders(mail.AccountId, mail.Folder, 500).FirstOrDefault(h => h.Uid == mail.Uid);
+            Check(executed && mail.IsFlagged && stored?.IsFlagged == true && stored.IsRead, "quick step: flag + read applied and saved");
+            Shot(this, "quickstep-executed");
+        }
+    }
+
+    async Task StepSnooze()
+    {
+        SwitchModule(PimModule.Mail); await Wait(300);
+        var dlg = new SnoozeCustomDateDialog { Owner = this };
+        dlg.Show(); await Wait(400);
+        Check(dlg.IsVisible, "snooze dialog opened");
+        Shot(dlg, "snooze-dialog");
+        CheckTexts(dlg, "snooze-dialog");
+        await CheckCloseButton(dlg, "snooze-dialog");
+
+        var m = _messages.FirstOrDefault(x => x.Uid == 2) ?? _messages.FirstOrDefault();
+        if (m == null) return;
+        var realDate = m.Date;
+        MessageList.SelectedItem = m; await Wait(300);
+        SnoozeSelected(DateTimeOffset.Now.AddSeconds(2));
+        await Wait(300);
+        Check(!MessageList.Items.OfType<MailHeader>().Any(h => h.Uid == m.Uid), "snoozed mail hidden from the list");
+        Shot(this, "snooze-mail-hidden");
+        if (FilterSnoozed != null)
+        {
+            FilterSnoozed.IsChecked = true; await Wait(400);
+            Check(MessageList.Items.OfType<MailHeader>().Any(h => h.Uid == m.Uid), "snoozed mail under the Snoozed filter");
+            Shot(this, "snooze-filter-tab");
+            FilterAll.IsChecked = true; await Wait(300);
+        }
+        await Wait(2500);
+        CheckSnoozeDue(); await Wait(800);
+        var back = MessageList.Items.OfType<MailHeader>().FirstOrDefault(h => h.Uid == m.Uid);
+        Check(back != null, "snoozed mail comes back when its time is up");
+        var stored = _cache.GetHeaders(m.AccountId, m.Folder, 500).FirstOrDefault(h => h.Uid == m.Uid);
+        Check(stored != null && !stored.IsRead, "returned mail is unread");
+        Check(stored != null && Math.Abs((stored.Date - realDate).TotalSeconds) < 1, "returned mail keeps its real date");
+        Shot(this, "snooze-mail-restored");
+    }
+
+    async Task StepRules()
+    {
+        SwitchModule(PimModule.Mail);
+        var acc = _store.Accounts.First();
+        var inbox = _cache.GetHeaders(acc.Id, "INBOX", 200);
+        var rule = new MailRule
+        {
+            Name = "Self-test: NW-1042 → category", Enabled = true, StopProcessing = false,
+            Conditions = { new RuleCondition { Field = "subject", Value = "NW-1042" } },
+            Actions = { new RuleAction { Type = "set_category", Value = "Self-test" }, new RuleAction { Type = "mark_as_flagged" } }
+        };
+        Check(RuleEngine.Validate(rule) == null, "rules: valid rule accepted");
+        Check(RuleEngine.Validate(new MailRule { Name = "x", Conditions = { new RuleCondition { Field = "from", Value = "" } }, Actions = { new RuleAction { Type = "move_to_trash" } } }) != null, "rules: empty condition refused");
+        var matching = inbox.Where(h => h.Subject.Contains("NW-1042")).ToList();
+        _ruleStore.Rules.Add(rule); _ruleStore.Save();
+        await RunRulesOnFreshAsync(acc, inbox);
+        _ruleStore.Rules.Remove(rule); _ruleStore.Save();
+        var after = _cache.GetHeaders(acc.Id, "INBOX", 200);
+        Check(matching.Count > 0 && matching.All(m => after.First(h => h.Uid == m.Uid) is { IsFlagged: true, Category: "Self-test" }), $"rules: applied to the {matching.Count} matching new mails");
+        Check(after.Where(h => !h.Subject.Contains("NW-1042")).All(h => h.Category != "Self-test"), "rules: other mails untouched");
+    }
+
+    async Task StepUndoSendAndOutbox()
+    {
+        var acc = _store.Accounts.First();
+        // undo: the mail waits, nothing is sent, Undo brings the composer back
+        QueueSend(acc, new ComposeRequest { To = "anna.keller@northwind-machining.example", Subject = "Self-test undo", Body = "x" }, 30);
+        await Wait(300);
+        Check(UndoSendBar.Visibility == Visibility.Visible, "undo send: bar shown");
+        Shot(this, "undo-send-bar");
+        CheckTexts(this, "undo send bar");
+        var before = OwnedWindows.OfType<ComposeWindow>().ToHashSet();
+        OnUndoSendClick(this, new RoutedEventArgs());
+        Check(await Until(() => OwnedWindows.OfType<ComposeWindow>().Any(c => !before.Contains(c)), 8000), "undo send: the mail is back in a composer");
+        foreach (var c in OwnedWindows.OfType<ComposeWindow>().Where(c => !before.Contains(c)).ToList()) ForceClose(c);
+        Check(!_outbox.Items.Any(i => i.Request.Subject == "Self-test undo"), "undo send: removed from the outbox");
+
+        // a send that fails after the undo window (demo mode never sends) gives the mail back, it is not lost
+        QueueSend(acc, new ComposeRequest { To = "anna.keller@northwind-machining.example", Subject = "Self-test failed send", Body = "x" }, 1);
+        before = OwnedWindows.OfType<ComposeWindow>().ToHashSet();
+        Check(await Until(() => OwnedWindows.OfType<ComposeWindow>().Any(c => !before.Contains(c)), 10000), "undo send: a failed send reopens the composer");
+        foreach (var c in OwnedWindows.OfType<ComposeWindow>().Where(c => !before.Contains(c)).ToList()) ForceClose(c);
+
+        // send later: listed in the outbox window with its time; deleting it removes it
+        ScheduleSend(acc, new ComposeRequest { To = "tom.becker@contoso-aero.example", Subject = "Self-test later", Body = "x" }, DateTimeOffset.Now.AddDays(1));
+        Check(_outbox.Items.Any(i => i.Request.Subject == "Self-test later" && i.Status == OutboxStatus.Scheduled), "send later: queued");
+        var w = new OutboxWindow(_outbox, (_, _) => { }, () => { }, this);
+        w.Show(); await Wait(400);
+        Shot(w, "outbox-window"); CheckTexts(w, "outbox window");
+        Check(Tree(w).OfType<TextBlock>().Any(t => t.Text == "Self-test later"), "outbox window lists the scheduled mail");
+        await CheckCloseButton(w, "outbox window");
+        _outbox.Remove(_outbox.Items.First(i => i.Request.Subject == "Self-test later").Id);
+        UpdateUndoBar();
+    }
+
+    async Task StepFollowUp()
+    {
+        var sent = new FollowUpItem
+        {
+            AccountId = DemoData.AccountId, MessageId = "selftest-followup@mailstudio.example", Subject = "Self-test follow-up",
+            Recipients = "tom.becker@contoso-aero.example", SentDate = DateTimeOffset.Now.AddDays(-4), DueDays = 3, DueDate = DateTimeOffset.Now.AddDays(-1)
+        };
+        _followUpStore.Add(sent);
+        var created = _followUpStore.CheckExpired(_tasks);
+        var task = _tasks.Tasks.FirstOrDefault(t => t.FollowUpMessageId == sent.MessageId);
+        Check(created >= 1 && task != null && task.Category == "Cevap bekleniyor", "follow-up: overdue → task in 'Waiting for reply'");
+        SwitchModule(PimModule.Tasks); await Wait(600);
+        Shot(this, "tasks-waiting-for-reply");
+        CheckTexts(this, "tasks waiting for reply");
+        if (task != null)
+        {
+            var before = OwnedWindows.OfType<ComposeWindow>().ToHashSet();
+            ((ITaskHost)this).ComposeReminder(task);
+            Check(await Until(() => OwnedWindows.OfType<ComposeWindow>().Any(c => !before.Contains(c)), 8000), "follow-up: reminder mail opens (not sent)");
+            foreach (var c in OwnedWindows.OfType<ComposeWindow>().Where(c => !before.Contains(c)).ToList()) ForceClose(c);
+            // the answer arrives → follow-up and task close by themselves
+            var reply = new MailHeader { AccountId = DemoData.AccountId, Folder = "INBOX", Uid = 9999, FromAddress = "tom.becker@contoso-aero.example", Subject = "Re: Self-test follow-up", InReplyTo = "<selftest-followup@mailstudio.example>" };
+            var resolved = _followUpStore.CheckReplies(new[] { reply }, _tasks);
+            Check(resolved == 1 && _tasks.Find(task.Id)?.Completed == true, "follow-up: the reply closes it and completes the task");
+        }
+        SwitchModule(PimModule.Mail); await Wait(300);
+    }
+
+    async Task StepUnifiedInboxAndSearchFolders()
+    {
+        // 1. Unified inbox
+        var unifiedNode = _roots.FirstOrDefault(r => r.IsUnifiedInbox);
+        Check(unifiedNode != null, "unified inbox node exists in folder tree");
+        if (unifiedNode != null)
+        {
+            SelectFolder(unifiedNode); await Wait(600);
+            Check(MessageList.Items.Count >= 8, $"unified inbox lists demo mails ({MessageList.Items.Count})");
+            CheckAirspace(this, "unified-inbox");
+            Shot(this, "unified-inbox");
+            CheckTexts(this, "unified-inbox");
+        }
+
+        // 2. Search folders root
+        var searchRoot = _roots.FirstOrDefault(r => r.IsSearchFolderRoot);
+        Check(searchRoot != null && searchRoot.Children.Count >= 3, "search folders root exists with default folders");
+
+        // 3. Search folder: Unread
+        var unreadFolder = searchRoot?.Children.FirstOrDefault(c => c.SearchFolderId == "search-unread");
+        Check(unreadFolder != null, "search folder 'Okunmamış' found");
+        if (unreadFolder != null)
+        {
+            var demoMails = _cache.GetAllHeaders().Take(2).ToList();
+            foreach (var dm in demoMails)
+                _cache.SetFlags(dm.AccountId, dm.Folder, dm.Uid, read: false);
+            MessageList.SelectedItem = null;
+            _current = null;
+            SelectFolder(unreadFolder); await Wait(600);
+            var unreadItems = MessageList.Items.OfType<MailHeader>().ToList();
+            Check(unreadItems.Count >= 1 && unreadItems.All(h => !h.IsRead), $"search folder unread contains only unread mails ({unreadItems.Count})");
+            Shot(this, "search-folder-unread");
+        }
+
+        // 4. Search folder: Flagged
+        var flaggedFolder = searchRoot?.Children.FirstOrDefault(c => c.SearchFolderId == "search-flagged");
+        Check(flaggedFolder != null, "search folder 'Bayraklı' found");
+        if (flaggedFolder != null)
+        {
+            SelectFolder(flaggedFolder); await Wait(600);
+            var flaggedItems = MessageList.Items.OfType<MailHeader>().ToList();
+            Check(flaggedItems.Count >= 1 && flaggedItems.All(h => h.IsFlagged), $"search folder flagged contains only flagged mails ({flaggedItems.Count})");
+            Shot(this, "search-folder-flagged");
+        }
+
+        // 5. Search folder: This Week's Attachments
+        var attFolder = searchRoot?.Children.FirstOrDefault(c => c.SearchFolderId == "search-this-week-attachments");
+        Check(attFolder != null, "search folder 'Bu haftanın ekli mailleri' found");
+        if (attFolder != null)
+        {
+            SelectFolder(attFolder); await Wait(600);
+            var attItems = MessageList.Items.OfType<MailHeader>().ToList();
+            Check(attItems.Count >= 1 && attItems.All(h => h.HasAttachments), $"search folder attachments contains only mails with attachments ({attItems.Count})");
+            Shot(this, "search-folder-attachments");
+        }
+
+        // 6. SearchFolderDialog UI
+        var sfDlg = new Views.SearchFolders.SearchFolderDialog();
+        sfDlg.Show(); await Wait(400);
+        Check(sfDlg.IsVisible, "SearchFolderDialog opened successfully");
+        Shot(sfDlg, "search-folder-dialog");
+        CheckTexts(sfDlg, "search-folder-dialog");
+        sfDlg.Close();
+
+        // Restore to inbox
+        if (unifiedNode != null) { SelectFolder(unifiedNode); await Wait(400); }
+        Pass("unified inbox and search folders");
+    }
+
+    async Task StepNewslettersAndUnsubscribe()
+    {
+        // 1. Select the demo newsletter mail (Uid = 7, Northwind Newsletter)
+        var newsletterMail = MessageList.Items.OfType<MailHeader>().FirstOrDefault(m => m.Uid == 7);
+        Check(newsletterMail != null, "newsletter demo mail (Uid=7) found");
+        if (newsletterMail != null)
+        {
+            MessageList.SelectedItem = newsletterMail;
+            await Until(() => _current == newsletterMail && _currentContent != null, 8000);
+            await Wait(600);
+
+            // 2. UnsubscribeBar visibility and buttons
+            Check(UnsubscribeBar.Visibility == Visibility.Visible, "UnsubscribeBar visible for newsletter mail");
+            Check(UnsubscribeButton.IsVisible, "UnsubscribeButton visible");
+            Check(MoveToNewslettersButton.IsVisible, "MoveToNewslettersButton visible");
+            Shot(this, "newsletter-reading-pane");
+            CheckAirspace(this, "newsletter reading pane");
+            CheckTexts(this, "newsletter reading pane");
+
+            // 3. Filter tab 'Bültenler'
+            if (FilterNewsletters != null && FilterAll != null)
+            {
+                FilterNewsletters.IsChecked = true; await Wait(400);
+                var filtered = MessageList.Items.OfType<MailHeader>().ToList();
+                Check(filtered.Any(h => h.Uid == 7), "newsletter mail visible under Bültenler filter");
+                Check(filtered.All(h => NewsletterHelper.IsNewsletter(h, _ruleStore)), "all mails under Bültenler filter are newsletters");
+                Shot(this, "newsletter-filter-tab");
+
+                // Switch back to 'Tümü'
+                FilterAll.IsChecked = true; await Wait(300);
+            }
+
+            // 4. Test unsubscribe mail draft opening
+            OpenUnsubscribeMailDraft("mailto:unsubscribe@northwind-machining.example?subject=unsubscribe");
+            await Wait(500);
+            var composeWin = OwnedWindows.OfType<ComposeWindow>().FirstOrDefault();
+            Check(composeWin != null, "unsubscribe compose draft opened");
+            if (composeWin != null)
+            {
+                var toBox = composeWin.FindName("ToBox") as Views.RecipientBox;
+                Check(toBox != null && toBox.Text.Contains("unsubscribe@northwind-machining.example"), "compose To contains unsubscribe address");
+                Shot(composeWin, "newsletter-unsubscribe-compose");
+                CheckTexts(composeWin, "unsubscribe compose");
+                ForceClose(composeWin);
+            }
+
+            // 5. Test 'Bu göndereni her zaman Bültenler klasörüne taşı'
+            await AlwaysMoveSenderToNewslettersAsync(newsletterMail);
+            await Wait(400);
+            Check(_ruleStore.Rules.Any(r => r.Conditions.Any(c => c.Field == "from" && (c.Value ?? "").Contains("news@northwind-machining.example"))), "rule added to move sender to Newsletters folder");
+        }
+        Pass("newsletters and unsubscribe");
+    }
+
+    async Task StepCalendarSync()
+    {
+        var syncAcc = new AccountConfig { Id = "sync-demo-account", DisplayName = "Sync Demo", Email = "sync@example.com", AuthType = AuthType.Google, EnableCalendarSync = true };
+        await OpenAndInspect("account settings (calendar sync)", () => new AccountWindow(syncAcc, _settings, _oauth) { Owner = this }.ShowDialog(), async w =>
+        {
+            await InspectWindow(w, "account-calendar-sync", closeWithButton: false);
+            var chk = Tree(w).OfType<CheckBox>().FirstOrDefault(c => c.Name == "CalendarSyncCheck");
+            Check(chk != null && chk.IsChecked == true, "account window: calendar sync checked");
+            var notice = Tree(w).OfType<Border>().FirstOrDefault(b => b.Name == "CalendarConsentNotice");
+            Check(notice != null && notice.Visibility == Visibility.Visible, "account window: separate calendar consent explained");
+            w.Close();
+        });
+
+        SwitchModule(PimModule.Calendar); await Wait(800);
+        Check(Tree(this).OfType<Button>().Any(b => TextOf(b.Content).Contains(L.T("Şimdi Eşitle"))), "calendar ribbon: Sync now");
+        Shot(this, "calendar-sync-ribbon");
+
+        // no account with sync on → a clear message, nothing is contacted
+        var err = "";
+        try { await SyncCalendarsAsync(); } catch (Exception ex) { err = ex.Message; }
+        Check(err == L.T("Takvim eşitlemesi açık bir hesap yok. Hesap ayarlarında 'Takvim etkinliklerini eşitle' seçeneğini aç."), "calendar sync: off by default, says so");
+
+        // turned on for an account without a CalDAV address: refused before any network use; the event form offers that calendar
+        var demo = _store.Accounts.First();
+        demo.EnableCalendarSync = true;
+        try
+        {
+            err = "";
+            try { await SyncCalendarsAsync(); } catch (Exception ex) { err = ex.Message; }
+            Check(err.Contains("CalDAV"), $"calendar sync: no address → no request ({err})");
+            await OpenAndInspect("appointment form with account calendar", () => _calendarView!.NewEvent(false), async w =>
+            {
+                var combo = Tree(w).OfType<ComboBox>().FirstOrDefault(c => c.Items.OfType<ComboBoxItem>().Any(i => (i.Tag as string) == demo.Id));
+                Check(combo != null, "event form: the synced account calendar can be chosen");
+                Shot(w, "event-form-calendar-choice");
+                w.Close();
+                await Task.CompletedTask;
+            }, closeWithButton: false);
+        }
+        finally { demo.EnableCalendarSync = false; }
+        SwitchModule(PimModule.Mail); await Wait(300);
+    }
+
+    async Task StepSmallPolish()
+    {
+        // 1. Contact Card Window from reading pane sender link
+        await OpenAndInspect("contact card", () => OpenContactCard("Anna Keller", "anna.keller@northwind-machining.example"), async w =>
+        {
+            await InspectWindow(w, "contact-card", closeWithButton: false);
+            var closeBtn = Tree(w).OfType<Button>().FirstOrDefault(b => TextOf(b.Content) == L.T("Kapat") || b.IsCancel);
+            Check(closeBtn != null, "contact card: close button present");
+            if (closeBtn != null) Invoke(closeBtn);
+        });
+
+        // 2. ComposeWindow with large attachment warning (>20MB) and ZIP compression
+        await OpenAndInspect("compose large attachment", () => OnNewMail(this, new RoutedEventArgs()), async w =>
+        {
+            if (w is ComposeWindow c)
+            {
+                await Until(() => c.IsEditorInitialized, 15000);
+                var largeFile = Path.Combine(Path.GetTempPath(), "selftest-large-" + Guid.NewGuid().ToString("N") + ".dat");
+                using (var fs = new FileStream(largeFile, FileMode.Create, FileAccess.Write))
+                {
+                    fs.SetLength(22 * 1024 * 1024);
+                }
+                c.AddAttachmentFiles(new[] { largeFile });
+                await Wait(400);
+
+                var warningBorder = c.FindName("LargeAttachmentWarning") as Border;
+                Check(warningBorder != null && warningBorder.IsVisible, "large attachment warning banner is visible");
+                Shot(c, "compose-large-attachment-warning");
+                CheckTexts(c, "compose-large-attachment-warning");
+
+                // Click ZIP button
+                var zipBtn = c.FindName("ZipAttachmentsBtn") as Button;
+                Check(zipBtn != null, "compose: zip attachments button exists");
+                if (zipBtn != null) Invoke(zipBtn);
+                await Wait(500);
+
+                Check(warningBorder == null || !warningBorder.IsVisible, "large attachment warning collapsed after ZIP");
+
+                // 3. @ mention in compose window
+                await c.InsertMentionAsync("Anna Keller", "anna.keller@northwind-machining.example");
+                await Wait(400);
+                Shot(c, "compose-at-mention");
+                CheckTexts(c, "compose-at-mention");
+
+                try { if (File.Exists(largeFile)) File.Delete(largeFile); } catch { }
+                ForceClose(c);
+            }
+        }, closeWithButton: false);
+
+        Pass("small polish");
     }
 
     async Task StepReminders()
@@ -519,6 +1094,7 @@ public partial class MainWindow
         await OpenAndInspect("account settings", () => new AccountWindow(acc, _settings, _oauth) { Owner = this }.ShowDialog());
         await OpenAndInspect("signatures", () => new SignatureManagerWindow(this, acc).ShowDialog());
         await OpenAndInspect("conditional formatting", () => OnFormatRules(this, new RoutedEventArgs()));
+        await OpenAndInspect("email rules", () => OnRules(this, new RoutedEventArgs()));
         await OpenAndInspect("skills", () => OnSkills(this, new RoutedEventArgs()));
         await OpenAndInspect("agents", () => OnAgents(this, new RoutedEventArgs()));
     }
@@ -530,6 +1106,7 @@ public partial class MainWindow
         Shot(this, "dark-mail");
         SwitchModule(PimModule.Calendar); await Wait(700); Shot(this, "dark-calendar");
         SwitchModule(PimModule.Tasks); await Wait(700); Shot(this, "dark-tasks");
+        SwitchModule(PimModule.Quotes); await Wait(700); Shot(this, "dark-quotes");
         SwitchModule(PimModule.Mail);
         ThemeManager.Apply(ThemeManager.Parse(old ? "Dark" : "Light")); await Wait(500);
         Pass("theme switch");

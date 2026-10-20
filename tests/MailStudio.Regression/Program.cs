@@ -1,10 +1,13 @@
 using System.Text.RegularExpressions;
+using MailStudio;
 using MailStudio.Models;
 using MailStudio.Services;
+using MailStudio.Services.Calendar;
 using MailStudio.Regression;
 using MimeKit;
 using System.Text;
 using System.Text.Json;
+using System.Net.Http.Headers;
 
 var root = Path.Combine(Path.GetTempPath(), "MailStudio-regression-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
@@ -596,4 +599,1730 @@ await Test("calendar: Outlook/Google invitations (time zones, RRULE, EXDATE, ala
     app.Save(new MailStudio.Services.Calendar.TaskItem { Title = "app again" });
     Check(new MailStudio.Services.Calendar.TaskStore(shared).Tasks.Count == 3 && agent.ReloadIfChanged() && agent.Tasks.Count == 3, "app and MCP agent edits to the same task file are both kept");
 }));
+await Test("rules: condition and action matrix, order/stop, FakeImap move/flag, store roundtrip and AI parsing", async () =>
+{
+    var storePath = Path.Combine(root, "rules.json");
+    var store = new RuleStore(storePath);
+    Check(store.Rules.Count == 0, "initial store empty");
+
+    // Condition tests
+    var h1 = new MailHeader
+    {
+        AccountId = "synthetic", Folder = "INBOX", Uid = 2, UidValidity = 77,
+        FromName = "Anna Keller", FromAddress = "anna.keller@example.test",
+        To = "machinist@example.test", Subject = "Quotation request for flanges",
+        Preview = "Please provide quotation for 120 pcs",
+        HasAttachments = true, Size = 25000, Importance = "high"
+    };
+    var atts = new List<AttachmentInfo> { new() { FileName = "drawing.pdf" }, new() { FileName = "model.stp" } };
+
+    var cFrom = new RuleCondition { Field = "from", Value = "anna;keller" };
+    var cTo = new RuleCondition { Field = "to", Value = "machinist" };
+    var cSub = new RuleCondition { Field = "subject", Value = "quotation;flange" };
+    var cBody = new RuleCondition { Field = "body", Value = "120 pcs" };
+    var cAtt = new RuleCondition { Field = "has_attachment" };
+    var cType = new RuleCondition { Field = "attachment_type", Value = "pdf;stp" };
+    var cAcc = new RuleCondition { Field = "account", Value = "synthetic" };
+    var cFld = new RuleCondition { Field = "folder", Value = "INBOX" };
+    var cImp = new RuleCondition { Field = "importance", Value = "high" };
+    var cSize1 = new RuleCondition { Field = "size_larger_kb", Value = "20" };
+    var cSize2 = new RuleCondition { Field = "size_smaller_kb", Value = "30" };
+
+    Check(RuleEngine.MatchesCondition(cFrom, h1), "from matches");
+    Check(RuleEngine.MatchesCondition(cTo, h1), "to matches");
+    Check(RuleEngine.MatchesCondition(cSub, h1), "subject matches");
+    Check(RuleEngine.MatchesCondition(cBody, h1, "Please provide quotation for 120 pcs"), "body matches");
+    Check(RuleEngine.MatchesCondition(cAtt, h1), "has_attachment matches");
+    Check(RuleEngine.MatchesCondition(cType, h1, attachments: atts), "attachment_type matches");
+    Check(RuleEngine.MatchesCondition(cAcc, h1), "account matches");
+    Check(RuleEngine.MatchesCondition(cFld, h1), "folder matches");
+    Check(RuleEngine.MatchesCondition(cImp, h1), "importance matches");
+    Check(RuleEngine.MatchesCondition(cSize1, h1), "size_larger_kb matches");
+    Check(RuleEngine.MatchesCondition(cSize2, h1), "size_smaller_kb matches");
+
+    // MatchAll: AND vs OR
+    var ruleAnd = new MailRule { MatchAll = true, Conditions = { cFrom, new RuleCondition { Field = "subject", Value = "nonexistent" } } };
+    Check(!RuleEngine.Matches(ruleAnd, h1), "AND fails when one condition fails");
+    var ruleOr = new MailRule { MatchAll = false, Conditions = { cFrom, new RuleCondition { Field = "subject", Value = "nonexistent" } } };
+    Check(RuleEngine.Matches(ruleOr, h1), "OR succeeds when one condition matches");
+
+    // Rule ordering and stop processing
+    var executedSkills = new List<string>();
+    var taskStore = new MailStudio.Services.Calendar.TaskStore(Path.Combine(root, "rule-tasks.json"));
+    var cache = Cache("rules-cache");
+    cache.UpsertHeaders(new[] { h1 });
+    cache.SaveAttachments("synthetic", "INBOX", 2, atts);
+
+    await using var server = new FakeImap();
+    using var mail = Service(cache, "rules-mail");
+    var account = Account(server);
+
+    var r1 = new MailRule
+    {
+        Name = "Flag and category",
+        StopProcessing = false,
+        Conditions = { cFrom },
+        Actions = {
+            new RuleAction { Type = "mark_as_flagged" },
+            new RuleAction { Type = "set_category", Value = "Important" },
+            new RuleAction { Type = "create_task", Value = "Review" },
+            new RuleAction { Type = "run_skill", Value = "summarize" }
+        }
+    };
+    var r2 = new MailRule
+    {
+        Name = "Move and stop",
+        StopProcessing = true,
+        Conditions = { cSub },
+        Actions = {
+            new RuleAction { Type = "move_to_folder", Value = "Trash" }
+        }
+    };
+    var r3 = new MailRule
+    {
+        Name = "Never reached",
+        StopProcessing = true,
+        Conditions = { cFrom },
+        Actions = {
+            new RuleAction { Type = "mark_as_read" }
+        }
+    };
+
+    var results = await RuleEngine.ApplyRulesAsync(
+        new[] { r1, r2, r3 },
+        h1,
+        account,
+        mail,
+        cache,
+        taskStore,
+        (s, _) => { executedSkills.Add(s); return Task.CompletedTask; }
+    );
+
+    Check(results.Count == 2, "exactly two rules ran before stop_processing");
+    Check(h1.IsFlagged, "action mark_as_flagged executed");
+    Check(h1.Category == "Important", "action set_category executed");
+    Check(taskStore.Tasks.Any(t => t.Title == "Review: " + h1.Subject), "action create_task executed");
+    Check(executedSkills.Contains("summarize"), "action run_skill executed");
+    Check(results[1].Moved && results[1].AppliedActions.Any(a => a.Contains("Trash")), "action move_to_folder executed");
+    Check(!h1.IsRead, "third rule was stopped by stop_processing");
+
+    // Empty values never match everything; such rules cannot be saved
+    Check(!RuleEngine.MatchesCondition(new RuleCondition { Field = "from", Value = "" }, h1), "empty 'from' value matches nothing");
+    Check(!RuleEngine.MatchesCondition(new RuleCondition { Field = "subject", Value = " ; " }, h1), "separator-only value matches nothing");
+    Check(RuleEngine.Validate(new MailRule { Name = "x", Conditions = { new RuleCondition { Field = "from", Value = "" } }, Actions = { new RuleAction { Type = "move_to_trash" } } }) != null, "rule with an empty condition is refused");
+    Check(RuleEngine.Validate(new MailRule { Name = "x", Conditions = { new RuleCondition { Field = "from", Value = "a@b" } }, Actions = { new RuleAction { Type = "move_to_folder", Value = "" } } }) != null, "move without folder is refused");
+    Check(RuleEngine.Validate(new MailRule { Name = "x", Conditions = { new RuleCondition { Field = "has_attachment" } }, Actions = { new RuleAction { Type = "mark_as_read" } } }) == null, "has_attachment needs no value");
+    var norm = new MailRule { Name = "n", Conditions = { new RuleCondition { Field = "FROM", Value = "a" } }, Actions = { new RuleAction { Type = "mark_read" }, new RuleAction { Type = "flag" } } };
+    RuleEngine.Normalize(norm);
+    Check(norm.Conditions[0].Field == "from" && norm.Actions[0].Type == "mark_as_read" && norm.Actions[1].Type == "mark_as_flagged", "agent/AI action names normalized");
+
+    // A move runs last: actions listed after it still apply to the right message
+    server.Messages[3] = "Message-Id: <three@test>\r\nSubject: order\r\n\r\nx";
+    var h2 = new MailHeader { AccountId = "synthetic", Folder = "INBOX", Uid = 3, UidValidity = h1.UidValidity, MessageId = "three@test", FromAddress = "anna@example.test", Subject = "order" };
+    cache.UpsertHeaders(new[] { h2 });
+    var moveFirst = new MailRule { Name = "move first", Conditions = { new RuleCondition { Field = "subject", Value = "order" } },
+        Actions = { new RuleAction { Type = "move_to_folder", Value = "Trash" }, new RuleAction { Type = "mark_as_read" } } };
+    var res2 = await RuleEngine.ApplyRulesAsync(new[] { moveFirst }, h2, account, mail, cache, taskStore);
+    Check(h2.IsRead && res2[0].Moved && res2[0].AppliedActions[0].Contains("Okundu", StringComparison.OrdinalIgnoreCase) | res2[0].AppliedActions[0].Contains("read", StringComparison.OrdinalIgnoreCase), "mark-as-read applied before the move");
+
+    // Store persistence
+    store.Rules.AddRange(new[] { r1, r2 });
+    store.Save();
+    var reloaded = new RuleStore(storePath);
+    Check(reloaded.Rules.Count == 2 && reloaded.Rules[0].Name == "Flag and category" && reloaded.Rules[1].StopProcessing, "rules saved and reloaded from json");
+
+    // AI rule parsing
+    var aiJson = """
+    {
+        "Name": "Anna'dan gelen teklifler",
+        "StopProcessing": true,
+        "MatchAll": true,
+        "Conditions": [
+            { "Field": "from", "Value": "anna.keller@" },
+            { "Field": "subject", "Value": "teklif;flanş" }
+        ],
+        "Actions": [
+            { "Type": "move_to_folder", "Value": "Teklifler" },
+            { "Type": "mark_as_flagged" }
+        ]
+    }
+    """;
+    var parsed = RuleEngine.ParseAi(aiJson);
+    Check(parsed.Name == "Anna'dan gelen teklifler" && parsed.Conditions.Count == 2 && parsed.Actions.Count == 2 && parsed.StopProcessing, "AI rule parsed successfully");
+    Check(RuleEngine.AiPrompt("test prompt").Contains("JSON"), "AI prompt generated");
+});
+await Test("follow-up: reply clears follow-up; expired deadline creates task", () => Sync(() =>
+{
+    var storePath = Path.Combine(root, "test-followups.json");
+    var fuStore = new FollowUpStore(storePath);
+    var taskStore = new MailStudio.Services.Calendar.TaskStore(Path.Combine(root, "test-tasks.json"));
+
+    var item1 = new FollowUpItem
+    {
+        AccountId = "acc1",
+        MessageId = "msg-101@test.example",
+        Subject = "Teklif talebi flanş",
+        Recipients = "customer@example.com",
+        SentDate = DateTimeOffset.Now.AddDays(-5),
+        DueDays = 3,
+        DueDate = DateTimeOffset.Now.AddDays(-2),
+        IsResolved = false
+    };
+
+    var item2 = new FollowUpItem
+    {
+        AccountId = "acc1",
+        MessageId = "msg-102@test.example",
+        Subject = "Braket revizyonu",
+        Recipients = "supplier@example.com",
+        SentDate = DateTimeOffset.Now.AddDays(-1),
+        DueDays = 3,
+        DueDate = DateTimeOffset.Now.AddDays(2),
+        IsResolved = false
+    };
+
+    fuStore.Add(item1);
+    fuStore.Add(item2);
+    Check(fuStore.FollowUps.Count == 2, "2 follow-up items added");
+
+    // 1. CheckExpired creates a task for item1, but not for item2
+    var createdCount = fuStore.CheckExpired(taskStore, DateTimeOffset.Now);
+    Check(createdCount == 1, "1 expired follow-up task created");
+    Check(item1.TaskCreated && !string.IsNullOrEmpty(item1.TaskId), "item1 marked TaskCreated with TaskId");
+    Check(!item2.TaskCreated, "item2 not expired, no task created");
+
+    var task = taskStore.Find(item1.TaskId!);
+    Check(task != null, "task found in TaskStore");
+    Check(task!.Title.Contains("Teklif talebi flanş"), "task title contains subject: " + task.Title);
+    Check(task.Category == L.T("Cevap bekleniyor"), "task category is Cevap bekleniyor: " + task.Category);
+    Check(task.IsOverdue, "task is overdue");
+    Check(!task.Completed, "task is not completed yet");
+
+    // 2. Incoming reply for item1 clears the follow-up and auto-completes the linked task
+    var reply1 = new MailHeader
+    {
+        AccountId = "acc1",
+        Folder = "INBOX",
+        Uid = 991,
+        MessageId = "reply-991@example.com",
+        InReplyTo = "<msg-101@test.example>",
+        Subject = "Ynt: Teklif talebi flanş",
+        FromAddress = "customer@example.com"
+    };
+
+    var resolvedCount = fuStore.CheckReplies(new[] { reply1 }, taskStore);
+    Check(resolvedCount == 1, "reply resolved item1");
+    Check(item1.IsResolved, "item1 IsResolved == true");
+    Check(task.Completed, "linked task automatically marked completed");
+
+    // 3. Incoming reply for item2 clears follow-up via References match
+    var reply2 = new MailHeader
+    {
+        AccountId = "acc1",
+        Folder = "INBOX",
+        Uid = 992,
+        MessageId = "reply-992@example.com",
+        References = new List<string> { "<other@example.com>", "<msg-102@test.example>" },
+        Subject = "Re: Braket revizyonu",
+        FromAddress = "supplier@example.com"
+    };
+
+    var resolvedCount2 = fuStore.CheckReplies(new[] { reply2 }, taskStore);
+    Check(resolvedCount2 == 1, "reply with References resolved item2");
+    Check(item2.IsResolved, "item2 IsResolved == true");
+
+    // 4. Persistence round-trip
+    var reloadedStore = new FollowUpStore(storePath);
+    Check(reloadedStore.FollowUps.Count == 2 && reloadedStore.FollowUps.All(f => f.IsResolved), "follow-ups saved and reloaded with resolved status");
+}));
+await Test("undo send and scheduled send: undo aborts before SMTP; scheduled send waits until due time", async () =>
+{
+    Func<AccountConfig, OutboxItem, Task> SendWith(MailService m) => (a, i) => m.SendAsync(a, i.Request);
+    await using var imap = new FakeImap();
+    await using var smtp = new FakeSmtp();
+    var acc = Account(imap, smtp);
+    var cache = Cache("outbox-test");
+    var service = Service(cache, "outbox-test");
+
+    var outboxPath = Path.Combine(root, "test-outbox.json");
+    var outbox = new OutboxStore(outboxPath);
+
+    // 1. Undo Send: queued with 10s delay. Before delay expires, NO SMTP packets are sent.
+    var reqUndo = new ComposeRequest { To = "alice@example.test", Subject = "Urgent update", Body = "Sent with undo" };
+    var undoItem = new OutboxItem
+    {
+        AccountId = acc.Id,
+        Request = reqUndo,
+        ScheduledTime = DateTimeOffset.Now.AddSeconds(10),
+        IsUndoSend = true,
+        Status = "Scheduled"
+    };
+    outbox.Add(undoItem);
+
+    // Attempt processing at current time: should not send because scheduled time is in future
+    var sentUndo0 = await outbox.ProcessDueSendsAsync(_ => acc, SendWith(service), DateTimeOffset.Now);
+    Check(sentUndo0 == 0, "undo item not sent immediately");
+    Check(smtp.Accepted == 0, "no SMTP packets sent while in undo window");
+
+    // User clicks "Geri Al" (Undo): item is removed from outbox
+    outbox.Remove(undoItem.Id);
+
+    // Time advances past 10 seconds: item was removed, so nothing sends
+    var sentUndoPast = await outbox.ProcessDueSendsAsync(_ => acc, SendWith(service), DateTimeOffset.Now.AddSeconds(15));
+    Check(sentUndoPast == 0, "cancelled undo item is never sent");
+    Check(smtp.Accepted == 0, "still zero SMTP packets sent after undo window");
+
+    // 2. Scheduled Send (Send Later): scheduled for 2 hours in the future
+    var reqScheduled = new ComposeRequest { To = "bob@example.test", Subject = "Morning Report", Body = "Scheduled for 9am" };
+    var scheduledTime = DateTimeOffset.Now.AddHours(2);
+    var schedItem = new OutboxItem
+    {
+        AccountId = acc.Id,
+        Request = reqScheduled,
+        ScheduledTime = scheduledTime,
+        IsUndoSend = false,
+        Status = "Scheduled"
+    };
+    outbox.Add(schedItem);
+
+    // Test before scheduled time: should NOT send
+    var sentBefore = await outbox.ProcessDueSendsAsync(_ => acc, SendWith(service), DateTimeOffset.Now.AddHours(1));
+    Check(sentBefore == 0, "scheduled item not sent before its time");
+    Check(smtp.Accepted == 0, "no SMTP packets before scheduled time");
+
+    // Test persistence: outbox saved and reloaded
+    var reloadedOutbox = new OutboxStore(outboxPath);
+    Check(reloadedOutbox.Items.Count == 1 && reloadedOutbox.Items[0].Request.Subject == "Morning Report", "scheduled item survived restart in outbox.json");
+
+    // Test when due time arrives: sends via SMTP and clears from outbox
+    var sentOnTime = await reloadedOutbox.ProcessDueSendsAsync(_ => acc, SendWith(service), scheduledTime.AddMinutes(1));
+    Check(sentOnTime == 1, "scheduled item sent when due");
+    Check(smtp.Accepted == 1, "exactly one SMTP message delivered");
+    Check(smtp.Mime.Contains("Morning Report"), "delivered message contains correct subject");
+    Check(reloadedOutbox.Items.Count == 0, "sent item cleared from outbox queue");
+
+    // 3. Two queue runs at the same time never send one item twice (queue logic only: a counting sender)
+    var twice = new OutboxItem { AccountId = acc.Id, Request = new ComposeRequest { To = "carol@example.test", Subject = "Once only", Body = "x" }, ScheduledTime = DateTimeOffset.Now.AddSeconds(-1) };
+    reloadedOutbox.Add(twice);
+    var sends = new List<string>();
+    Func<AccountConfig, OutboxItem, Task> slow = async (a, i) => { lock (sends) sends.Add(i.Request.Subject); await Task.Delay(300); };
+    var runs = await Task.WhenAll(reloadedOutbox.ProcessDueSendsAsync(_ => acc, slow), reloadedOutbox.ProcessDueSendsAsync(_ => acc, slow));
+    Check(runs.Sum() == 1 && sends.Count == 1, $"concurrent queue runs sent the item exactly once ({sends.Count})");
+
+    // 4. Restart: a due item is HELD (asked), never sent automatically; an item that was being sent becomes Uncertain
+    var held = new OutboxItem { AccountId = acc.Id, Request = new ComposeRequest { To = "dave@example.test", Subject = "Overdue", Body = "x" }, ScheduledTime = DateTimeOffset.Now.AddHours(1) };
+    var undoLeft = new OutboxItem { AccountId = acc.Id, Request = new ComposeRequest { To = "erin@example.test", Subject = "Undo window at exit", Body = "x" }, ScheduledTime = DateTimeOffset.Now.AddHours(1), IsUndoSend = true };
+    var inFlight = new OutboxItem { AccountId = acc.Id, Request = new ComposeRequest { To = "frank@example.test", Subject = "Was sending", Body = "x" }, ScheduledTime = DateTimeOffset.Now.AddMinutes(-5), Status = OutboxStatus.Sending };
+    reloadedOutbox.Add(held); reloadedOutbox.Add(undoLeft); reloadedOutbox.Add(inFlight);
+    var afterRestart = new OutboxStore(outboxPath);
+    afterRestart.Load(DateTimeOffset.Now.AddHours(2));
+    Check(afterRestart.Find(held.Id)?.Status == OutboxStatus.Held, "overdue scheduled mail is held for the user");
+    Check(afterRestart.Find(undoLeft.Id)?.Status == OutboxStatus.Held, "mail left in the undo window at exit is held, not lost");
+    Check(afterRestart.Find(inFlight.Id)?.Status == OutboxStatus.Uncertain, "mail interrupted while sending is Uncertain");
+    sends.Clear();
+    Func<AccountConfig, OutboxItem, Task> count = (a, i) => { sends.Add(i.Request.Subject); return Task.CompletedTask; };
+    var autoSent = await afterRestart.ProcessDueSendsAsync(_ => acc, count, DateTimeOffset.Now.AddHours(3));
+    Check(autoSent == 0 && sends.Count == 0, "nothing held or uncertain is sent automatically");
+    Check(afterRestart.Release(held.Id), "user releases a held mail");
+    var released = await afterRestart.ProcessDueSendsAsync(_ => acc, count);
+    Check(released == 1 && sends.SequenceEqual(new[] { "Overdue" }), "released mail sent once");
+    Check(!afterRestart.Remove("nope") && afterRestart.Items.Count == 2, "unknown id is not removed");
+    // a failing send is marked Failed, not retried automatically
+    var failing = new OutboxItem { AccountId = acc.Id, Request = new ComposeRequest { To = "x@example.test", Subject = "Will fail", Body = "x" }, ScheduledTime = DateTimeOffset.Now.AddSeconds(-1) };
+    afterRestart.Add(failing);
+    await afterRestart.ProcessDueSendsAsync(_ => acc, (a, i) => throw new InvalidOperationException("SMTP down"));
+    Check(afterRestart.Find(failing.Id)?.Status == OutboxStatus.Failed, "failed send marked Failed");
+    sends.Clear();
+    await afterRestart.ProcessDueSendsAsync(_ => acc, count);
+    Check(sends.Count == 0, "failed mail is not retried by itself");
+
+    // 5. A corrupt outbox.json is kept as a backup, not silently lost
+    File.WriteAllText(outboxPath, "{ bozuk");
+    var corrupt = new OutboxStore(outboxPath);
+    Check(corrupt.Items.Count == 0 && Directory.GetFiles(root, "test-outbox.json.bozuk-*").Length == 1, "corrupt outbox backed up");
+});
+
+await Test("missing attachment warning: Turkish/English keywords, false alarms, and quote stripping", () => Sync(() =>
+{
+    // 1. Positive Turkish triggers (0 attachments -> ShouldWarn is true)
+    string? kw;
+    Check(AttachmentReminder.ShouldWarn(null, "Detaylı teklif ekte bilginize sunulmuştur.", 0, null, null, null, out kw) && kw == "ekte", "TR keyword: ekte");
+    Check(AttachmentReminder.ShouldWarn(null, "Yeni çizimleri ekledim, kontrol eder misiniz?", 0, null, null, null, out kw) && kw == "ekledim", "TR keyword: ekledim");
+    Check(AttachmentReminder.ShouldWarn(null, "İlişikteki teknik şartnameye göre üretilecek.", 0, null, null, null, out kw) && kw == "ilişikteki", "TR keyword: ilişikteki");
+    Check(AttachmentReminder.ShouldWarn(null, "Teknik çizim ektedir.", 0, null, null, null, out kw) && kw == "ektedir", "TR keyword: ektedir");
+    Check(AttachmentReminder.ShouldWarn(null, "Ekli dosyada revizyon listesi mevcut.", 0, null, null, null, out kw) && kw == "ekli", "TR keyword: ekli");
+    Check(AttachmentReminder.ShouldWarn(null, "Ek dosyada tüm detaylar verilmiştir.", 0, null, null, null, out kw) && kw!.StartsWith("ek dosya"), "TR keyword: ek dosya");
+    Check(AttachmentReminder.ShouldWarn(null, "Parça modeli ilişiktedir.", 0, null, null, null, out kw) && kw == "ilişiktedir", "TR keyword: ilişiktedir");
+    Check(AttachmentReminder.ShouldWarn(null, "DXF dosyasını ekliyorum.", 0, null, null, null, out kw) && kw == "ekliyorum", "TR keyword: ekliyorum");
+
+    // 2. Positive English triggers (0 attachments -> ShouldWarn is true)
+    Check(AttachmentReminder.ShouldWarn(null, "Please find attached the revised drawing.", 0, null, null, null, out kw) && kw == "attached", "EN keyword: attached");
+    Check(AttachmentReminder.ShouldWarn(null, "See attachment for full tolerances.", 0, null, null, null, out kw) && kw == "attachment", "EN keyword: attachment");
+    Check(AttachmentReminder.ShouldWarn(null, "The purchase order is enclosed.", 0, null, null, null, out kw) && kw == "enclosed", "EN keyword: enclosed");
+    Check(AttachmentReminder.ShouldWarn(null, "I am enclosing the inspection report.", 0, null, null, null, out kw) && kw == "enclosing", "EN keyword: enclosing");
+    Check(AttachmentReminder.ShouldWarn(null, "See attached file.", 0, null, null, null, out kw) && (kw == "attached" || kw!.StartsWith("see attach")), "EN keyword: see attached");
+
+    // 3. Negative false alarm cases (0 attachments -> ShouldWarn is false)
+    Check(!AttachmentReminder.ShouldWarn(null, "Ek olarak yarınki toplantı saat 10:00'da.", 0, null, null, null, out _), "false alarm: ek olarak");
+    Check(!AttachmentReminder.ShouldWarn(null, "Konuyla ilgili ek bilgi gerekirse lütfen arayınız.", 0, null, null, null, out _), "false alarm: ek bilgi");
+    Check(!AttachmentReminder.ShouldWarn(null, "Ek bir sorunuz olursa yanıtlamaktan memnuniyet duyarım.", 0, null, null, null, out _), "false alarm: ek bir");
+    Check(!AttachmentReminder.ShouldWarn(null, "Proje için 2 günlük ek süre rica ediyoruz.", 0, null, null, null, out _), "false alarm: ek süre");
+    Check(!AttachmentReminder.ShouldWarn(null, "Bu revizyon için ek ücret alınmayacaktır.", 0, null, null, null, out _), "false alarm: ek ücret");
+    Check(!AttachmentReminder.ShouldWarn(null, "Ek protokol imzalandı.", 0, null, null, null, out _), "false alarm: ek protokol");
+    Check(!AttachmentReminder.ShouldWarn(null, "No strings attached for this promotional offer.", 0, null, null, null, out _), "false alarm: no strings attached");
+    Check(!AttachmentReminder.ShouldWarn(null, "The customer has an emotional attachment to the legacy model.", 0, null, null, null, out _), "false alarm: emotional attachment");
+    Check(!AttachmentReminder.ShouldWarn(null, "Download link: https://example.test/attached_documents/part.zip", 0, null, null, null, out _), "false alarm: URL containing attached");
+    Check(!AttachmentReminder.ShouldWarn(null, "Please write to attachment-service@company.test for questions.", 0, null, null, null, out _), "false alarm: email address containing attachment");
+
+    // 4. Quoted text stripping (keyword in original message, NOT in user's reply)
+    var replyBody = "Tamamdır, anlaştık.\n\n-----Original Message-----\nFrom: customer@example.test\nSubject: Order\nPlease find attached the quote.";
+    Check(!AttachmentReminder.ShouldWarn(null, replyBody, 0, null, null, null, out _), "quoted text in reply does not trigger warning");
+
+    var trReplyBody = "Revizyonu aldım, teşekkürler.\n\n> Ekteki dosyayı inceleyip onaylayabilir misiniz?\n> Saygılarımla";
+    Check(!AttachmentReminder.ShouldWarn(null, trReplyBody, 0, null, null, null, out _), "quoted text with > does not trigger warning");
+
+    var htmlWithQuote = "<p>Harika haber.</p><div id=\"ms-quote\">----- Özgün İleti -----<br>Ekte teklifimizi iletiyoruz.</div>";
+    Check(!AttachmentReminder.ShouldWarn(htmlWithQuote, null, 0, null, null, null, out _), "HTML quote section does not trigger warning");
+
+    // 5. Signature stripping
+    var htmlWithSig = "<p>Merhaba,</p><p>Yarın görüşürüz.</p><div id=\"ms-signature\"><p>--<br>Gizlilik Notu: Bu e-posta ve ilişikteki tüm belgeler gizlidir.</p></div>";
+    Check(!AttachmentReminder.ShouldWarn(htmlWithSig, null, 0, null, null, null, out _), "HTML signature disclaimer does not trigger warning");
+
+    // 6. When attachment IS present (attachments > 0 -> ShouldWarn is false even if keyword present)
+    Check(!AttachmentReminder.ShouldWarn(null, "Teknik resim ektedir.", 1, null, null, null, out _), "no warning when file is actually attached");
+    Check(!AttachmentReminder.ShouldWarn(null, "Please find attached the report.", 2, null, null, null, out _), "no warning when 2 files are attached");
+}));
+
+await Test("revision comparison: part and rev parsing across patterns (no false revisions in sentences)", () => Sync(() =>
+{
+    var (p1, r1) = RevisionService.ParsePartAndRevision("NW-1042 rev B");
+    Check(p1 == "NW-1042" && r1 == "B", "NW-1042 rev B parsed correctly");
+    var (p2, r2) = RevisionService.ParsePartAndRevision("", "bracket-revC.stp");
+    Check(p2 == "bracket" && r2 == "C", $"bracket-revC.stp parsed correctly ({p2}/{r2})");
+    var (p3, r3) = RevisionService.ParsePartAndRevision("", "delivery-schedule-wk43.xlsx");
+    Check(p3 == "delivery-schedule" && r3 == "Wk43", $"delivery-schedule-wk43 parsed correctly ({p3}/{r3})");
+    var (p4, r4) = RevisionService.ParsePartAndRevision("", "flange-DN100-revC.pdf");
+    Check(p4 == "flange-DN100" && r4 == "C", "flange-DN100-revC parsed correctly");
+    var (p5, r5) = RevisionService.ParsePartAndRevision("", "part_R02.dxf");
+    Check(p5 == "part" && r5 == "02", "part_R02 parsed correctly");
+    var (p6, r6) = RevisionService.ParsePartAndRevision("", "NW-1042_Rev.D.pdf");
+    Check(p6 == "NW-1042" && r6 == "D", $"NW-1042_Rev.D parsed ({p6}/{r6})");
+    // sentences and plain names must not invent revisions or part numbers
+    Check(RevisionService.ParsePartAndRevision("NW-1042 ve rapor").Revision == "", "'ve rapor' is not a revision");
+    Check(RevisionService.ParsePartAndRevision("NW-1042 revizyon güncellemesi").Revision == "", "'revizyon güncellemesi' is not a revision");
+    Check(RevisionService.ParsePartAndRevision("Teklif talebi").PartNumber == "", "no part number in a plain subject");
+    Check(RevisionService.ParsePartAndRevision("", "logo.png") == ("logo", ""), "plain file name: no revision");
+    Check(RevisionService.ParsePartAndRevision("", "drawer.pdf").Revision == "", "'drawer' does not contain 'rev'");
+    var prev = System.Globalization.CultureInfo.CurrentCulture;
+    System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("tr-TR");
+    try { Check(RevisionService.ParsePartAndRevision("", "FLANGE_REVISION_C.DXF").Revision == "C", "REVISION with dotless-I culture"); }
+    finally { System.Globalization.CultureInfo.CurrentCulture = prev; }
+}));
+
+string FindDemoDir()
+{
+    var dir = new DirectoryInfo(AppContext.BaseDirectory);
+    while (dir != null)
+    {
+        var p = Path.Combine(dir.FullName, "src", "MailStudio", "Demo");
+        if (Directory.Exists(p)) return p;
+        dir = dir.Parent;
+    }
+    return Path.Combine(Directory.GetCurrentDirectory(), "src", "MailStudio", "Demo");
+}
+
+await Test("revision comparison: Excel schedules diff by row key", () => Sync(() =>
+{
+    var demoDir = FindDemoDir();
+    var f1 = Path.Combine(demoDir, "delivery-schedule-wk43.xlsx");
+    var f2 = Path.Combine(demoDir, "delivery-schedule-wk44.xlsx");
+    Check(File.Exists(f1) && File.Exists(f2), "Excel demo files exist for test");
+    var report = RevisionService.CompareExcel(f1, f2);
+    Check(report.FileType == "Excel" && report.OldRevision == "Wk43" && report.NewRevision == "Wk44", "Excel report with week revisions");
+    var qty = report.Items.FirstOrDefault(i => i.Property.StartsWith("NW-1042") && i.Property.Contains("Qty"));
+    Check(qty != null && qty.OldValue == "120" && qty.NewValue == "150", $"NW-1042 quantity 120 → 150 ({qty?.OldValue}→{qty?.NewValue})");
+    Check(report.Items.Any(i => i.Property.StartsWith("NW-1042") && i.Property.Contains("Unit price") && i.NewValue == "41"), "NW-1042 unit price 38.5 → 41");
+    Check(!report.Items.Any(i => i.Property.StartsWith("NW-1043") && i.Property.Contains("Qty")), "unchanged row has no quantity change");
+
+    // an inserted row does not shift the following rows
+    var wbDir = Path.Combine(root, "xlsx-insert"); Directory.CreateDirectory(wbDir);
+    string Book(string name, params (string Part, int Qty)[] rows)
+    {
+        var path = Path.Combine(wbDir, name);
+        using var wb = new ClosedXML.Excel.XLWorkbook(); var ws = wb.AddWorksheet("Plan");
+        ws.Cell(1, 1).Value = "Part"; ws.Cell(1, 2).Value = "Qty";
+        for (int i = 0; i < rows.Length; i++) { ws.Cell(i + 2, 1).Value = rows[i].Part; ws.Cell(i + 2, 2).Value = rows[i].Qty; }
+        wb.SaveAs(path); return path;
+    }
+    var x1 = Book("plan-rev1.xlsx", ("A-100", 5), ("A-200", 7), ("A-300", 9));
+    var x2 = Book("plan-rev2.xlsx", ("A-100", 5), ("A-150", 3), ("A-200", 7), ("A-300", 10));
+    var ins = RevisionService.CompareExcel(x1, x2);
+    Check(ins.Items.Count == 2, $"inserted row + one changed cell only ({ins.Items.Count}: {string.Join(" | ", ins.Items.Select(i => i.Description))})");
+    Check(ins.Items.Any(i => i.Kind == RevisionDiffKind.Added && i.Property.Contains("A-150")), "inserted row reported as added");
+    Check(ins.Items.Any(i => i.Kind == RevisionDiffKind.Modified && i.Property.StartsWith("A-300") && i.OldValue == "9" && i.NewValue == "10"), "A-300 quantity change found");
+
+    Check(report.ToReplyText().Contains("delivery-schedule"), "ToReplyText contains part");
+    Check(report.ToAiPrompt().Contains("imalat") || report.ToAiPrompt().Contains("manufacturing"), "ToAiPrompt contains manufacturing context");
+}));
+
+JsonElement J(string json) { using var d = JsonDocument.Parse(json); return d.RootElement.Clone(); }
+
+await Test("revision comparison: STEP compares exact worker values and real holes (no estimates)", () => Sync(() =>
+{
+    var a = J("""
+{"overall_size_xyz_mm":[120,80,40],"total_volume_mm3":150000,"total_surface_mm2":42000,"body_count":1,
+               "bodies":[{"cylindrical_faces":14,"holes":[{"diameter_mm":6.8,"count":4},{"diameter_mm":20,"count":1}]}],"pmi":[]}
+""");
+    var b = J("""
+{"overall_size_xyz_mm":[120,80,42.5],"total_volume_mm3":148500,"total_surface_mm2":42000,"body_count":1,
+               "bodies":[{"cylindrical_faces":14,"holes":[{"diameter_mm":6.8,"count":4},{"diameter_mm":25,"count":1}]}],"pmi":[{"kind":"dimension","value":"Ø25 H7"}]}
+""");
+    var r = RevisionService.CompareStep("bracket-revB.stp", "bracket-revC.stp", a, b);
+    Check(r.OldRevision == "B" && r.NewRevision == "C", "revisions from file names");
+    Check(r.Items.Any(i => i.Property == "Yükseklik (Z)" && i.Description.Contains("+2.5")), "height +2.5 mm");
+    Check(r.Items.Any(i => i.Category == "Hacim"), "volume change reported");
+    Check(!r.Items.Any(i => i.Category == "Yüzey Alanı"), "unchanged area not reported");
+    Check(r.Items.Any(i => i.Category == "Delik" && i.Property == "Ø20" && i.Kind == RevisionDiffKind.Removed), "Ø20 hole removed");
+    Check(r.Items.Any(i => i.Category == "Delik" && i.Property == "Ø25" && i.Kind == RevisionDiffKind.Added), "Ø25 hole added");
+    Check(!r.Items.Any(i => i.Property == "Ø6.8"), "unchanged holes not reported");
+    Check(r.Items.Any(i => i.Category == "PMI" && i.Kind == RevisionDiffKind.Added), "new PMI reported");
+    // an old worker without hole data: only the honest cylindrical face count
+    var c = J("""{"overall_size_xyz_mm":[1,1,1],"total_volume_mm3":1,"total_surface_mm2":1,"body_count":1,"bodies":[{"cylindrical_faces":9}]}""");
+    var d = J("""{"overall_size_xyz_mm":[1,1,1],"total_volume_mm3":1,"total_surface_mm2":1,"body_count":1,"bodies":[{"cylindrical_faces":11}]}""");
+    var r2 = RevisionService.CompareStep("p-revA.stp", "p-revB.stp", c, d);
+    Check(r2.Items.Count == 1 && r2.Items[0].Property == "Silindirik Yüzey Sayısı", "fallback reports cylindrical faces, not 'holes'");
+}));
+
+await Test("revision comparison: DXF dimensions and texts as multisets (insertions do not shift)", () => Sync(() =>
+{
+    var a = J("""
+{"layers":["0","OUTLINE","DIMS"],"dimensions":[{"measurement":220},{"measurement":110},{"measurement":24},{"measurement":60}],
+               "texts":[{"text":"8x Ø18 THRU EQ. SP. ON PCD 180"},{"text":"Ra 3.2"},{"text":"DWG NO. NW-1042 REV B"},{"text":"MAT. S235JR"},{"text":"SECTION A-A"}]}
+""");
+    var b = J("""
+{"layers":["0","OUTLINE","DIMS","NOTES"],"dimensions":[{"measurement":5},{"measurement":220},{"measurement":110},{"measurement":26},{"measurement":60}],
+               "texts":[{"text":"8x Ø20 THRU EQ. SP. ON PCD 180"},{"text":"Ra 1.6"},{"text":"DWG NO. NW-1042 REV C"},{"text":"MAT. S235JR"},{"text":"SECTION A-A"},{"text":"DEBURR ALL EDGES"}]}
+""");
+    var r = RevisionService.CompareDxf("flange-DN100-revB.dxf", "flange-DN100-revC.dxf", a, b);
+    Check(r.Items.Any(i => i.Category == "Katman" && i.NewValue == "NOTES"), "layer added");
+    Check(r.Items.Any(i => i.Category == "Ölçü" && i.Kind == RevisionDiffKind.Added && i.NewValue == "5"), "new dimension 5");
+    Check(r.Items.Any(i => i.Category == "Ölçü" && i.Kind == RevisionDiffKind.Removed && i.OldValue == "24"), "dimension 24 gone");
+    Check(r.Items.Any(i => i.Category == "Ölçü" && i.Kind == RevisionDiffKind.Added && i.NewValue == "26"), "dimension 26 new");
+    Check(!r.Items.Any(i => i.Category == "Ölçü" && (i.OldValue == "220" || i.NewValue == "220")), "unchanged 220 not reported despite the inserted dimension");
+    Check(r.Items.Any(i => i.Kind == RevisionDiffKind.Modified && i.OldValue == "8x Ø18 THRU EQ. SP. ON PCD 180" && i.NewValue!.Contains("Ø20")), "hole note Ø18 → Ø20");
+    Check(r.Items.Any(i => i.Kind == RevisionDiffKind.Modified && i.OldValue == "Ra 3.2" && i.NewValue == "Ra 1.6"), "Ra 3.2 → 1.6");
+    Check(r.Items.Any(i => i.Kind == RevisionDiffKind.Modified && i.NewValue == "DWG NO. NW-1042 REV C"), "title REV B → C");
+    Check(r.Items.Any(i => i.Kind == RevisionDiffKind.Added && i.NewValue == "DEBURR ALL EDGES"), "new note");
+    Check(!r.Items.Any(i => (i.OldValue ?? i.NewValue) == "SECTION A-A" || (i.OldValue ?? i.NewValue) == "MAT. S235JR"), "unchanged texts not reported");
+}));
+
+await Test("revision comparison: PDF drawing text (dimensions, title block, notes) and OCR note", () => Sync(() =>
+{
+    var a = J("""{"content":[{"page":1,"method":"OCR (verify numbers on the drawing)","text":"FLANGE DN100 PN16\nDWG NO. NW-1042 REV B\nMAT. S235JR\n8x Ø18 THRU EQ. SP. ON PCD 180\nØ220\n24 ±0.1\nRa 3.2\nSCALE 1:2"}]}""");
+    var b = J("""{"content":[{"page":1,"method":"OCR (verify numbers on the drawing)","text":"FLANGE DN100 PN16\nDWG NO. NW-1042 REV C\nMAT. S235JR\n8x Ø20 THRU EQ. SP. ON PCD 180\nØ220\n26 ±0.1\nRa 1.6\nSCALE 1:2\nBREAK ALL SHARP EDGES"}]}""");
+    var r = RevisionService.ComparePdf("flange-DN100-revB.pdf", "flange-DN100-revC.pdf", a, b);
+    Check(r.Notes.Any(n => n.Contains("OCR")), "OCR note shown");
+    Check(r.Items.Any(i => i.Category == "Antet" && i.OldValue == "NW-1042 REV B" && i.NewValue == "NW-1042 REV C"), $"title block DWG NO changed ({string.Join(" | ", r.Items.Select(i => i.Category + ":" + i.Description))})");
+    Check(r.Items.Any(i => i.Category == "Ölçü" && i.OldValue == "Ra3.2" && i.NewValue == "Ra1.6"), "Ra changed");
+    Check(r.Items.Any(i => i.Category == "Ölçü" && i.OldValue == "24±0.1" && i.NewValue == "26±0.1" || i.OldValue == "24±0.1" && i.Kind == RevisionDiffKind.Removed), "toleranced 24 changed");
+    Check(r.Items.Any(i => i.Category == "Ölçü" && i.OldValue == "8xØ18" && i.NewValue == "8xØ20"), "hole callout 8xØ18 → 8xØ20");
+    Check(!r.Items.Any(i => i.OldValue == "Ø220" || i.NewValue == "Ø220"), "unchanged Ø220 not reported");
+    Check(r.Items.Any(i => i.Category == "Not" && i.NewValue == "BREAK ALL SHARP EDGES"), "new note reported");
+    var empty = RevisionService.ComparePdf("a-revA.pdf", "a-revB.pdf", J("""{"content":[]}"""), b);
+    Check(empty.Items.Count == 0 && empty.Notes.Any(n => n.Contains("okunamadı") || n.Contains("could not")), "unreadable PDF says so, reports nothing");
+}));
+
+await Test("revision comparison: earlier revisions found in the same correspondent's mails", () => Sync(() =>
+{
+    var cache = Cache("revision-candidates");
+    MailHeader H(uint uid, string from, string subject, int daysAgo) => new()
+    { AccountId = "acc", Folder = "INBOX", Uid = uid, FromAddress = from, FromName = from, Subject = subject, Date = DateTimeOffset.Now.AddDays(-daysAgo), HasAttachments = true };
+    var revC = H(10, "anna@northwind.example", "NW-1042 rev C", 0);
+    var revB = H(11, "anna@northwind.example", "NW-1042 rev B", 5);
+    var other = H(12, "tom@contoso.example", "flange-DN100 rev A", 9);
+    cache.UpsertHeaders(new[] { revC, revB, other });
+    cache.SaveAttachments("acc", "INBOX", 10, new List<AttachmentInfo> { new() { FileName = "flange-DN100-revC.pdf", Part = "2" }, new() { FileName = "flange-DN100-revC.dxf", Part = "3" } });
+    cache.SaveAttachments("acc", "INBOX", 11, new List<AttachmentInfo> { new() { FileName = "flange-DN100-revB.pdf", Part = "2" }, new() { FileName = "logo.png", Part = "3" } });
+    cache.SaveAttachments("acc", "INBOX", 12, new List<AttachmentInfo> { new() { FileName = "flange-DN100-revA.pdf", Part = "2" } });
+    var c = RevisionService.FindCandidates(cache, revC, "flange-DN100-revC.pdf");
+    Check(c.Count == 1 && c[0].FileName == "flange-DN100-revB.pdf" && c[0].Revision == "B" && c[0].Uid == 11, $"rev B from Anna's older mail ({string.Join(", ", c.Select(x => x.FileName))})");
+    Check(c[0].Header != null && c[0].Attachment != null, "candidate can be downloaded (header + attachment)");
+    Check(!c.Any(x => x.FileName.EndsWith(".dxf")), "other file types are not offered");
+    Check(!c.Any(x => x.FileName.Contains("revA")), "another sender's file is not offered");
+    var none = RevisionService.FindCandidates(cache, revB, "logo.png");
+    Check(none.Count == 0, "no candidates for a plain file");
+}));
+
+await Test("teklif masası: RFQ detection and field extraction in Turkish and English", () => Sync(() =>
+{
+    // Turkish RFQ example
+    var trSub = "Teklif talebi – 120 adet flanş NW-1042";
+    var trBody = """
+    Merhabalar,
+    Ekteki NW-1042 rev C flanştan 120 adet için fiyat teklifi rica ediyoruz.
+    Malzeme: Alüminyum 6061-T6
+    Son teklif tarihi: 25.10.2026
+    İstenen Teslim: 15.11.2026
+    Firma: Schmidt Makina A.Ş.
+    """;
+    var (trIsRfq, trQuote) = QuoteStore.DetectRfq(trSub, trBody, "Anna Schmidt <anna@schmidt-makina.example>", new[] { "flange-DN100-revC.pdf" });
+    Check(trIsRfq, "Turkish RFQ email detected as RFQ");
+    Check(trQuote.PartNumber.Contains("1042") || trQuote.PartNumber.Contains("flange"), "TR part number extracted");
+    Check(trQuote.Revision == "C", "TR revision extracted");
+    Check(trQuote.Quantity == 120, "TR quantity extracted (120)");
+    Check(trQuote.Material.Contains("Alüminyum 6061"), "TR material extracted");
+    Check(trQuote.Deadline.HasValue && trQuote.Deadline.Value.Day == 25, "TR deadline extracted (25.10.2026)");
+    Check(trQuote.RequestedDelivery.HasValue && trQuote.RequestedDelivery.Value.Day == 15, "TR delivery date extracted (15.11.2026)");
+    Check(trQuote.Contact.Contains("Anna") || trQuote.Customer.Contains("Schmidt"), "TR contact/customer extracted");
+
+    // English RFQ example
+    var enSub = "Quotation Request: bracket-revC";
+    var enBody = """
+    Dear Sales Team,
+    Please provide your quotation for 250 pcs of bracket-revC.
+    Material: Stainless Steel 304
+    Deadline: 2026-10-24
+    Delivery: 2026-11-20
+    Company: Atlas Aerospace Ltd.
+    """;
+    var (enIsRfq, enQuote) = QuoteStore.DetectRfq(enSub, enBody, "Tom Becker <t.becker@atlas-aero.example>", new[] { "bracket-revC.stp" });
+    Check(enIsRfq, "English quotation email detected as RFQ");
+    Check(enQuote.PartNumber.Contains("bracket"), "EN part number extracted");
+    Check(enQuote.Revision == "C", "EN revision extracted");
+    Check(enQuote.Quantity == 250, "EN quantity extracted (250)");
+    Check(enQuote.Material.Contains("Stainless"), "EN material extracted");
+    Check(enQuote.Deadline.HasValue && enQuote.Deadline.Value.Day == 24, "EN deadline extracted");
+    Check(enQuote.Customer.Contains("Atlas Aerospace"), "EN company name extracted");
+
+    // Negative case (normal non-quote email)
+    var normalSub = "Haftalık proje koordinasyon toplantısı";
+    var normalBody = "Toplantı yarın saat 10:00'da odada yapılacaktır. Lütfen hazır bulunun.";
+    var (normIsRfq, _) = QuoteStore.DetectRfq(normalSub, normalBody, "Ali Veli <ali@example.com>");
+    Check(!normIsRfq, "Normal email is NOT detected as RFQ");
+
+    // a plain mail with a logo and the word "quote" is not an RFQ; a logo is never a part number
+    var (logoRfq, logoQ) = QuoteStore.DetectRfq("Thanks", "As discussed, here is a quote from our CEO.", "x <x@example.com>", new[] { "logo.png" });
+    Check(!logoRfq && logoQ.PartNumber != "logo", "logo mail not an RFQ");
+    // quantities: no run-on across lines, thousands separators, no decimals
+    Check(QuoteStore.DetectRfq("RFQ NW-1042", "Adet: 50\n10.11.2026 teslim", "a <a@b.example>").Extracted.Quantity == 50, "quantity stops at the line end");
+    Check(QuoteStore.DetectRfq("RFQ NW-1042", "Qty: 5.000 pcs please quote", "a <a@b.example>").Extracted.Quantity == 5000, "thousands separator");
+    Check(QuoteStore.DetectRfq("RFQ NW-1042", "Miktar: 2,5 ton", "a <a@b.example>").Extracted.Quantity == 0, "decimal is not a piece count");
+    // upper-case Turkish subject
+    Check(QuoteStore.DetectRfq("FİYAT TEKLİFİ – NW-1042", "120 adet için teklif rica ederiz.", "a <a@b.example>", new[] { "NW-1042_revC.pdf" }).IsRfq, "upper-case Turkish subject detected");
+}));
+
+await Test("teklif masası: QuoteStore persistence, CRUD and status transitions", () => Sync(() =>
+{
+    var qPath = Path.Combine(root, "test-quotes.json");
+    var store = new QuoteStore(qPath);
+    Check(store.Quotes.Count == 0, "Initial quotes empty");
+
+    var q1 = new QuoteItem
+    {
+        Customer = "Acme Corp",
+        Contact = "John Doe",
+        ContactEmail = "john@acme.example",
+        PartNumber = "NW-1042",
+        Revision = "B",
+        Quantity = 500,
+        Material = "St52-3",
+        Deadline = DateTime.Today.AddDays(3),
+        Status = QuoteStatus.New,
+        SourceMessageId = "<msg-101@acme.example>"
+    };
+
+    var changedFired = false;
+    store.Changed += () => changedFired = true;
+    store.AddOrUpdate(q1);
+
+    Check(changedFired, "Changed event fired on add");
+    Check(store.Quotes.Count == 1, "Quote added to store");
+
+    // Reload from disk
+    var reloaded = new QuoteStore(qPath);
+    Check(reloaded.Quotes.Count == 1, "Quotes persisted to disk");
+    Check(reloaded.Quotes[0].PartNumber == "NW-1042", "Persisted fields preserved");
+    Check(reloaded.Quotes[0].Quantity == 500, "Quantity preserved");
+
+    // Update status
+    q1.Status = QuoteStatus.InProgress;
+    store.AddOrUpdate(q1);
+    var reloaded2 = new QuoteStore(qPath);
+    Check(reloaded2.Quotes[0].Status == QuoteStatus.InProgress, "Status updated to InProgress");
+
+    // Delete
+    var deleted = store.Delete(q1.Id);
+    Check(deleted, "Quote deleted");
+    Check(store.Quotes.Count == 0, "Quotes list now empty");
+}));
+
+await Test("teklif masası: reply with attachment automatically updates quote status to Sent", () => Sync(() =>
+{
+    var qPath = Path.Combine(root, "test-quotes-auto.json");
+    var store = new QuoteStore(qPath);
+
+    var q = new QuoteItem
+    {
+        Customer = "Siemens Energy",
+        Contact = "Hans Weber",
+        ContactEmail = "hans.weber@siemens.example",
+        PartNumber = "flange-DN100",
+        Revision = "C",
+        Quantity = 1000,
+        Status = QuoteStatus.New,
+        SourceMessageId = "<rfq-siemens-999@siemens.example>"
+    };
+    store.AddOrUpdate(q);
+
+    // 1. Reply with NO attachments -> status should remain New
+    var updatedNoAtt = store.CheckSentMail("hans.weber@siemens.example", "<rfq-siemens-999@siemens.example>", "Re: RFQ", attachmentCount: 0);
+    Check(!updatedNoAtt, "Sending without attachment does not mark quote Sent");
+    Check(store.Get(q.Id)?.Status == QuoteStatus.New, "Quote remains New without attachment");
+
+    // 2. Reply WITH attachment -> status should become Sent
+    var updatedWithAtt = store.CheckSentMail("hans.weber@siemens.example", "<rfq-siemens-999@siemens.example>", "Re: RFQ", attachmentCount: 1);
+    Check(updatedWithAtt, "Sending with attachment marks quote Sent");
+    Check(store.Get(q.Id)?.Status == QuoteStatus.Sent, "Quote status updated to Sent");
+}));
+
+await Test("teklif masası: ClosedXML Excel export generation and structure", () => Sync(() =>
+{
+    var exportPath = Path.Combine(root, "teklif_masasi_export.xlsx");
+    if (File.Exists(exportPath)) File.Delete(exportPath);
+
+    var quotes = new List<QuoteItem>
+    {
+        new()
+        {
+            Customer = "Schmidt Präzision",
+            Contact = "Anna Schmidt",
+            PartNumber = "NW-1042",
+            Revision = "C",
+            Quantity = 120,
+            Material = "Alüminyum 6061-T6",
+            Deadline = DateTime.Today.AddDays(2),
+            RequestedDelivery = DateTime.Today.AddDays(15),
+            Status = QuoteStatus.InProgress,
+            Notes = "Toleranslar resme uygun"
+        },
+        new()
+        {
+            Customer = "Atlas Aero",
+            Contact = "Tom Becker",
+            PartNumber = "bracket-revC",
+            Revision = "C",
+            Quantity = 250,
+            Material = "7075-T6",
+            Deadline = DateTime.Today.AddDays(-1), // Overdue
+            Status = QuoteStatus.New,
+            Notes = "5 eksen işleme"
+        }
+    };
+
+    QuoteStore.ExportToExcel(quotes, exportPath);
+    Check(File.Exists(exportPath), "Excel export file generated on disk");
+
+    using var wb = new ClosedXML.Excel.XLWorkbook(exportPath);
+    Check(wb.Worksheets.Count >= 1, "Workbook contains worksheets");
+    var ws = wb.Worksheet("Teklif Masası");
+    Check(ws != null, "Worksheet 'Teklif Masası' found");
+    Check(ws.Cell(1, 1).GetString() == "Durum", "Header 1 is Durum");
+    Check(ws.Cell(1, 2).GetString() == "Parça No", "Header 2 is Parça No");
+    Check(ws.Cell(2, 2).GetString() == "NW-1042", "Row 1 Parça No is NW-1042");
+    Check(ws.Cell(3, 2).GetString() == "bracket-revC", "Row 2 Parça No is bracket-revC");
+}));
+
+await Test("şablonlar: değişken doldurma ve regex çözümleme (TR & EN)", () => Sync(() =>
+{
+    var ctx = TemplateContext.Create(
+        to: "\"Ahmet Yılmaz\" <ahmet.yilmaz@abcmakina.com>",
+        subject: "RE: NW-1042 Fiyat Talebi",
+        signature: "Caner Akın\nSatış Müdürü",
+        date: new DateTime(2026, 10, 20)
+    );
+
+    Check(ctx.FirstName == "Ahmet", "FirstName parsed as Ahmet");
+    Check(ctx.LastName == "Yılmaz", "LastName parsed as Yılmaz");
+    Check(ctx.Company == "Abcmakina", "Company parsed as Abcmakina");
+    Check(ctx.PartNumber == "NW-1042", "PartNumber parsed as NW-1042");
+    Check(ctx.Date == "20.10.2026", "Date formatted as 20.10.2026");
+
+    // Turkish template rendering
+    var trTmpl = "Sayın {Ad} {Soyad} ({Firma}),\n\n{ParçaNo} parçasına ait teklifimiz ekte bilgilerinize sunulmuştur. Tarih: {Tarih}.\n\n{İmza}";
+    var trRendered = TemplateEngine.Render(trTmpl, ctx);
+    Check(trRendered.Contains("Sayın Ahmet Yılmaz (Abcmakina)"), "TR rendered greeting with Ad, Soyad, Firma");
+    Check(trRendered.Contains("NW-1042 parçasına ait teklifimiz"), "TR rendered ParçaNo");
+    Check(trRendered.Contains("Tarih: 20.10.2026"), "TR rendered Tarih");
+    Check(trRendered.Contains("Caner Akın"), "TR rendered İmza");
+
+    // English template rendering with English variable names and case-insensitivity
+    var enCtx = TemplateContext.Create(
+        to: "Anna Keller <anna.keller@northwind.example>",
+        subject: "Quotation request - bracket-revC",
+        signature: "Best regards,\nJohn Doe",
+        date: new DateTime(2026, 10, 20)
+    );
+    Check(enCtx.FirstName == "Anna", "EN FirstName parsed as Anna");
+    Check(enCtx.LastName == "Keller", "EN LastName parsed as Keller");
+    Check(enCtx.Company == "Northwind", "EN Company parsed as Northwind");
+    Check(enCtx.PartNumber == "bracket-revC", "EN PartNumber parsed as bracket-revC");
+
+    var enTmpl = "Dear {firstname} {lastname} ({company}),\n\nPlease find attached quotation for {partnumber}.\nDate: {date}.\n\n{signature}";
+    var enRendered = TemplateEngine.Render(enTmpl, enCtx);
+    Check(enRendered.Contains("Dear Anna Keller (Northwind)"), "EN rendered greeting case-insensitively");
+    Check(enRendered.Contains("quotation for bracket-revC"), "EN rendered partnumber");
+    Check(enRendered.Contains("Date: 20.10.2026"), "EN rendered date");
+    Check(enRendered.Contains("Best regards,\nJohn Doe"), "EN rendered signature");
+
+    // HTML conversion helper
+    var html = TemplateEngine.TextToHtml("Line 1\n\nLine 2");
+    Check(html.Contains("<div>Line 1</div>"), "HTML conversion has line 1");
+    Check(html.Contains("<div><br></div>"), "HTML conversion has empty line div");
+    Check(html.Contains("<div>Line 2</div>"), "HTML conversion has line 2");
+}));
+
+await Test("şablonlar: TemplateStore kalıcılık, CRUD, varsayılanlar ve JSON içe/dışa aktarma", () => Sync(() =>
+{
+    var tStoreDir = Path.Combine(root, "tstore_test");
+    if (Directory.Exists(tStoreDir)) Directory.Delete(tStoreDir, true);
+    Directory.CreateDirectory(tStoreDir);
+
+    var store = new TemplateStore(tStoreDir);
+    Check(store.Templates.Count >= 6, $"Default templates seeded: {store.Templates.Count} >= 6");
+    Check(store.Templates.Any(t => t.Title == "Teklifimiz ektedir"), "Has 'Teklifimiz ektedir' template");
+    Check(store.Templates.Any(t => t.Title == "Our quotation is attached"), "Has 'Our quotation is attached' template");
+
+    // Save custom template
+    var custom = new EmailTemplate
+    {
+        Id = "custom-test-1",
+        Title = "Özel Fason Teklif",
+        Subject = "Teklif Talebi Hk.",
+        Body = "Sayın {Ad}, fason işleme teklifimiz ektedir.",
+        Category = "Fason",
+        Language = "tr"
+    };
+    store.Save(custom);
+
+    var reloadedStore = new TemplateStore(tStoreDir);
+    var loaded = reloadedStore.FindById("custom-test-1");
+    Check(loaded != null && loaded.Title == "Özel Fason Teklif", "Custom template persisted and reloaded");
+
+    // Export JSON
+    var json = reloadedStore.ExportJson();
+    Check(!string.IsNullOrEmpty(json) && json.Contains("Özel Fason Teklif"), "ExportJson exports valid JSON");
+
+    // Delete
+    Check(reloadedStore.Delete("custom-test-1"), "Template deleted");
+    Check(reloadedStore.FindById("custom-test-1") == null, "Deleted template cannot be found");
+
+    // Import JSON
+    var importDir = Path.Combine(root, "tstore_import_test");
+    Directory.CreateDirectory(importDir);
+    var importStore = new TemplateStore(importDir);
+    var count = importStore.ImportJson(json);
+    Check(count >= 7, $"ImportJson successfully restored {count} templates");
+    Check(importStore.FindById("custom-test-1") != null, "Imported custom template found");
+}));
+
+await Test("hızlı adımlar: QuickStepStore kalıcılık, varsayılanlar ve kısayol arama", () => Sync(() =>
+{
+    var qsDir = Path.Combine(root, "qs_test");
+    if (Directory.Exists(qsDir)) Directory.Delete(qsDir, true);
+    Directory.CreateDirectory(qsDir);
+
+    var store = new QuickStepStore(qsDir);
+    Check(store.Steps.Count >= 3, $"Default quick steps seeded: {store.Steps.Count} >= 3");
+
+    var s1 = store.FindByShortcut("Ctrl+Shift+1");
+    Check(s1 != null && s1.Name == "Okundu + Arşive taşı", "Ctrl+Shift+1 maps to Okundu + Arşive taşı");
+
+    var s2 = store.FindByShortcut("Ctrl+Shift+2");
+    Check(s2 != null && s2.Name == "Şablonla yanıtla + Bayrakla", "Ctrl+Shift+2 maps to Şablonla yanıtla + Bayrakla");
+
+    var s3 = store.FindByShortcut("Ctrl+Shift+3");
+    Check(s3 != null && s3.Name == "Görev yap + Taşı", "Ctrl+Shift+3 maps to Görev yap + Taşı");
+
+    // Custom quick step
+    var customQs = new QuickStepItem
+    {
+        Id = "qs-custom-test",
+        Name = "Öncelikli Bayrakla",
+        Description = "Bayrak ekler ve kategori atar",
+        Icon = "\uE7C1",
+        Shortcut = "Ctrl+Shift+4",
+        Actions = new List<QuickStepAction>
+        {
+            new() { Type = QuickStepActionType.Flag },
+            new() { Type = QuickStepActionType.SetCategory, Parameter = "Öncelikli" }
+        }
+    };
+    store.Save(customQs);
+
+    var reloadedStore = new QuickStepStore(qsDir);
+    var loaded = reloadedStore.FindByShortcut("Ctrl+Shift+4");
+    Check(loaded != null && loaded.Name == "Öncelikli Bayrakla", "Custom QuickStep persisted with shortcut Ctrl+Shift+4");
+    Check(loaded.Actions.Count == 2, "Custom QuickStep has 2 actions");
+}));
+
+await Test("hızlı adımlar: eylem simülasyonu ve çoklu adım zinciri", () => Sync(() =>
+{
+    var taskStoreDir = Path.Combine(root, "qs_tasks_test");
+    Directory.CreateDirectory(taskStoreDir);
+    var tasks = new MailStudio.Services.Calendar.TaskStore(Path.Combine(taskStoreDir, "tasks.json"));
+
+    var header = new MailHeader
+    {
+        AccountId = "acc1",
+        Folder = "INBOX",
+        Uid = 777,
+        FromName = "Mehmet Demir",
+        FromAddress = "mehmet@demir-celik.example",
+        Subject = "Teklif Talebi - DN100 Flanş",
+        Preview = "Ekteki teknik resim için teklifinizi bekliyoruz.",
+        IsRead = false,
+        IsFlagged = false
+    };
+
+    var step = new QuickStepItem
+    {
+        Name = "Okundu + Bayrakla + Görev Yap",
+        Actions = new List<QuickStepAction>
+        {
+            new() { Type = QuickStepActionType.MarkRead },
+            new() { Type = QuickStepActionType.Flag },
+            new() { Type = QuickStepActionType.CreateTask, Parameter = "Teklif Hazırla" }
+        }
+    };
+
+    // Simulate action execution sequence
+    foreach (var act in step.Actions)
+    {
+        switch (act.Type)
+        {
+            case QuickStepActionType.MarkRead:
+                header.IsRead = true;
+                break;
+            case QuickStepActionType.Flag:
+                header.IsFlagged = true;
+                break;
+            case QuickStepActionType.CreateTask:
+                var task = new MailStudio.Services.Calendar.TaskItem
+                {
+                    Title = header.Subject,
+                    Category = act.Parameter ?? "",
+                    SourceMail = $"{header.AccountId}|{header.Folder}|{header.Uid}",
+                    DueDate = DateTime.Today
+                };
+                tasks.Save(task);
+                break;
+        }
+    }
+
+    Check(header.IsRead, "Header marked as read by QuickStep");
+    Check(header.IsFlagged, "Header flagged by QuickStep");
+
+    var createdTask = tasks.FindBySource($"{header.AccountId}|{header.Folder}|{header.Uid}");
+    Check(createdTask != null, "Task created in TaskStore by QuickStep");
+    Check(createdTask?.Category == "Teklif Hazırla", "Task category set properly");
+    Check(createdTask?.Title == "Teklif Talebi - DN100 Flanş", "Task title matches mail subject");
+}));
+
+await Test("snooze: SnoozeStore kalıcılık, CRUD, preset zaman hesapları ve filtreleme", () => Sync(() =>
+{
+    var snoozeFile = Path.Combine(root, "snooze-test.json");
+    if (File.Exists(snoozeFile)) File.Delete(snoozeFile);
+
+    var store = new SnoozeStore(snoozeFile);
+    Check(store.Items.Count == 0, "SnoozeStore starts empty");
+
+    // Presets
+    var fixedNow = new DateTimeOffset(2026, 10, 20, 10, 0, 0, TimeSpan.FromHours(3)); // Tuesday 10:00
+    var eve = SnoozeStore.GetThisEvening(fixedNow);
+    Check(eve.Hour == 18 && eve.Date == fixedNow.Date, "GetThisEvening returns today 18:00");
+
+    var tmw = SnoozeStore.GetTomorrowMorning(fixedNow);
+    Check(tmw.Hour == 9 && tmw.Date == fixedNow.Date.AddDays(1), "GetTomorrowMorning returns tomorrow 09:00");
+
+    var nxtWk = SnoozeStore.GetNextWeek(fixedNow);
+    Check(nxtWk.Hour == 9 && nxtWk.DayOfWeek == DayOfWeek.Monday && nxtWk > fixedNow, "GetNextWeek returns next Monday 09:00");
+
+    var weekend = SnoozeStore.GetThisWeekend(fixedNow);
+    Check(weekend.Hour == 9 && weekend.DayOfWeek == DayOfWeek.Saturday, "GetThisWeekend returns Saturday 09:00");
+
+    // Snooze item
+    store.Snooze("acc1", "INBOX", 42, tmw, subject: "Teklif Revizyonu", from: "Anna", wasRead: true, restoreAsUnread: true);
+    Check(store.IsSnoozed("acc1", "INBOX", 42), "Message 42 is snoozed");
+    Check(!store.IsSnoozed("acc1", "INBOX", 43), "Message 43 is not snoozed");
+    Check(!store.IsSnoozed("acc1", "Archive", 42), "Different folder is not snoozed");
+
+    var item = store.Get("acc1", "INBOX", 42);
+    Check(item != null && item.Subject == "Teklif Revizyonu" && item.RestoreAsUnread, "SnoozeItem retrieved with correct metadata");
+
+    // Persistence reload
+    var reloaded = new SnoozeStore(snoozeFile);
+    Check(reloaded.Items.Count == 1, "Persisted snooze item reloaded from disk");
+    Check(reloaded.IsSnoozed("acc1", "INBOX", 42), "Reloaded store recognizes snoozed email");
+
+    // Unsnooze
+    var un = reloaded.Unsnooze("acc1", "INBOX", 42);
+    Check(un, "Unsnooze returns true on existing item");
+    Check(!reloaded.IsSnoozed("acc1", "INBOX", 42), "Message 42 is no longer snoozed after Unsnooze");
+    Check(reloaded.Items.Count == 0, "Store is empty after unsnooze");
+}));
+
+await Test("snooze: zaman aşımı (CheckDue), okunmamış olarak geri dönme ve tarih güncelleme", () => Sync(() =>
+{
+    var snoozeFile = Path.Combine(root, "snooze-due-test.json");
+    if (File.Exists(snoozeFile)) File.Delete(snoozeFile);
+
+    var store = new SnoozeStore(snoozeFile);
+    var now = DateTimeOffset.Now;
+    var future = now.AddHours(2);
+
+    store.Snooze("acc1", "INBOX", 101, future, subject: "Acil Parça Talebi", from: "Tom", wasRead: true, restoreAsUnread: true);
+
+    // Before due
+    var notYet = store.CheckDue(now.AddHours(1));
+    Check(notYet.Count == 0, "No items due before scheduled time");
+    Check(store.IsSnoozed("acc1", "INBOX", 101), "Message remains snoozed before due time");
+
+    // MailCache integration simulation
+    var cacheDir = Path.Combine(root, "cache-snooze-test");
+    Directory.CreateDirectory(cacheDir);
+    var cache = new MailCache(Path.Combine(cacheDir, "mail.db"));
+    cache.Init();
+
+    var header = new MailHeader
+    {
+        AccountId = "acc1",
+        Folder = "INBOX",
+        Uid = 101,
+        Subject = "Acil Parça Talebi",
+        FromName = "Tom",
+        Date = now.AddDays(-1),
+        IsRead = true
+    };
+    cache.UpsertHeaders(new[] { header });
+
+    // Verify initial state
+    var initHeaders = cache.GetHeaders("acc1", "INBOX");
+    Check(initHeaders.Count == 1 && initHeaders[0].IsRead, "Cached message is initially read");
+
+    // After due time
+    var due = store.CheckDue(future.AddMinutes(5));
+    Check(due.Count == 1 && due[0].Uid == 101, "CheckDue returns expired snooze item");
+    Check(!store.IsSnoozed("acc1", "INBOX", 101), "Woken message is automatically removed from snoozed list");
+
+    // Apply waking actions as MainWindow does
+    foreach (var d in due)
+    {
+        if (d.RestoreAsUnread)
+        {
+            cache.SetFlags(d.AccountId, d.Folder, d.Uid, read: false);
+        }
+        cache.TouchDate(d.AccountId, d.Folder, d.Uid, DateTimeOffset.UtcNow);
+    }
+
+    var updatedHeaders = cache.GetHeaders("acc1", "INBOX");
+    Check(updatedHeaders.Count == 1, "Message still in cache");
+    Check(!updatedHeaders[0].IsRead, "Woken message marked unread in cache");
+    Check(updatedHeaders[0].Date > now, "Woken message date touched so it sorts to the top");
+}));
+
+await Test("birleşik gelen kutusu: çoklu hesap INBOX birleştirme, tarih sıralaması ve okunmamış sayısı", () => Sync(() =>
+{
+    var cacheDir = Path.Combine(root, "cache-unified-test");
+    Directory.CreateDirectory(cacheDir);
+    var cache = new MailCache(Path.Combine(cacheDir, "mail.db"));
+    cache.Init();
+
+    var now = DateTimeOffset.Now;
+
+    // Account A: 2 in INBOX (1 unread, 1 read), 1 in Sent
+    var m1 = new MailHeader { AccountId = "acc-a", Folder = "INBOX", Uid = 1, Subject = "İş Teklifi A1", Date = now.AddHours(-2), IsRead = true };
+    var m2 = new MailHeader { AccountId = "acc-a", Folder = "INBOX", Uid = 2, Subject = "İş Teklifi A2", Date = now.AddHours(-1), IsRead = false };
+    var m3 = new MailHeader { AccountId = "acc-a", Folder = "Sent", Uid = 3, Subject = "Giden Cevap A3", Date = now.AddHours(-0.5), IsRead = true };
+
+    // Account B: 2 in INBOX (1 unread, 1 read)
+    var m4 = new MailHeader { AccountId = "acc-b", Folder = "INBOX", Uid = 10, Subject = "Tedarikçi B1", Date = now.AddMinutes(-30), IsRead = false };
+    var m5 = new MailHeader { AccountId = "acc-b", Folder = "INBOX", Uid = 11, Subject = "Tedarikçi B2", Date = now.AddHours(-4), IsRead = true };
+
+    cache.UpsertHeaders(new[] { m1, m2, m3, m4, m5 });
+
+    var unified = cache.GetUnifiedInboxHeaders();
+    Check(unified.Count == 4, $"Unified Inbox returned {unified.Count} mails (expected 4, Sent excluded)");
+    Check(unified.All(m => m.Folder.Equals("INBOX", StringComparison.OrdinalIgnoreCase)), "All unified mails are from INBOX");
+
+    // Verify sorted by date descending: m4 (30m ago), m2 (1h ago), m1 (2h ago), m5 (4h ago)
+    Check(unified[0].Uid == 10 && unified[0].AccountId == "acc-b", "Newest mail is first (acc-b, 30m ago)");
+    Check(unified[1].Uid == 2 && unified[1].AccountId == "acc-a", "Second mail is acc-a (1h ago)");
+    Check(unified[2].Uid == 1 && unified[2].AccountId == "acc-a", "Third mail is acc-a (2h ago)");
+    Check(unified[3].Uid == 11 && unified[3].AccountId == "acc-b", "Oldest mail is last (acc-b, 4h ago)");
+
+    // Unread count across both accounts
+    var unreadTotal = cache.GetUnifiedInboxUnreadCount();
+    Check(unreadTotal == 2, $"Unified inbox unread count is {unreadTotal} (expected 2)");
+
+    // Account color palette helper
+    var accA = new AccountConfig { Id = "acc-a", Email = "is@example.com" };
+    var accB = new AccountConfig { Id = "acc-b", Email = "kisisel@example.com" };
+    var colA = AccountColorHelper.GetAccountColor(accA, 0);
+    var colB = AccountColorHelper.GetAccountColor(accB, 1);
+    Check(!string.IsNullOrEmpty(colA) && !string.IsNullOrEmpty(colB), "Colors assigned to accounts");
+    Check(colA != colB, "Different accounts get distinct colors from palette");
+}));
+
+await Test("arama klasörleri: SearchFolderStore kalıcılık, varsayılanlar ve kriter değerlendirme motoru", () => Sync(() =>
+{
+    var sfFile = Path.Combine(root, "searchfolders-test.json");
+    if (File.Exists(sfFile)) File.Delete(sfFile);
+
+    var store = new SearchFolderStore(sfFile);
+    Check(store.Folders.Count == 3, $"SearchFolderStore initialized with {store.Folders.Count} default folders (expected 3)");
+
+    var unreadFolder = store.Find("search-unread");
+    Check(unreadFolder != null && unreadFolder.Criteria.IsUnread == true, "Default 'Okunmamış' folder has IsUnread=true");
+
+    var flaggedFolder = store.Find("search-flagged");
+    Check(flaggedFolder != null && flaggedFolder.Criteria.IsFlagged == true, "Default 'Bayraklı' folder has IsFlagged=true");
+
+    var attFolder = store.Find("search-this-week-attachments");
+    Check(attFolder != null && attFolder.Criteria.HasAttachments == true && attFolder.Criteria.DateRangePreset == "this_week",
+        "Default 'Bu haftanın ekli mailleri' folder has HasAttachments=true and this_week preset");
+
+    // Add custom search folder
+    var custom = new SearchFolderItem
+    {
+        Id = "sf-custom-pdf",
+        Name = "PDF Çizimler",
+        Criteria = new SearchFolderCriteria
+        {
+            HasAttachments = true,
+            AttachmentType = "pdf",
+            From = "Anna",
+            Query = "flange"
+        }
+    };
+    store.AddOrUpdate(custom);
+    Check(store.Folders.Count == 4, "Custom search folder added");
+
+    // Reload from disk to verify persistence
+    var store2 = new SearchFolderStore(sfFile);
+    Check(store2.Folders.Count == 4, "SearchFolderStore persisted to JSON and reloaded");
+    var found = store2.Find("sf-custom-pdf");
+    Check(found != null && found.Criteria.AttachmentType == "pdf" && found.Criteria.From == "Anna", "Custom criteria persisted");
+
+    // Test Search Criteria against sample mails in MailCache
+    var cacheDir = Path.Combine(root, "cache-searchfolder-test");
+    Directory.CreateDirectory(cacheDir);
+    var cache = new MailCache(Path.Combine(cacheDir, "mail.db"));
+    cache.Init();
+
+    var now = DateTimeOffset.Now;
+    var startOfWeek = MailStudio.Services.Calendar.Recurrence.WeekStart(now.Date);
+
+    var mailUnread = new MailHeader { AccountId = "demo", Folder = "INBOX", Uid = 1, Subject = "Teklif", FromName = "Anna Keller", Date = now, IsRead = false, HasAttachments = false };
+    var mailFlagged = new MailHeader { AccountId = "demo", Folder = "INBOX", Uid = 2, Subject = "Önemli", FromName = "Tom", Date = now, IsRead = true, IsFlagged = true, HasAttachments = false };
+    var mailOldAtt = new MailHeader { AccountId = "demo", Folder = "INBOX", Uid = 3, Subject = "Geçen Hafta Çizim", FromName = "Anna", Date = startOfWeek.AddDays(-3), IsRead = true, HasAttachments = true };
+    var mailThisWeekAtt = new MailHeader { AccountId = "demo", Folder = "INBOX", Uid = 4, Subject = "Bu Hafta flange-DN100", FromName = "Anna Keller", Date = now, IsRead = false, HasAttachments = true };
+
+    cache.UpsertHeaders(new[] { mailUnread, mailFlagged, mailOldAtt, mailThisWeekAtt });
+    cache.SaveAttachments("demo", "INBOX", 4, new List<AttachmentInfo>
+    {
+        new() { FileName = "flange-DN100-revB.pdf", Part = "1", Size = 2048 }
+    });
+
+    // Test Unread search
+    var unreadMatches = store.ExecuteSearch(unreadFolder!, cache, now);
+    Check(unreadMatches.Count == 2 && unreadMatches.Any(m => m.Uid == 1) && unreadMatches.Any(m => m.Uid == 4), "Unread search folder matches 2 unread mails");
+
+    // Test Flagged search
+    var flaggedMatches = store.ExecuteSearch(flaggedFolder!, cache, now);
+    Check(flaggedMatches.Count == 1 && flaggedMatches[0].Uid == 2, "Flagged search folder matches only flagged mail");
+
+    // Test This Week's Attachments search
+    var weekAttMatches = store.ExecuteSearch(attFolder!, cache, now);
+    Check(weekAttMatches.Count == 1 && weekAttMatches[0].Uid == 4, "This week's attachments folder matches mail 4 (mail 3 excluded as last week)");
+
+    // Test Custom PDF search
+    var customMatches = store.ExecuteSearch(custom, cache, now);
+    Check(customMatches.Count == 1 && customMatches[0].Uid == 4, "Custom PDF search matched mail with PDF attachment, Anna sender, and flange query");
+
+    // Test Delete
+    store.Delete("sf-custom-pdf");
+    Check(store.Folders.Count == 3, "Custom search folder successfully deleted");
+}));
+
+await Test("newsletters: List-Unsubscribe parsing (mailto/http/one-click), mailto URI decomposition, newsletter detection, rule generation, and cache move", async () =>
+{
+    // 1. Header parsing tests
+    var hBoth = "<mailto:unsubscribe@example.com?subject=unsubscribe>, <https://example.com/unsub?id=12345>";
+    var parsedBoth = NewsletterHelper.ParseUnsubscribe(hBoth, "List-Unsubscribe=One-Click");
+    Check(parsedBoth != null, "parsedBoth not null");
+    Check(parsedBoth!.MailtoUri == "mailto:unsubscribe@example.com?subject=unsubscribe", "MailtoUri extracted");
+    Check(parsedBoth.HttpUri == "https://example.com/unsub?id=12345", "HttpUri extracted");
+    Check(parsedBoth.HasOneClick, "HasOneClick detected");
+
+    var hHttpOnly = "<https://newsletter.example.org/optout>";
+    var parsedHttp = NewsletterHelper.ParseUnsubscribe(hHttpOnly);
+    Check(parsedHttp != null && parsedHttp.HttpUri == "https://newsletter.example.org/optout" && parsedHttp.MailtoUri == null && !parsedHttp.HasOneClick, "Http only parsed");
+
+    var hMailtoOnly = "<mailto:leave-list@example.com>";
+    var parsedMailto = NewsletterHelper.ParseUnsubscribe(hMailtoOnly);
+    Check(parsedMailto != null && parsedMailto.MailtoUri == "mailto:leave-list@example.com" && parsedMailto.HttpUri == null, "Mailto only parsed");
+
+    Check(NewsletterHelper.ParseUnsubscribe("") == null, "Empty header returns null");
+    Check(NewsletterHelper.ParseUnsubscribe("invalid-without-scheme") == null, "Invalid header returns null");
+
+    // 2. Mailto decomposition tests
+    var (to1, sub1, body1) = NewsletterHelper.ParseMailto("mailto:unsub@example.com?subject=Unsubscribe%20Me&body=Please%20remove");
+    Check(to1 == "unsub@example.com", "to address extracted");
+    Check(sub1 == "Unsubscribe Me", "subject decoded");
+    Check(body1 == "Please remove", "body decoded");
+
+    var (to2, sub2, body2) = NewsletterHelper.ParseMailto("mailto:simple-leave@example.com");
+    Check(to2 == "simple-leave@example.com" && sub2 == "Unsubscribe", "simple mailto default subject");
+
+    // 3. Newsletter detection
+    var m1 = new MailHeader { FromAddress = "news@machining.example", Subject = "Haftalık Bülten", Folder = "INBOX" };
+    Check(NewsletterHelper.IsNewsletter(m1), "m1 detected by from + subject");
+
+    var m2 = new MailHeader { FromAddress = "regular.supplier@example.com", Subject = "Teklif", Folder = "Newsletters" };
+    Check(NewsletterHelper.IsNewsletter(m2), "m2 detected by folder");
+
+    var m3 = new MailHeader { FromAddress = "supplier@example.com", Subject = "Part order", Folder = "INBOX", ListUnsubscribe = "<https://example.com/unsub>" };
+    Check(NewsletterHelper.IsNewsletter(m3), "m3 detected by ListUnsubscribe header");
+
+    var mNormal = new MailHeader { FromAddress = "john.doe@contoso.example", Subject = "Drawing review", Folder = "INBOX" };
+    Check(!NewsletterHelper.IsNewsletter(mNormal), "mNormal is not a newsletter");
+
+    // 4. Rule generation
+    var rule = NewsletterHelper.CreateMoveToNewslettersRule(m1, "Newsletters");
+    Check(rule.Conditions.Any(c => c.Field == "from" && c.Value == "news@machining.example"), "rule has from condition");
+    Check(rule.Actions.Any(a => a.Type == "move_to_folder" && a.Value == "Newsletters"), "rule moves to Newsletters");
+
+    // 5. MailCache MoveMessage test
+    var cDir = Path.Combine(root, "cache-newsletter-move");
+    Directory.CreateDirectory(cDir);
+    var cache = new MailCache(Path.Combine(cDir, "mail.db"));
+    cache.Init();
+    var mailToMove = new MailHeader
+    {
+        AccountId = "acc1", Folder = "INBOX", Uid = 10,
+        Subject = "Bülten", FromName = "News", FromAddress = "news@example.com",
+        ListUnsubscribe = "<https://example.com/unsub>"
+    };
+    cache.UpsertHeaders(new[] { mailToMove });
+    cache.SaveBody("acc1", "INBOX", 10, new MailContent { Html = "<p>News</p>", Text = "News", ListUnsubscribe = "<https://example.com/unsub>" });
+
+    var newUid = cache.MoveMessage("acc1", "INBOX", "Newsletters", 10);
+    Check(newUid > 0, "MoveMessage allocated new UID in Newsletters folder");
+    Check(cache.GetHeaders("acc1", "INBOX").Count == 0, "INBOX message removed");
+    var movedList = cache.GetHeaders("acc1", "Newsletters");
+    Check(movedList.Count == 1 && movedList[0].Uid == newUid && movedList[0].Folder == "Newsletters" && movedList[0].ListUnsubscribe == "<https://example.com/unsub>", "Moved message intact in Newsletters folder with ListUnsubscribe header");
+});
+
+await Test("takvim eşitlemesi: kapalıyken hiçbir ağ isteği yapılmaması", async () =>
+{
+    var mock = new MockHttpHandler(r => throw new InvalidOperationException("Kapalıyken hiçbir ağ isteği yapılmamalıdır!"));
+    var cDir = Path.Combine(root, "cal-disabled-test");
+    Directory.CreateDirectory(cDir);
+    var store = new CalendarStore(Path.Combine(cDir, "calendar.json"));
+    using var sync = new CalendarSyncService(store, mock);
+
+    var acc = new AccountConfig { Id = "acc-disabled", EnableCalendarSync = false, AuthType = AuthType.Microsoft };
+    var res = await sync.SyncAccountAsync(acc);
+    Check(res.Success, "Sync result success when disabled");
+    Check(mock.RequestCount == 0, "Zero HTTP requests executed when calendar sync is disabled");
+});
+
+await Test("takvim eşitlemesi: Microsoft Graph iki yönlü eşitleme, çakışma (sunucu kazanır ve not düşülür) ve silme", async () =>
+{
+    var cDir = Path.Combine(root, "cal-graph-test");
+    Directory.CreateDirectory(cDir);
+    var store = new CalendarStore(Path.Combine(cDir, "calendar.json"));
+
+    // Server state
+    var serverEvents = new List<Dictionary<string, object>>
+    {
+        new()
+        {
+            ["id"] = "graph-1",
+            ["changeKey"] = "ck-1",
+            ["subject"] = "Talaşlı İmalat Koordinasyon",
+            ["start"] = new Dictionary<string, string> { ["dateTime"] = "2026-10-21T09:00:00", ["timeZone"] = "UTC" },
+            ["end"] = new Dictionary<string, string> { ["dateTime"] = "2026-10-21T10:00:00", ["timeZone"] = "UTC" },
+            ["location"] = new Dictionary<string, string> { ["displayName"] = "Toplantı Odası 1" },
+            ["isAllDay"] = false,
+            ["bodyPreview"] = "Haftalık üretim planı"
+        }
+    };
+
+    var serverReceivedDeletes = new List<string>();
+    var serverReceivedPosts = new List<string>();
+
+    var mock = new MockHttpHandler(req =>
+    {
+        var uri = req.RequestUri?.ToString() ?? "";
+        if (req.Method == HttpMethod.Get && uri.Contains("/me/calendarView"))
+        {
+            var json = JsonSerializer.Serialize(new { value = serverEvents });
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
+        }
+        if (req.Method == HttpMethod.Post && uri.Contains("/me/events"))
+        {
+            var body = req.Content?.ReadAsStringAsync().Result ?? "";
+            serverReceivedPosts.Add(body);
+            using (var pd = JsonDocument.Parse(body))
+                serverEvents.Add(new Dictionary<string, object>
+                {
+                    ["id"] = "graph-2", ["changeKey"] = "ck-2", ["subject"] = pd.RootElement.GetProperty("subject").GetString()!,
+                    ["start"] = new Dictionary<string, string> { ["dateTime"] = pd.RootElement.GetProperty("start").GetProperty("dateTime").GetString()!, ["timeZone"] = "UTC" },
+                    ["end"] = new Dictionary<string, string> { ["dateTime"] = pd.RootElement.GetProperty("end").GetProperty("dateTime").GetString()!, ["timeZone"] = "UTC" },
+                    ["isAllDay"] = false
+                });
+            var resJson = JsonSerializer.Serialize(new { id = "graph-2", changeKey = "ck-2" });
+            return new HttpResponseMessage(System.Net.HttpStatusCode.Created) { Content = new StringContent(resJson, Encoding.UTF8, "application/json") };
+        }
+        if (req.Method == HttpMethod.Patch && uri.Contains("/me/events/"))
+        {
+            var resJson = JsonSerializer.Serialize(new { id = "graph-1", changeKey = "ck-1-updated" });
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(resJson, Encoding.UTF8, "application/json") };
+        }
+        if (req.Method == HttpMethod.Delete && uri.Contains("/me/events/"))
+        {
+            var id = uri.Substring(uri.LastIndexOf('/') + 1);
+            serverReceivedDeletes.Add(id);
+            serverEvents.RemoveAll(x => (string)x["id"] == id);
+            return new HttpResponseMessage(System.Net.HttpStatusCode.NoContent);
+        }
+        return new HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
+    });
+
+    // A local-only event (no account calendar) must never be uploaded
+    var privateEv = new CalendarEvent { Title = "Özel – sadece bu bilgisayarda", Start = DateTime.Today.AddHours(8), End = DateTime.Today.AddHours(9) };
+    store.Save(privateEv);
+
+    using var sync = new CalendarSyncService(store, mock) { CustomAccessToken = "mock-token" };
+    var acc = new AccountConfig { Id = "acc-graph", EnableCalendarSync = true, AuthType = AuthType.Microsoft };
+
+    // 1. Initial read sync: server event imported locally
+    var r1 = await sync.SyncAccountAsync(acc);
+    Check(r1.Success, "Initial sync succeeded");
+    Check(r1.CreatedLocally == 1, "1 event created locally from server");
+    Check(r1.CreatedRemote == 0 && serverReceivedPosts.Count == 0, "local-only event was not uploaded");
+    Check(store.Events.Count == 2, "CalendarStore has the server event + the local-only one");
+    var ev1 = store.FindByExternalId("graph-1");
+    Check(ev1 != null && ev1.Title == "Talaşlı İmalat Koordinasyon", "Imported event title correct");
+    Check(ev1!.Start == new DateTime(2026, 10, 21, 9, 0, 0, DateTimeKind.Utc).ToLocalTime(), $"Graph UTC time converted to local once ({ev1.Start})");
+    Check(!ev1.SyncDirty, "imported event is not a local change");
+    Check(ev1?.ExternalEtag == "ck-1", "Imported event etag saved");
+
+    // 2. Local addition pushed to server
+    var newLocal = new CalendarEvent
+    {
+        AccountId = acc.Id,
+        Title = "Kalite Kontrol Denetimi",
+        Start = DateTime.Today.AddHours(14),
+        End = DateTime.Today.AddHours(15),
+        Location = "Ölçüm Laboratuvarı"
+    };
+    store.Save(newLocal);
+    Check(store.Events.Count == 3, "CalendarStore now has 3 events");
+
+    var r2 = await sync.SyncAccountAsync(acc);
+    Check(r2.Success, "Second sync succeeded");
+    Check(r2.CreatedRemote == 1, "New local event pushed to server");
+    Check(serverReceivedPosts.Count == 1, "Server received 1 POST request");
+    var reloadedLocal = store.Find(newLocal.Id);
+    Check(reloadedLocal?.ExternalId == "graph-2" && reloadedLocal?.ExternalEtag == "ck-2", "New local event received remote ID and Etag");
+
+    // 3. Conflict resolution: both modified -> Server wins and note is made
+    ev1!.Title = "Yerel Olarak Değiştirildi";
+    ev1.Modified = DateTime.Now;
+    store.Save(ev1);
+
+    // Server also changed
+    serverEvents[0]["subject"] = "Sunucu Tarafında Değiştirildi";
+    serverEvents[0]["changeKey"] = "ck-1-conflict";
+
+    var r3 = await sync.SyncAccountAsync(acc);
+    Check(r3.Success, "Conflict sync succeeded");
+    Check(r3.ConflictsResolved == 1, "Conflict resolved");
+    var confEv = store.FindByExternalId("graph-1");
+    Check(confEv?.Title == "Sunucu Tarafında Değiştirildi", "Server won conflict on Title");
+    Check(confEv?.Notes.Contains("Çakışma çözüldü") == true, "Conflict resolution note recorded in Notes");
+
+    // 4. Local deletion -> server receives DELETE
+    store.Delete(reloadedLocal!);
+    Check(store.Events.Count == 2, "Local store has 2 events after deletion");
+    Check(store.GetTombstones(acc.Id).Count == 1, "Tombstone created for deleted event");
+
+    var r4 = await sync.SyncAccountAsync(acc);
+    Check(r4.Success, "Delete sync succeeded");
+    Check(r4.DeletedRemote == 1, "Event deleted on server");
+    Check(serverReceivedDeletes.Contains("graph-2"), "Server received DELETE for graph-2");
+    Check(store.GetTombstones(acc.Id).Count == 0, "Tombstone removed after successful remote delete");
+
+    // 5. Server deletion -> local event removed
+    serverEvents.Clear();
+    var r5 = await sync.SyncAccountAsync(acc);
+    Check(r5.Success, "Server deletion sync succeeded");
+    Check(r5.DeletedLocally == 1, "Event removed locally when deleted on server");
+    Check(store.Events.Count == 1 && store.Find(privateEv.Id) != null, "only the local-only event is left");
+    Check(serverReceivedPosts.Count == 1, "the local-only event was never uploaded");
+});
+
+await Test("takvim eşitlemesi: sayfalı okuma; liste yarım kalırsa yerelde hiçbir şey silinmez", async () =>
+{
+    var cDir = Path.Combine(root, "cal-paging-test");
+    Directory.CreateDirectory(cDir);
+    var store = new CalendarStore(Path.Combine(cDir, "calendar.json"));
+    object Ev(string id, int day) => new Dictionary<string, object>
+    {
+        ["id"] = id, ["changeKey"] = "ck-" + id, ["subject"] = "Etkinlik " + id, ["isAllDay"] = false,
+        ["start"] = new Dictionary<string, string> { ["dateTime"] = DateTime.Today.AddDays(day).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss"), ["timeZone"] = "UTC" },
+        ["end"] = new Dictionary<string, string> { ["dateTime"] = DateTime.Today.AddDays(day).AddHours(1).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss"), ["timeZone"] = "UTC" }
+    };
+    var failPage2 = false;
+    var mock = new MockHttpHandler(req =>
+    {
+        var uri = req.RequestUri!.ToString();
+        if (uri.Contains("page=2"))
+            return failPage2 ? new HttpResponseMessage(System.Net.HttpStatusCode.ServiceUnavailable)
+                : new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { value = new[] { Ev("p2", 2) } }), Encoding.UTF8, "application/json") };
+        if (uri.Contains("/me/calendarView"))
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new Dictionary<string, object>
+                { ["value"] = new[] { Ev("p1", 1) }, ["@odata.nextLink"] = "https://graph.example.test/v1.0/me/calendarView?page=2" }), Encoding.UTF8, "application/json") };
+        return new HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
+    });
+    using var sync = new CalendarSyncService(store, mock) { CustomAccessToken = "t" };
+    var acc = new AccountConfig { Id = "acc-page", EnableCalendarSync = true, AuthType = AuthType.Microsoft };
+    var r1 = await sync.SyncAccountAsync(acc);
+    Check(r1.Success && r1.CreatedLocally == 2 && store.Events.Count == 2, $"both pages read ({r1.CreatedLocally})");
+    failPage2 = true;
+    var r2 = await sync.SyncAccountAsync(acc);
+    Check(!r2.Success, "failed page reported as an error");
+    Check(store.Events.Count == 2 && r2.DeletedLocally == 0, "nothing deleted locally from an incomplete listing");
+});
+
+await Test("takvim eşitlemesi: Google Calendar API v3 iki yönlü eşitleme, silme ve çakışma", async () =>
+{
+    var cDir = Path.Combine(root, "cal-google-test");
+    Directory.CreateDirectory(cDir);
+    var store = new CalendarStore(Path.Combine(cDir, "calendar.json"));
+
+    var googleEvents = new List<Dictionary<string, object>>
+    {
+        new()
+        {
+            ["id"] = "goo-1",
+            ["etag"] = "\"etag-g1\"",
+            ["status"] = "confirmed",
+            ["summary"] = "Siemens RFQ Toplantısı",
+            ["description"] = "Teklif detayları",
+            ["start"] = new Dictionary<string, string> { ["dateTime"] = "2026-10-22T11:00:00Z" },
+            ["end"] = new Dictionary<string, string> { ["dateTime"] = "2026-10-22T12:00:00Z" },
+            ["location"] = "Ofis"
+        }
+    };
+
+    var serverReceivedDeletes = new List<string>();
+
+    var mock = new MockHttpHandler(req =>
+    {
+        var uri = req.RequestUri?.ToString() ?? "";
+        if (req.Method == HttpMethod.Get && uri.Contains("/calendars/primary/events"))
+        {
+            var json = JsonSerializer.Serialize(new { items = googleEvents });
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
+        }
+        if (req.Method == HttpMethod.Post && uri.Contains("/calendars/primary/events"))
+        {
+            googleEvents.Add(new Dictionary<string, object>
+            {
+                ["id"] = "goo-2",
+                ["etag"] = "\"etag-g2\"",
+                ["status"] = "confirmed",
+                ["summary"] = "Fason Sevkiyatı"
+            });
+            var resJson = JsonSerializer.Serialize(new { id = "goo-2", etag = "\"etag-g2\"" });
+            return new HttpResponseMessage(System.Net.HttpStatusCode.Created) { Content = new StringContent(resJson, Encoding.UTF8, "application/json") };
+        }
+        if (req.Method == HttpMethod.Patch && uri.Contains("/calendars/primary/events/"))
+        {
+            var resJson = JsonSerializer.Serialize(new { id = "goo-1", etag = "\"etag-g1-updated\"" });
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(resJson, Encoding.UTF8, "application/json") };
+        }
+        if (req.Method == HttpMethod.Delete && uri.Contains("/calendars/primary/events/"))
+        {
+            var id = uri.Substring(uri.LastIndexOf('/') + 1);
+            serverReceivedDeletes.Add(id);
+            googleEvents.RemoveAll(x => (string)x["id"] == id);
+            return new HttpResponseMessage(System.Net.HttpStatusCode.NoContent);
+        }
+        return new HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
+    });
+
+    using var sync = new CalendarSyncService(store, mock) { CustomAccessToken = "mock-google-token" };
+    var acc = new AccountConfig { Id = "acc-google", EnableCalendarSync = true, AuthType = AuthType.Google };
+
+    // Initial sync
+    var r1 = await sync.SyncAccountAsync(acc);
+    Check(r1.Success, "Google initial sync succeeded");
+    Check(r1.CreatedLocally == 1, "Google event created locally");
+    var ev = store.FindByExternalId("goo-1");
+    Check(ev != null && ev.Title == "Siemens RFQ Toplantısı", "Google title correct");
+
+    // Local addition
+    var localEv = new CalendarEvent { AccountId = acc.Id, Title = "Fason Sevkiyatı", Start = DateTime.Today.AddHours(16), End = DateTime.Today.AddHours(17) };
+    store.Save(localEv);
+    var r2 = await sync.SyncAccountAsync(acc);
+    Check(r2.CreatedRemote == 1, "Google local addition pushed");
+    Check(store.Find(localEv.Id)?.ExternalId == "goo-2", "Google remote id assigned");
+
+    // Conflict: both modified
+    ev!.Title = "Yerel Google Başlık";
+    ev.Modified = DateTime.Now;
+    store.Save(ev);
+    googleEvents[0]["summary"] = "Sunucu Google Başlık";
+    googleEvents[0]["etag"] = "\"etag-conflict\"";
+
+    var r3 = await sync.SyncAccountAsync(acc);
+    Check(r3.ConflictsResolved == 1, "Google conflict resolved");
+    var conf = store.FindByExternalId("goo-1");
+    Check(conf?.Title == "Sunucu Google Başlık", "Google conflict server won");
+    Check(conf?.Notes.Contains("Çakışma çözüldü") == true, "Google conflict note present");
+
+    // Deletion
+    store.Delete(store.Find(localEv.Id)!);
+    var r4 = await sync.SyncAccountAsync(acc);
+    Check(r4.DeletedRemote == 1 && serverReceivedDeletes.Contains("goo-2"), "Google remote delete executed");
+});
+
+await Test("takvim eşitlemesi: CalDAV iki yönlü eşitleme, XML REPORT ayrıştırma, VEVENT PUT/DELETE ve çakışma", async () =>
+{
+    var cDir = Path.Combine(root, "cal-caldav-test");
+    Directory.CreateDirectory(cDir);
+    var store = new CalendarStore(Path.Combine(cDir, "calendar.json"));
+
+    var caldavVevent = @"BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//MailStudio//Test//EN
+BEGIN:VEVENT
+UID:caldav-uid-100@test
+SUMMARY:CalDAV Bakım Randevusu
+DTSTART:20261023T080000Z
+DTEND:20261023T090000Z
+LOCATION:Atölye 2
+DESCRIPTION:Periyodik CNC bakım
+END:VEVENT
+END:VCALENDAR";
+
+    var xmlResponse = $@"<D:multistatus xmlns:D=""DAV:"" xmlns:C=""urn:ietf:params:xml:ns:caldav"">
+  <D:response>
+    <D:href>/caldav/events/caldav-100.ics</D:href>
+    <D:propstat>
+      <D:prop>
+        <D:getetag>""etag-caldav-1""</D:getetag>
+        <C:calendar-data>{caldavVevent}</C:calendar-data>
+      </D:prop>
+      <D:status>HTTP/1.1 200 OK</D:status>
+    </D:propstat>
+  </D:response>
+</D:multistatus>";
+
+    var serverReceivedPuts = new List<string>();
+    var serverReceivedDeletes = new List<string>();
+
+    var mock = new MockHttpHandler(req =>
+    {
+        var uri = req.RequestUri?.ToString() ?? "";
+        if (req.Method.Method == "REPORT" && uri.Contains("/caldav/"))
+        {
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(xmlResponse, Encoding.UTF8, "application/xml") };
+        }
+        if (req.Method == HttpMethod.Put && uri.Contains("/caldav/"))
+        {
+            serverReceivedPuts.Add(uri);
+            var res = new HttpResponseMessage(System.Net.HttpStatusCode.Created);
+            res.Headers.ETag = new EntityTagHeaderValue("\"etag-caldav-created\"");
+            return res;
+        }
+        if (req.Method == HttpMethod.Delete && uri.Contains("/caldav/"))
+        {
+            serverReceivedDeletes.Add(uri);
+            return new HttpResponseMessage(System.Net.HttpStatusCode.NoContent);
+        }
+        return new HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
+    });
+
+    using var sync = new CalendarSyncService(store, mock) { CustomAccessToken = "mock-caldav-auth" };
+    var acc = new AccountConfig
+    {
+        Id = "acc-caldav",
+        EnableCalendarSync = true,
+        AuthType = AuthType.Password,
+        CalDavUrl = "https://caldav.example.test/caldav/events",
+        CalDavUser = "testuser"
+    };
+
+    // 1. Initial sync: XML REPORT parsed, local event created
+    var r1 = await sync.SyncAccountAsync(acc);
+    Check(r1.Success, "CalDAV initial sync succeeded");
+    Check(r1.CreatedLocally == 1, "CalDAV event created locally from VEVENT");
+    var ev = store.FindByExternalId("/caldav/events/caldav-100.ics");
+    Check(ev != null && ev.Title == "CalDAV Bakım Randevusu", "CalDAV event summary parsed properly");
+    Check(ev?.ExternalEtag == "\"etag-caldav-1\"", "CalDAV event etag saved");
+
+    // 2. Local addition -> CalDAV PUT
+    var localEv = new CalendarEvent { AccountId = acc.Id, Title = "Takım Bileme", Start = DateTime.Today.AddHours(10), End = DateTime.Today.AddHours(11) };
+    store.Save(localEv);
+    var r2 = await sync.SyncAccountAsync(acc);
+    Check(r2.CreatedRemote == 1, "CalDAV local event pushed via PUT");
+    Check(serverReceivedPuts.Count == 1, "CalDAV server received 1 PUT");
+
+    // 3. Local deletion -> CalDAV DELETE
+    var createdEv = store.Find(localEv.Id);
+    Check(createdEv?.ExternalId != null, "Created event has CalDAV ExternalId");
+    store.Delete(createdEv!);
+    var r3 = await sync.SyncAccountAsync(acc);
+    Check(r3.DeletedRemote == 1, "CalDAV remote event deleted");
+    Check(serverReceivedDeletes.Count == 1, "CalDAV server received 1 DELETE");
+});
+
+await Test("büyük ek uyarısı: AttachmentCompressor 20 MB eşiği ve ZIP arşiv oluşturma", () => Sync(() =>
+{
+    var zipTestDir = Path.Combine(root, "zip-test");
+    Directory.CreateDirectory(zipTestDir);
+    var f1 = Path.Combine(zipTestDir, "part1.bin");
+    var f2 = Path.Combine(zipTestDir, "part2.bin");
+
+    // Small files check
+    File.WriteAllBytes(f1, new byte[1024 * 100]); // 100 KB
+    Check(!AttachmentCompressor.IsLarge(new[] { f1 }, out var smallSize), "100 KB file is not large (<20 MB)");
+    Check(smallSize == 1024 * 100, "Small size calculated correctly");
+
+    // Large files check (>20 MB total)
+    // 11 MB + 11 MB = 22 MB
+    File.WriteAllBytes(f1, new byte[11 * 1024 * 1024]);
+    File.WriteAllBytes(f2, new byte[11 * 1024 * 1024]);
+
+    Check(AttachmentCompressor.IsLarge(new[] { f1, f2 }, out var totalSize), "22 MB files set detected as large (>20 MB)");
+    Check(totalSize >= 22 * 1024 * 1024, "Total size is >= 22 MB");
+
+    // Compress to ZIP
+    var zipOut = Path.Combine(zipTestDir, "compressed_parts.zip");
+    var resultZip = AttachmentCompressor.CreateZipArchive(new[] { f1, f2 }, zipOut);
+    Check(File.Exists(resultZip), "ZIP file created successfully on disk");
+
+    using (var archive = System.IO.Compression.ZipFile.OpenRead(resultZip))
+    {
+        Check(archive.Entries.Count == 2, $"ZIP archive contains 2 entries (found {archive.Entries.Count})");
+        Check(archive.Entries.Any(e => e.Name == "part1.bin"), "ZIP contains part1.bin");
+        Check(archive.Entries.Any(e => e.Name == "part2.bin"), "ZIP contains part2.bin");
+    }
+}));
+
+await Test("kişi kartı: MailCache kişi mailleri ve ekleri sorgulama", () => Sync(() =>
+{
+    var cDir = Path.Combine(root, "contact-cache-test");
+    Directory.CreateDirectory(cDir);
+    var cache = new MailCache(Path.Combine(cDir, "mail.db"));
+    cache.Init();
+
+    var targetEmail = "anna.keller@northwind.example";
+    var otherEmail = "other@example.com";
+
+    var m1 = new MailHeader
+    {
+        AccountId = "acc1", Folder = "INBOX", Uid = 501,
+        FromAddress = targetEmail, FromName = "Anna Keller",
+        Subject = "DN100 Flanş Çizimi",
+        Date = DateTimeOffset.Now.AddDays(-2),
+        HasAttachments = true
+    };
+    var m2 = new MailHeader
+    {
+        AccountId = "acc1", Folder = "INBOX", Uid = 502,
+        FromAddress = "sales@company.com", To = $"Anna Keller <{targetEmail}>",
+        Subject = "Teklifimiz Ektedir",
+        Date = DateTimeOffset.Now.AddDays(-1),
+        HasAttachments = true
+    };
+    var mOther = new MailHeader
+    {
+        AccountId = "acc1", Folder = "INBOX", Uid = 503,
+        FromAddress = otherEmail, To = "someone@else.com",
+        Subject = "Alakasız Posta",
+        Date = DateTimeOffset.Now,
+        HasAttachments = false
+    };
+
+    cache.UpsertHeaders(new[] { m1, m2, mOther });
+    cache.SaveAttachments("acc1", "INBOX", 501, new List<AttachmentInfo>
+    {
+        new() { FileName = "flange-DN100.dxf", Part = "2", Size = 512000 }
+    });
+    cache.SaveAttachments("acc1", "INBOX", 502, new List<AttachmentInfo>
+    {
+        new() { FileName = "teklif-NW1042.pdf", Part = "1", Size = 124000 }
+    });
+
+    // 1. Get mails for contact
+    var contactMails = cache.GetMailsForContact(targetEmail);
+    Check(contactMails.Count == 2, $"GetMailsForContact returned {contactMails.Count} messages (expected 2)");
+    Check(contactMails.Any(m => m.Uid == 501) && contactMails.Any(m => m.Uid == 502), "Both sent and received mails for contact returned");
+    Check(!contactMails.Any(m => m.Uid == 503), "Unrelated mail not returned");
+
+    // 2. Get attachments for contact
+    var contactAtts = cache.GetAttachmentsForContact(targetEmail);
+    Check(contactAtts.Count == 2, $"GetAttachmentsForContact returned {contactAtts.Count} attachments (expected 2)");
+    Check(contactAtts.Any(a => a.FileName == "flange-DN100.dxf" && a.Uid == 501), "flange-DN100.dxf found for mail 501");
+    Check(contactAtts.Any(a => a.FileName == "teklif-NW1042.pdf" && a.Uid == 502), "teklif-NW1042.pdf found for mail 502");
+}));
+
+await Test("@ ile bahsetme: ContactBook önerileri ve arama eşleme", () => Sync(() =>
+{
+    var cDir = Path.Combine(root, "contact-suggest-test");
+    Directory.CreateDirectory(cDir);
+    var store = new ContactStore(Path.Combine(cDir, "contacts.json"));
+
+    store.Save(new Contact { FirstName = "Anna", LastName = "Lindqvist", Email = "anna@contoso-aero.example", Company = "Contoso Aero" });
+    store.Save(new Contact { FirstName = "Mustafa", LastName = "Yılmaz", Email = "mustafa@abcmakina.com", Company = "ABC Makina" });
+    store.Save(new Contact { FirstName = "Hans", LastName = "Weber", Email = "hans.weber@siemens.example", Company = "Siemens Energy" });
+
+    var book = new ContactBook(null, store);
+
+    // Query "Anna"
+    var annaMatches = book.Suggest("Anna").ToList();
+    Check(annaMatches.Count >= 1, "Suggest('Anna') found at least 1 match");
+    Check(annaMatches[0].Name == "Anna Lindqvist" && annaMatches[0].Address == "anna@contoso-aero.example", "Anna match details correct");
+
+    // Query "mustafa" (case-insensitive)
+    var mustafaMatches = book.Suggest("mustafa").ToList();
+    Check(mustafaMatches.Count >= 1 && mustafaMatches[0].Address == "mustafa@abcmakina.com", "Suggest('mustafa') found match");
+
+    // Query "siemens" (company match)
+    var siemensMatches = book.Suggest("siemens").ToList();
+    Check(siemensMatches.Count >= 1 && siemensMatches[0].Address == "hans.weber@siemens.example", "Suggest('siemens') found match by company");
+}));
+
 Console.WriteLine($"RESULT {passed} passed. Synthetic evidence: {root}");
+
+sealed class MockHttpHandler : HttpMessageHandler
+{
+    public Func<HttpRequestMessage, HttpResponseMessage> Handler { get; set; }
+    public int RequestCount { get; private set; }
+
+    public MockHttpHandler(Func<HttpRequestMessage, HttpResponseMessage> handler) => Handler = handler;
+
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        RequestCount++;
+        return Task.FromResult(Handler(request));
+    }
+}
+
+

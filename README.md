@@ -57,8 +57,11 @@ never send mail on its own.
 - Offline copy of mail **and attachments**, instant opening, push notifications (IMAP IDLE), desktop alerts, tray mode
 - Rich HTML composer with signatures, inline replies, pop-out windows, contact auto-complete, safe drafts and recovery
 - **Address book**: contacts, groups, Outlook/Gmail CSV and vCard import/export, To/Cc/Bcc picker; every address in a mail is clickable (copy, new mail, add to contacts, find mails)
-- **Calendar** (day / work week / week / month, drag to move, recurring items, reminders, colour categories) with meeting invitations: Accept / Tentative / Decline right in the mail, send invitations and updates, import/export .ics (Outlook, Google)
-- **Tasks**: quick add ("send the quote tomorrow"), due-date groups, flagged mails, mail → task, AI "extract tasks" → task list, reminders
+- **Calendar** (day / work week / week / month, drag to move, recurring items, reminders, colour categories) with meeting invitations: Accept / Tentative / Decline right in the mail, send invitations and updates, import/export .ics – optional sync with Microsoft 365, Google and CalDAV (off by default)
+- **Tasks**: quick add ("send the quote tomorrow"), due-date groups, flagged mails, mail → task, AI "extract tasks", reminders, and **follow-up** ("remind me if there is no answer")
+- **Revision comparison** for manufacturers: finds the earlier revision in the same customer's mails and lists what changed – STEP (sizes, volume, holes by diameter, PMI), DXF/DWG (dimensions, texts), PDF drawings (dimensions, tolerances, title block, notes) and Excel schedules
+- **Quote desk**: requests for quotation from mail with part, revision, quantity, material and dates filled in; statuses, reminders, Excel export
+- **Rules, templates and quick steps**, **undo send / send later**, **snooze**, **all inboxes and search folders**, newsletter **unsubscribe** (always with your confirmation), missing-attachment warning
 - **Conditional formatting** like Outlook — and you can create the rules in plain language with AI
 - Gmail / Outlook.com / Microsoft 365 (OAuth or app password), Yandex and any IMAP/SMTP server
 - Light and dark theme

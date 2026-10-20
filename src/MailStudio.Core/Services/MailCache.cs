@@ -96,7 +96,19 @@ public class MailCache
         var names = new HashSet<string>();
         while (reader.Read()) names.Add(reader.GetString(1));
         reader.Close();
-        foreach (var (name, type) in new[] { ("is_draft", "INTEGER DEFAULT 0"), ("reply_to", "TEXT"), ("in_reply_to", "TEXT"), ("refs_json", "TEXT"), ("body_encoding_version", "INTEGER NOT NULL DEFAULT 0"), ("calendar_ics", "TEXT") })
+        foreach (var (name, type) in new[] {
+            ("is_draft", "INTEGER DEFAULT 0"),
+            ("reply_to", "TEXT"),
+            ("in_reply_to", "TEXT"),
+            ("refs_json", "TEXT"),
+            ("body_encoding_version", "INTEGER NOT NULL DEFAULT 0"),
+            ("calendar_ics", "TEXT"),
+            ("category", "TEXT"),
+            ("importance", "TEXT"),
+            ("msg_size", "INTEGER DEFAULT 0"),
+            ("list_unsubscribe", "TEXT"),
+            ("list_unsubscribe_post", "TEXT")
+        })
             if (!names.Contains(name)) Exec(c, L.F("ALTER TABLE messages ADD COLUMN {0} {1}", name, type));
     }
 
@@ -185,6 +197,16 @@ public class MailCache
             Exec(c, "UPDATE messages SET is_draft=$dr,reply_to=$rt,in_reply_to=$ir,refs_json=$refs WHERE account=$a AND folder=$f AND uid=$u",
                 ("$dr", h.IsDraft ? 1 : 0), ("$rt", h.ReplyTo), ("$ir", h.InReplyTo), ("$refs", System.Text.Json.JsonSerializer.Serialize(h.References)),
                 ("$a", h.AccountId), ("$f", h.Folder), ("$u", (long)h.Uid));
+            if (h.Size > 0)
+                Exec(c, "UPDATE messages SET msg_size=$sz WHERE account=$a AND folder=$f AND uid=$u", ("$sz", h.Size), ("$a", h.AccountId), ("$f", h.Folder), ("$u", (long)h.Uid));
+            if (h.Importance is "high" or "low")
+                Exec(c, "UPDATE messages SET importance=$imp WHERE account=$a AND folder=$f AND uid=$u", ("$imp", h.Importance), ("$a", h.AccountId), ("$f", h.Folder), ("$u", (long)h.Uid));
+            if (!string.IsNullOrEmpty(h.ListUnsubscribe))
+            {
+                Exec(c, "UPDATE messages SET list_unsubscribe=$unsub, list_unsubscribe_post=$unsubpost WHERE account=$a AND folder=$f AND uid=$u",
+                    ("$unsub", h.ListUnsubscribe), ("$unsubpost", h.ListUnsubscribePost),
+                    ("$a", h.AccountId), ("$f", h.Folder), ("$u", (long)h.Uid));
+            }
             Exec(c, "DELETE FROM msg_fts WHERE account=$a AND folder=$f AND uid=$u",
                 ("$a", h.AccountId), ("$f", h.Folder), ("$u", (long)h.Uid));
             Exec(c, "INSERT INTO msg_fts(account,folder,uid,subject,sender,body) SELECT $a,$f,$u,$s,$snd,COALESCE(body_text,preview,$b) FROM messages WHERE account=$a AND folder=$f AND uid=$u",
@@ -220,6 +242,20 @@ public class MailCache
                 ("$v", flagged.Value ? 1 : 0), ("$a", account), ("$f", folder), ("$u", (long)uid));
     }
 
+    public void SetCategory(string account, string folder, uint uid, string? category)
+    {
+        using var c = Open();
+        Exec(c, "UPDATE messages SET category=$v WHERE account=$a AND folder=$f AND uid=$u",
+            ("$v", category), ("$a", account), ("$f", folder), ("$u", (long)uid));
+    }
+
+    public void TouchDate(string account, string folder, uint uid, DateTimeOffset date)
+    {
+        using var c = Open();
+        Exec(c, "UPDATE messages SET date=$d WHERE account=$a AND folder=$f AND uid=$u",
+            ("$d", date.ToUnixTimeMilliseconds()), ("$a", account), ("$f", folder), ("$u", (long)uid));
+    }
+
     public void Delete(string account, string folder, uint uid)
     {
         using var c = Open();
@@ -236,8 +272,12 @@ public class MailCache
     void SaveBodyCore(string account, string folder, uint uid, MailContent content)
     {
         using var c = Open();
-        Exec(c, "UPDATE messages SET body_html=$h, body_text=$t, cc=$cc, calendar_ics=$ics, body_encoding_version=2 WHERE account=$a AND folder=$f AND uid=$u",
-            ("$h", content.Html), ("$t", content.Text), ("$cc", content.Cc), ("$ics", string.IsNullOrEmpty(content.CalendarIcs) ? null : content.CalendarIcs), ("$a", account), ("$f", folder), ("$u", (long)uid));
+        Exec(c, "UPDATE messages SET body_html=$h, body_text=$t, cc=$cc, calendar_ics=$ics, list_unsubscribe=$unsub, list_unsubscribe_post=$unsubpost, body_encoding_version=2 WHERE account=$a AND folder=$f AND uid=$u",
+            ("$h", content.Html), ("$t", content.Text), ("$cc", content.Cc),
+            ("$ics", string.IsNullOrEmpty(content.CalendarIcs) ? null : content.CalendarIcs),
+            ("$unsub", string.IsNullOrEmpty(content.ListUnsubscribe) ? null : content.ListUnsubscribe),
+            ("$unsubpost", string.IsNullOrEmpty(content.ListUnsubscribePost) ? null : content.ListUnsubscribePost),
+            ("$a", account), ("$f", folder), ("$u", (long)uid));
         Exec(c, "UPDATE msg_fts SET body=$t WHERE account=$a AND folder=$f AND uid=$u",
             ("$t", content.Text), ("$a", account), ("$f", folder), ("$u", (long)uid));
     }
@@ -266,19 +306,22 @@ public class MailCache
     {
         using var c = Open();
         using var cmd = c.CreateCommand();
-        cmd.CommandText = "SELECT body_html, body_text, cc, body_encoding_version, calendar_ics FROM messages WHERE account=$a AND folder=$f AND uid=$u AND (body_html IS NOT NULL OR body_text IS NOT NULL)";
+        cmd.CommandText = "SELECT body_html, body_text, cc, body_encoding_version, calendar_ics, list_unsubscribe, list_unsubscribe_post FROM messages WHERE account=$a AND folder=$f AND uid=$u AND (body_html IS NOT NULL OR body_text IS NOT NULL)";
         cmd.Parameters.AddWithValue("$a", account);
         cmd.Parameters.AddWithValue("$f", folder);
         cmd.Parameters.AddWithValue("$u", (long)uid);
         using var r = cmd.ExecuteReader();
         if (!r.Read()) return null;
+        string SSafe(int idx) { try { return r.IsDBNull(idx) ? "" : r.GetString(idx); } catch { return ""; } }
         var content = new MailContent
         {
-            Html = r.IsDBNull(0) ? "" : r.GetString(0),
-            Text = r.IsDBNull(1) ? "" : r.GetString(1),
-            Cc = r.IsDBNull(2) ? "" : r.GetString(2),
+            Html = SSafe(0),
+            Text = SSafe(1),
+            Cc = SSafe(2),
             NeedsEncodingRefresh = r.GetInt32(3) < 2,
-            CalendarIcs = r.IsDBNull(4) ? "" : r.GetString(4)
+            CalendarIcs = SSafe(4),
+            ListUnsubscribe = SSafe(5),
+            ListUnsubscribePost = SSafe(6)
         };
         r.Close();
         content.Attachments.AddRange(GetAttachments(account, folder, uid));
@@ -294,6 +337,47 @@ public class MailCache
         cmd.Parameters.AddWithValue("$f", folder);
         cmd.Parameters.AddWithValue("$l", limit);
         return ReadHeaders(cmd);
+    }
+
+    /// <summary>All INBOX messages across all accounts (Unified Inbox), newest first.</summary>
+    public List<MailHeader> GetUnifiedInboxHeaders(int limit = 50000)
+    {
+        try
+        {
+            using var c = Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT * FROM messages WHERE UPPER(folder)='INBOX' ORDER BY date DESC LIMIT $l";
+            cmd.Parameters.AddWithValue("$l", limit);
+            return ReadHeaders(cmd);
+        }
+        catch (SqliteException ex) when (IsCorrupt(ex)) { OnCorrupt(); return new(); }
+    }
+
+    /// <summary>Total unread count for INBOX across all accounts.</summary>
+    public int GetUnifiedInboxUnreadCount()
+    {
+        try
+        {
+            using var c = Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(*) FROM messages WHERE UPPER(folder)='INBOX' AND is_read=0";
+            return Convert.ToInt32(cmd.ExecuteScalar());
+        }
+        catch (SqliteException ex) when (IsCorrupt(ex)) { OnCorrupt(); return 0; }
+    }
+
+    /// <summary>All messages across all accounts, newest first.</summary>
+    public List<MailHeader> GetAllHeaders(int limit = 50000)
+    {
+        try
+        {
+            using var c = Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT * FROM messages ORDER BY date DESC LIMIT $l";
+            cmd.Parameters.AddWithValue("$l", limit);
+            return ReadHeaders(cmd);
+        }
+        catch (SqliteException ex) when (IsCorrupt(ex)) { OnCorrupt(); return new(); }
     }
 
     /// <summary>Flagged mails of every account and folder (the "flagged mail" part of Tasks), newest first.</summary>
@@ -400,6 +484,40 @@ public class MailCache
         return Convert.ToInt32(cmd.ExecuteScalar());
     }
 
+    /// <summary>Moves a message to a destination folder, allocating a new UID in that folder.</summary>
+    public uint MoveMessage(string account, string fromFolder, string toFolder, uint uid)
+    {
+        using var c = Open();
+        using var tx = c.BeginTransaction();
+        using var cmdUid = c.CreateCommand();
+        cmdUid.CommandText = "SELECT COALESCE(MAX(uid), 0) + 1 FROM messages WHERE account=$a AND folder=$tf";
+        cmdUid.Parameters.AddWithValue("$a", account);
+        cmdUid.Parameters.AddWithValue("$tf", toFolder);
+        var newUid = Convert.ToUInt32(cmdUid.ExecuteScalar());
+
+        Exec(c, """
+            INSERT INTO messages(account, folder, uid, message_id, from_name, from_addr, to_addr, cc, subject, preview,
+                                 date, is_read, is_flagged, has_att, body_html, body_text, is_draft, reply_to, in_reply_to,
+                                 refs_json, body_encoding_version, calendar_ics, category, importance, msg_size,
+                                 list_unsubscribe, list_unsubscribe_post, att_json)
+            SELECT account, $tf, $nu, message_id, from_name, from_addr, to_addr, cc, subject, preview,
+                   date, is_read, is_flagged, has_att, body_html, body_text, is_draft, reply_to, in_reply_to,
+                   refs_json, body_encoding_version, calendar_ics, category, importance, msg_size,
+                   list_unsubscribe, list_unsubscribe_post, att_json
+            FROM messages WHERE account=$a AND folder=$f AND uid=$u
+            """,
+            ("$tf", toFolder), ("$nu", (long)newUid), ("$a", account), ("$f", fromFolder), ("$u", (long)uid));
+
+        Exec(c, "DELETE FROM messages WHERE account=$a AND folder=$f AND uid=$u", ("$a", account), ("$f", fromFolder), ("$u", (long)uid));
+        Exec(c, "DELETE FROM msg_fts WHERE account=$a AND folder=$f AND uid=$u", ("$a", account), ("$f", fromFolder), ("$u", (long)uid));
+
+        Exec(c, "INSERT INTO msg_fts(account,folder,uid,subject,sender,body) SELECT account,folder,uid,subject,from_name || ' ' || from_addr,COALESCE(body_text,preview,'') FROM messages WHERE account=$a AND folder=$tf AND uid=$nu",
+            ("$a", account), ("$tf", toFolder), ("$nu", (long)newUid));
+
+        tx.Commit();
+        return newUid;
+    }
+
     public void RemoveAccount(string account)
     {
         using var c = Open();
@@ -408,11 +526,51 @@ public class MailCache
         Exec(c, "DELETE FROM folder_state WHERE account=$a", ("$a", account));
     }
 
+    /// <summary>Returns recent emails sent by or received from the specified contact address.</summary>
+    public List<MailHeader> GetMailsForContact(string email, int limit = 20)
+    {
+        if (string.IsNullOrWhiteSpace(email)) return new();
+        using var c = Open();
+        using var cmd = c.CreateCommand();
+        cmd.CommandText = "SELECT * FROM messages WHERE LOWER(from_addr)=LOWER($e) OR to_addr LIKE '%' || $e || '%' ORDER BY date DESC LIMIT $l";
+        cmd.Parameters.AddWithValue("$e", email.Trim());
+        cmd.Parameters.AddWithValue("$l", limit);
+        return ReadHeaders(cmd);
+    }
+
+    /// <summary>Returns attachments from messages involving the specified contact address.</summary>
+    public List<ContactAttachmentItem> GetAttachmentsForContact(string email, int limit = 20)
+    {
+        if (string.IsNullOrWhiteSpace(email)) return new();
+        var mails = GetMailsForContact(email, 50).Where(m => m.HasAttachments);
+        var results = new List<ContactAttachmentItem>();
+        foreach (var m in mails)
+        {
+            var atts = GetAttachments(m.AccountId, m.Folder, m.Uid);
+            foreach (var a in atts)
+            {
+                results.Add(new ContactAttachmentItem(
+                    a.FileName,
+                    Path.GetExtension(a.FileName),
+                    a.Size,
+                    a.Part ?? "",
+                    m.AccountId,
+                    m.Folder,
+                    m.Uid,
+                    m.Subject,
+                    m.Date));
+                if (results.Count >= limit) return results;
+            }
+        }
+        return results;
+    }
+
     List<MailHeader> ReadHeaders(SqliteCommand cmd)
     {
         var list = new List<MailHeader>();
         using var r = cmd.ExecuteReader();
-        string S(string n) { var i = r.GetOrdinal(n); return r.IsDBNull(i) ? "" : r.GetString(i); }
+        string S(string n) { try { var i = r.GetOrdinal(n); return r.IsDBNull(i) ? "" : r.GetString(i); } catch { return ""; } }
+        long LSafe(string n) { try { var i = r.GetOrdinal(n); return r.IsDBNull(i) ? 0 : r.GetInt64(i); } catch { return 0; } }
         var epochs = new Dictionary<(string, string), uint>();
         uint Epoch(string account, string folder)
         {
@@ -434,6 +592,11 @@ public class MailCache
                 IsRead = r.GetInt64(r.GetOrdinal("is_read")) == 1,
                 IsFlagged = r.GetInt64(r.GetOrdinal("is_flagged")) == 1,
                 HasAttachments = r.GetInt64(r.GetOrdinal("has_att")) == 1,
+                Category = S("category"),
+                Importance = string.IsNullOrEmpty(S("importance")) ? "normal" : S("importance"),
+                Size = LSafe("msg_size"),
+                ListUnsubscribe = S("list_unsubscribe"),
+                ListUnsubscribePost = S("list_unsubscribe_post")
             });
         }
         return list;

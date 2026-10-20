@@ -58,6 +58,14 @@ public sealed class CalendarEvent
     public DateTime Created { get; set; } = DateTime.Now;
     public DateTime Modified { get; set; } = DateTime.Now;
 
+    // Calendar sync tracking
+    public string? ExternalId { get; set; }
+    public string? ExternalEtag { get; set; }
+    public string? AccountId { get; set; }
+    public DateTime? LastSyncedUtc { get; set; }
+    /// <summary>Changed locally since the last sync (only events assigned to a synced account calendar).</summary>
+    public bool SyncDirty { get; set; }
+
     [JsonIgnore] public TimeSpan Duration => End > Start ? End - Start : TimeSpan.Zero;
     [JsonIgnore] public bool IsMeeting => Attendees.Count > 0 || Organizer.Length > 0;
 

@@ -131,6 +131,7 @@ public sealed class MailService : IDisposable
         if (at.HasFlag(FolderAttributes.Trash) || n is "trash" or "deleted items" or "çöp kutusu" or "silinmiş öğeler") return new(f.FullName, L.T("Silinmiş Öğeler"), "", 3);
         if (at.HasFlag(FolderAttributes.Junk) || n is "spam" or "junk" or "junk e-mail" or "istenmeyen") return new(f.FullName, L.T("Gereksiz E-posta"), "", 4);
         if (at.HasFlag(FolderAttributes.Archive) || n is "archive" or "arşiv") return new(f.FullName, L.T("Arşiv"), "", 5);
+        if (n is "newsletters" or "bültenler" or "bultenler") return new(f.FullName, L.T("Bültenler"), "\uE7BC", 7);
         if (at.HasFlag(FolderAttributes.Flagged)) return new(f.FullName, L.T("Yıldızlı"), "", 6);
         if (at.HasFlag(FolderAttributes.All)) return new(f.FullName, L.T("Tüm Postalar"), "", 60);
         return new(f.FullName, f.Name, "", 50);
@@ -164,8 +165,7 @@ public sealed class MailService : IDisposable
             int done = 0;
             if (newUids.Count > 0)
             {
-                var req = MessageSummaryItems.UniqueId | MessageSummaryItems.Envelope | MessageSummaryItems.Flags |
-                          MessageSummaryItems.BodyStructure | MessageSummaryItems.PreviewText | MessageSummaryItems.InternalDate | MessageSummaryItems.References;
+                var req = NewMailFetch();
                 foreach (var chunk in newUids.Chunk(100))
                 {
                     var headers = new List<MailHeader>();
@@ -213,8 +213,7 @@ public sealed class MailService : IDisposable
             var headers = new List<MailHeader>();
             if (pick.Count > 0)
             {
-                var req = MessageSummaryItems.UniqueId | MessageSummaryItems.Envelope | MessageSummaryItems.Flags |
-                          MessageSummaryItems.BodyStructure | MessageSummaryItems.PreviewText | MessageSummaryItems.InternalDate | MessageSummaryItems.References;
+                var req = NewMailFetch();
                 foreach (var s in await folder.FetchAsync(pick, req, ct))
                 {
                     headers.Add(ToHeader(a.Id, folder.FullName, folder.UidValidity, s));
@@ -226,6 +225,19 @@ public sealed class MailService : IDisposable
             await folder.CloseAsync(false, ct);
             return headers.Count;
         }, ct);
+
+    /// <summary>Header fetch for new mail: also the few headers rules and newsletters need (no body is downloaded).</summary>
+    static FetchRequest NewMailFetch() => new(MessageSummaryItems.UniqueId | MessageSummaryItems.Envelope | MessageSummaryItems.Flags |
+        MessageSummaryItems.BodyStructure | MessageSummaryItems.PreviewText | MessageSummaryItems.InternalDate | MessageSummaryItems.References | MessageSummaryItems.Size)
+    { Headers = new HeaderSet(new[] { "List-Unsubscribe", "List-Unsubscribe-Post", "Importance", "X-Priority" }) };
+
+    static string ImportanceOf(HeaderList? h)
+    {
+        var imp = (h?["Importance"] ?? "").Trim().ToLowerInvariant();
+        if (imp is "high" or "low") return imp;
+        var pri = (h?["X-Priority"] ?? "").Trim();
+        return pri.StartsWith('1') || pri.StartsWith('2') ? "high" : pri.StartsWith('4') || pri.StartsWith('5') ? "low" : "normal";
+    }
 
     static MailHeader ToHeader(string accountId, string folder, uint validity, IMessageSummary s)
     {
@@ -250,7 +262,11 @@ public sealed class MailService : IDisposable
             Date = env?.Date ?? s.InternalDate ?? DateTimeOffset.Now,
             IsRead = s.Flags?.HasFlag(MessageFlags.Seen) == true,
             IsFlagged = s.Flags?.HasFlag(MessageFlags.Flagged) == true,
-            HasAttachments = s.Attachments?.Any() == true
+            HasAttachments = s.Attachments?.Any() == true,
+            Size = (long)(s.Size ?? 0),
+            Importance = ImportanceOf(s.Headers),
+            ListUnsubscribe = (s.Headers?["List-Unsubscribe"] ?? "").Trim(),
+            ListUnsubscribePost = (s.Headers?["List-Unsubscribe-Post"] ?? "").Trim()
         };
     }
 
@@ -377,6 +393,10 @@ public sealed class MailService : IDisposable
             var body = _cache.GetBody(a.Id, h.Folder, h.Uid) ?? new MailContent();
             var demo = new MimeMessage { Subject = h.Subject, Body = new TextPart("html") { Text = body.Html } };
             demo.From.Add(new MailboxAddress(h.FromName, h.FromAddress)); demo.To.Add(MailboxAddress.Parse(a.Email));
+            if (!string.IsNullOrEmpty(body.ListUnsubscribe))
+                demo.Headers.Add("List-Unsubscribe", body.ListUnsubscribe);
+            if (!string.IsNullOrEmpty(body.ListUnsubscribePost))
+                demo.Headers.Add("List-Unsubscribe-Post", body.ListUnsubscribePost);
             return (body, demo);
         }
         var msg = await WithClient(a, async c =>
@@ -423,7 +443,20 @@ public sealed class MailService : IDisposable
         }).ToList();
 
         var calendar = msg.BodyParts.OfType<MimePart>().FirstOrDefault(p => p.ContentType.MimeType.Equals("text/calendar", StringComparison.OrdinalIgnoreCase) || p.ContentType.MimeType.Equals("application/ics", StringComparison.OrdinalIgnoreCase) || (p.FileName ?? "").EndsWith(".ics", StringComparison.OrdinalIgnoreCase));
-        return new MailContent { Html = html, Text = text, Cc = msg.Cc.ToString(), ReplyTo = msg.ReplyTo.ToString(), References = msg.References.ToList(), Attachments = atts, CalendarIcs = calendar == null ? "" : CalendarText(calendar) };
+        var listUnsub = msg.Headers["List-Unsubscribe"] ?? "";
+        var listUnsubPost = msg.Headers["List-Unsubscribe-Post"] ?? "";
+        return new MailContent
+        {
+            Html = html,
+            Text = text,
+            Cc = msg.Cc.ToString(),
+            ReplyTo = msg.ReplyTo.ToString(),
+            References = msg.References.ToList(),
+            Attachments = atts,
+            CalendarIcs = calendar == null ? "" : CalendarText(calendar),
+            ListUnsubscribe = listUnsub,
+            ListUnsubscribePost = listUnsubPost
+        };
     }
 
     static bool IsCalendarPart(BodyPartBasic p) =>
@@ -501,7 +534,12 @@ public sealed class MailService : IDisposable
     /// <summary>A normal delete only moves to the trash folder; a missing target never turns into a permanent delete.</summary>
     public async Task MoveAsync(AccountConfig a, MailHeader h, string? target)
     {
-        if (DemoData.IsDemo(a)) { _cache.Delete(a.Id, h.Folder, h.Uid); return; }
+        if (DemoData.IsDemo(a))
+        {
+            if (target != null) _cache.MoveMessage(a.Id, h.Folder, target, h.Uid);
+            else _cache.Delete(a.Id, h.Folder, h.Uid);
+            return;
+        }
         target ??= await FindSpecialAsync(a, 3);
         if (target == null) throw new InvalidOperationException(L.T("Silinmiş Öğeler klasörü bulunamadı; ileti silinmedi."));
         if (string.Equals(target, h.Folder, StringComparison.Ordinal))
@@ -518,6 +556,20 @@ public sealed class MailService : IDisposable
             return true;
         }, retry: false);
         _cache.Delete(a.Id, h.Folder, h.Uid);
+    }
+
+    /// <summary>Returns the full name of a top-level folder with this name (case-insensitive), creating it if it does not exist.</summary>
+    public async Task<string> EnsureFolderAsync(AccountConfig a, string name, CancellationToken ct = default)
+    {
+        if (DemoData.IsDemo(a)) return name;
+        return await WithClient(a, async c =>
+        {
+            var root = c.PersonalNamespaces.Count > 0 ? c.GetFolder(c.PersonalNamespaces[0]) : c.Inbox.ParentFolder ?? c.Inbox;
+            foreach (var f in await root.GetSubfoldersAsync(false, ct))
+                if (f.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) return f.FullName;
+            var created = await root.CreateAsync(name, true, ct);
+            return created.FullName;
+        }, ct);
     }
 
     public async Task DeletePermanentlyAsync(AccountConfig a, MailHeader h)
@@ -676,7 +728,7 @@ public sealed class MailService : IDisposable
         try { _submissions.Set(id, a.Id, msg.MessageId!, copyWarning == null ? "Completed" : "SentCopyPending", warning); }
         catch (Exception ex) { warning = (warning == null ? "" : warning + "\n") + L.T("Yerel durum kaydedilemedi: ") + ex.Message; }
         r.SubmissionState = "Completed";
-        return new SendResult(id, warning);
+        return new SendResult(id, warning, msg.MessageId);
     }
 
     async Task RemoveSentDraftAsync(AccountConfig a, ComposeRequest r)

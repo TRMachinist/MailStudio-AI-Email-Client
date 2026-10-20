@@ -16,6 +16,7 @@ public interface ITaskHost : IPimHost
     IReadOnlyList<MailHeader> FlaggedMails();
     void SetMailFlag(MailHeader mail, bool flagged);
     void OpenMail(MailHeader mail);
+    void ComposeReminder(TaskItem task);
 }
 
 public enum TaskFilter { Active, Today, Week, Overdue, Completed, All }
@@ -159,13 +160,15 @@ public sealed class TasksView : UserControl
         var flagged = _showFlagged.IsChecked == true && _filter is TaskFilter.Active or TaskFilter.All ? _host.FlaggedMails() : Array.Empty<MailHeader>();
         UpdateFilterCounts();
 
-        string Group(TaskItem t) => t.Completed ? L.T("Tamamlanan") : t.DueDate is not { } d ? L.T("Tarihsiz") : d.Date < today ? L.T("Gecikmiş") : d.Date == today ? L.T("Bugün") :
+        string Group(TaskItem t) => (t.Category == "Cevap bekleniyor" || t.Category == L.T("Cevap bekleniyor")) && !t.Completed
+            ? L.T("Cevap bekleniyor")
+            : t.Completed ? L.T("Tamamlanan") : t.DueDate is not { } d ? L.T("Tarihsiz") : d.Date < today ? L.T("Gecikmiş") : d.Date == today ? L.T("Bugün") :
             d.Date == today.AddDays(1) ? L.T("Yarın") : d.Date < weekEnd ? L.T("Bu hafta") : L.T("Daha sonra");
-        var order = new[] { L.T("Gecikmiş"), L.T("Bugün"), L.T("Yarın"), L.T("Bu hafta"), L.T("Daha sonra"), L.T("Tarihsiz"), L.T("Tamamlanan") };
+        var order = new[] { L.T("Cevap bekleniyor"), L.T("Gecikmiş"), L.T("Bugün"), L.T("Yarın"), L.T("Bu hafta"), L.T("Daha sonra"), L.T("Tarihsiz"), L.T("Tamamlanan") };
         ListBoxItem? toSelect = null;
         foreach (var g in tasks.GroupBy(Group).OrderBy(g => Array.IndexOf(order, g.Key)))
         {
-            Header(g.Key, g.Count(), g.Key == L.T("Gecikmiş"));
+            Header(g.Key, g.Count(), g.Key == L.T("Gecikmiş") || g.Key == L.T("Cevap bekleniyor"));
             foreach (var t in g.OrderBy(t => t.DueDate ?? DateTime.MaxValue).ThenByDescending(t => t.Priority).ThenBy(t => t.Created))
             {
                 var item = new ListBoxItem { Content = Row(t), Tag = t };
@@ -303,6 +306,8 @@ public sealed class TasksView : UserControl
         Item(L.T("Tarih yok"), () => { t.DueDate = null; _store.Save(t); });
         m.Items.Add(new Separator());
         if (t.SourceMail != null) Item(L.T("Kaynak maili aç"), () => _host.OpenSourceMail(t.SourceMail));
+        if (t.Category == "Cevap bekleniyor" || t.Category == "FollowUp" || t.Category == L.T("Cevap bekleniyor"))
+            Item(L.T("Hatırlatma maili yaz"), () => _host.ComposeReminder(t));
         Item(L.T("Sil"), () => { if (_editing?.Id == t.Id) _editing = null; _store.Delete(t); });
         return m;
     }
@@ -415,7 +420,36 @@ public sealed class TasksView : UserControl
             var h = new System.Windows.Documents.Hyperlink(new System.Windows.Documents.Run((t.SourceFrom.Length > 0 ? t.SourceFrom + ": " : "") + (t.SourceSubject.Length > 0 ? t.SourceSubject : L.T("Maili aç"))));
             h.Click += (_, _) => _host.OpenSourceMail(t.SourceMail!);
             link.Inlines.Add(h); link.TextWrapping = TextWrapping.Wrap;
-            Row(L.T("Mail"), link);
+            if (t.Category == "Cevap bekleniyor" || t.Category == "FollowUp" || t.Category == L.T("Cevap bekleniyor"))
+            {
+                var spMail = new StackPanel { Orientation = Orientation.Horizontal };
+                spMail.Children.Add(link);
+                var btnRemind = new Button
+                {
+                    Content = L.T("Hatırlatma maili yaz"),
+                    Margin = new Thickness(12, 0, 0, 0),
+                    Padding = new Thickness(8, 2, 8, 2),
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                btnRemind.Click += (_, _) => _host.ComposeReminder(t);
+                spMail.Children.Add(btnRemind);
+                Row(L.T("Mail"), spMail);
+            }
+            else
+            {
+                Row(L.T("Mail"), link);
+            }
+        }
+        else if (t.Category == "Cevap bekleniyor" || t.Category == "FollowUp" || t.Category == L.T("Cevap bekleniyor"))
+        {
+            var btnRemind = new Button
+            {
+                Content = L.T("Hatırlatma maili yaz"),
+                Padding = new Thickness(8, 2, 8, 2),
+                HorizontalAlignment = HorizontalAlignment.Left
+            };
+            btnRemind.Click += (_, _) => _host.ComposeReminder(t);
+            Row("", btnRemind);
         }
         _dNotes = new TextBox { Text = t.Notes, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 160, VerticalContentAlignment = VerticalAlignment.Top, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         Row(L.T("Notlar"), _dNotes, stretch: true);

@@ -60,12 +60,24 @@ public partial class ComposeWindow : Window
     readonly LocalDraftStore _drafts = new();
     readonly System.Windows.Threading.DispatcherTimer _autosave = new();
     public SendResult? LastSendResult { get; private set; }
+    public Action<AccountConfig, ComposeRequest, int>? UndoSendAction { get; set; }
+    public Action<AccountConfig, ComposeRequest, DateTimeOffset>? ScheduleSendAction { get; set; }
+    public Func<string, MissingAttachmentResult>? MissingAttachmentPrompt { get; set; }
+    public int FollowUpDays => FollowUpCheck?.IsChecked == true && FollowUpDaysBox?.SelectedItem is ComboBoxItem item && int.TryParse(item.Tag as string, out var d) ? d : 0;
+    public string SubjectText => SubjectBox?.Text ?? "";
+    public string ToAddressText => ToBox?.Text ?? "";
+    public IReadOnlyList<string> AttachmentPaths => _attachments;
+    void OnFollowUpCheckChanged(object sender, RoutedEventArgs e)
+    {
+        if (FollowUpDaysBox != null) FollowUpDaysBox.IsEnabled = FollowUpCheck?.IsChecked == true;
+        Changed();
+    }
     void Changed() { if (!_initializing) _state.Changed(); }
     void SetBusy(bool busy)
     {
         ComposeRibbon.IsEnabled = !busy;
         ComposeTools.IsEnabled = !busy;
-        SendButton.IsEnabled = !busy && _editorReady && !_uncertain;
+        SendButton.IsEnabled = SendMenuButton.IsEnabled = !busy && _editorReady && !_uncertain;
         FromBox.IsEnabled = ToBox.IsEnabled = CcBox.IsEnabled = BccBox.IsEnabled = SubjectBox.IsEnabled = !busy;
         Editor.IsEnabled = !busy; AttachList.IsEnabled = !busy;
     }
@@ -100,13 +112,27 @@ public partial class ComposeWindow : Window
         ComposeModelBox.Text=req.AiModel??aiOptions?.Model ?? "";
         FontBox.SelectedIndex = 0;
         SizeBox.Text = "11";
+        if (req.FollowUpDays > 0)
+        {
+            FollowUpCheck.IsChecked = true;
+            FollowUpDaysBox.IsEnabled = true;
+            foreach (ComboBoxItem item in FollowUpDaysBox.Items)
+            {
+                if (item.Tag is string s && int.TryParse(s, out var d) && d == req.FollowUpDays)
+                {
+                    FollowUpDaysBox.SelectedItem = item;
+                    break;
+                }
+            }
+        }
 
         _initializing = false;
         ToBox.AddHandler(System.Windows.Controls.Primitives.TextBoxBase.TextChangedEvent, new TextChangedEventHandler((_, _) => Changed()));
         CcBox.AddHandler(System.Windows.Controls.Primitives.TextBoxBase.TextChangedEvent, new TextChangedEventHandler((_, _) => Changed()));
         BccBox.AddHandler(System.Windows.Controls.Primitives.TextBoxBase.TextChangedEvent, new TextChangedEventHandler((_, _) => Changed()));
         FromBox.SelectionChanged += async (_, _) => {Changed();if(_editorReady&&!_state.IsBusy)await Js($"ms.setSignature({JsonSerializer.Serialize(SignatureHtml(DefaultSignature()))})");};
-        _attachments.CollectionChanged += (_, _) => Changed();
+        _attachments.CollectionChanged += (_, _) => { Changed(); CheckLargeAttachments(); };
+        CheckLargeAttachments();
         _autosave.Interval = TimeSpan.FromSeconds(10);
         _autosave.Tick += async (_, _) =>
         {
@@ -115,7 +141,7 @@ public partial class ComposeWindow : Window
             catch (Exception ex) { StatusText.Text = L.T("Yerel kurtarma kopyası kaydedilemedi: ") + ex.Message; }
             finally { _state.End(); }
         };
-        SendButton.IsEnabled = false;
+        SendButton.IsEnabled = SendMenuButton.IsEnabled = false;
         Loaded += async (_, _) =>
         {
             try { await EnsureEditorAsync(); if (!_closed) _autosave.Start(); }
@@ -180,6 +206,21 @@ public partial class ComposeWindow : Window
                     Mark(BoldBtn, doc.RootElement.GetProperty("b").GetBoolean());
                     Mark(ItalicBtn, doc.RootElement.GetProperty("i").GetBoolean());
                     Mark(UnderBtn, doc.RootElement.GetProperty("u").GetBoolean());
+                }
+                else if (t == "mention-query")
+                {
+                    var q = doc.RootElement.GetProperty("query").GetString() ?? "";
+                    var matches = (RecipientBox.Provider?.Invoke(q) ?? Enumerable.Empty<ContactInfo>())
+                        .Take(5)
+                        .Select(c => new { name = c.Name, address = c.Address })
+                        .ToList();
+                    _ = Js($"ms.showMentions({JsonSerializer.Serialize(matches)})");
+                }
+                else if (t == "mention-selected")
+                {
+                    var name = doc.RootElement.GetProperty("name").GetString() ?? "";
+                    var address = doc.RootElement.GetProperty("address").GetString() ?? "";
+                    AddRecipientToToBox(name, address);
                 }
             }
             catch (Exception ex) { if (!_closed) StatusText.Text = L.T("Editör işlemi tamamlanamadı: ") + ex.Message; }
@@ -348,6 +389,95 @@ public partial class ComposeWindow : Window
         menu.Items.Add(manage);menu.PlacementTarget=sender as UIElement;menu.IsOpen=true;
     }
 
+    async void OnInsertTemplateMenu(object sender, RoutedEventArgs e)
+    {
+        if (_state.IsBusy) return;
+        var store = new TemplateStore();
+        var menu = new ContextMenu { PlacementTarget = sender as UIElement, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+
+        var templates = store.Templates;
+        var currentLang = L.Culture.TwoLetterISOLanguageName.ToLowerInvariant();
+        var sorted = templates
+            .Where(t => t.Language == "all" || t.Language == currentLang || templates.Count <= 6)
+            .OrderBy(t => t.Category)
+            .ThenBy(t => t.Title)
+            .ToList();
+
+        if (sorted.Count == 0) sorted = templates.ToList();
+
+        string lastCat = "";
+        foreach (var t in sorted)
+        {
+            if (!string.IsNullOrEmpty(t.Category) && t.Category != lastCat)
+            {
+                lastCat = t.Category;
+                menu.Items.Add(new MenuItem { Header = "— " + lastCat + " —", IsEnabled = false, FontWeight = FontWeights.SemiBold });
+            }
+            var item = new MenuItem { Header = t.Title, Tag = t };
+            item.Click += async (_, _) => await ApplyTemplateAsync(t);
+            menu.Items.Add(item);
+        }
+
+        if (templates.Count == 0)
+        {
+            menu.Items.Add(new MenuItem { Header = L.T("(Henüz şablon yok)"), IsEnabled = false });
+        }
+
+        menu.Items.Add(new Separator());
+        var manage = new MenuItem { Header = L.T("Şablonları Yönet…") };
+        manage.Click += (_, _) =>
+        {
+            var win = new Templates.TemplateManagerWindow(store, DialogOwner);
+            win.ShowDialog();
+        };
+        menu.Items.Add(manage);
+
+        menu.IsOpen = true;
+    }
+
+    public async Task ApplyTemplateAsync(EmailTemplate t)
+    {
+        var sig = DefaultSignature();
+        var sigText = System.Text.RegularExpressions.Regex.Replace(sig, "<.*?>", string.Empty).Trim();
+        var ctx = TemplateContext.Create(
+            to: ToBox.Text,
+            subject: SubjectBox.Text,
+            signature: sigText,
+            bodyForPartExtraction: _req.Body
+        );
+
+        var renderedBody = TemplateEngine.Render(t.Body, ctx);
+        var html = TemplateEngine.TextToHtml(renderedBody);
+
+        if (!string.IsNullOrWhiteSpace(t.Subject))
+        {
+            var renderedSubj = TemplateEngine.Render(t.Subject, ctx);
+            if (string.IsNullOrWhiteSpace(SubjectBox.Text) || SubjectBox.Text.Trim().Equals("RE:", StringComparison.OrdinalIgnoreCase) || SubjectBox.Text.Trim().Equals("FW:", StringComparison.OrdinalIgnoreCase))
+            {
+                SubjectBox.Text = renderedSubj;
+            }
+        }
+
+        try
+        {
+            await EnsureEditorAsync();
+            var currentDraft = await Js("ms.draftText()");
+            if (string.IsNullOrWhiteSpace(currentDraft) || currentDraft.Trim() == "")
+            {
+                await Js($"ms.setDraft({JsonSerializer.Serialize(html)})");
+            }
+            else
+            {
+                await Js($"ms.insertHtml({JsonSerializer.Serialize(html + "<div><br></div>")})");
+            }
+            Changed();
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = L.T("Şablon eklenemedi: ") + ex.Message;
+        }
+    }
+
     async void OnComposeProviderChanged(object sender,SelectionChangedEventArgs e)
     {
         if(_aiOptions==null)return;
@@ -370,7 +500,7 @@ public partial class ComposeWindow : Window
         if (dlg.ShowDialog(DialogOwner) == true) AddAttachmentFiles(dlg.FileNames);
     }
 
-    void AddAttachmentFiles(IEnumerable<string> files)
+    internal void AddAttachmentFiles(IEnumerable<string> files)
     {
         if (_closed || _closingConfirmed || _state.IsBusy) return;
         var added = 0;
@@ -409,6 +539,72 @@ public partial class ComposeWindow : Window
         if (sender is Button { Tag: string p }) _attachments.Remove(p);
     }
 
+    bool _largeAttachmentDismissed;
+
+    public void CheckLargeAttachments()
+    {
+        if (LargeAttachmentWarning == null || LargeAttachmentText == null) return;
+        if (_largeAttachmentDismissed) return;
+        if (AttachmentCompressor.IsLarge(_attachments, out var totalBytes))
+        {
+            var mb = totalBytes / 1024d / 1024d;
+            LargeAttachmentText.Text = L.F("Eklerin toplam boyutu 20 MB'ı aşıyor ({0:0.#} MB). Dosyaları ZIP olarak sıkıştırmanız önerilir.", mb);
+            LargeAttachmentWarning.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            LargeAttachmentWarning.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    void OnZipAttachments(object sender, RoutedEventArgs e)
+    {
+        if (_attachments.Count == 0) return;
+        try
+        {
+            var zipPath = AttachmentCompressor.CreateZipArchive(_attachments);
+            _attachments.Clear();
+            _attachments.Add(zipPath);
+            _largeAttachmentDismissed = true;
+            if (LargeAttachmentWarning != null) LargeAttachmentWarning.Visibility = Visibility.Collapsed;
+            StatusText.Text = L.T("Ekler başarıyla ZIP olarak sıkıştırıldı.");
+            Changed();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(DialogOwner, L.T("ZIP oluşturulamadı: ") + ex.Message, L.T("Hata"), MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    void OnDismissLargeAttachmentWarning(object sender, RoutedEventArgs e)
+    {
+        _largeAttachmentDismissed = true;
+        if (LargeAttachmentWarning != null) LargeAttachmentWarning.Visibility = Visibility.Collapsed;
+    }
+
+    public void AddRecipientToToBox(string name, string address)
+    {
+        if (string.IsNullOrWhiteSpace(address)) return;
+        var current = ToBox.Text.Trim();
+        if (!current.Contains(address, StringComparison.OrdinalIgnoreCase))
+        {
+            var entry = string.IsNullOrWhiteSpace(name) ? address : $"{name} <{address}>";
+            ToBox.Text = string.IsNullOrEmpty(current) ? entry + "; " : current.TrimEnd(';', ' ') + "; " + entry + "; ";
+            Changed();
+        }
+    }
+
+    public async Task<bool> InsertMentionAsync(string name, string address)
+    {
+        AddRecipientToToBox(name, address);
+        if (_editorReady)
+        {
+            var span = $"<span class=\"ms-mention\" style=\"color:#0078D4;font-weight:600;\">@{System.Net.WebUtility.HtmlEncode(name)}</span>&nbsp;";
+            await Js($"ms.insertHtml({JsonSerializer.Serialize(span)})");
+        }
+        return true;
+    }
+
     void OnPickTo(object sender, RoutedEventArgs e) => Pick(ContactsWindow.Target.To);
     void OnPickCc(object sender, RoutedEventArgs e) => Pick(ContactsWindow.Target.Cc);
     void OnPickBcc(object sender, RoutedEventArgs e) => Pick(ContactsWindow.Target.Bcc);
@@ -445,11 +641,13 @@ public partial class ComposeWindow : Window
             To = ToBox.Text.Trim().TrimEnd(';'),
             Cc = CcBox.Text.Trim().TrimEnd(';'),
             Subject = SubjectBox.Text,
+            FollowUpDays = FollowUpDays,
             EditableHtml=EditorContent.Sanitize(snapshot.RootElement.GetProperty("editable").GetString()),
             SignatureHtml=EditorContent.Sanitize(snapshot.RootElement.GetProperty("signature").GetString()),
             QuotedHtml=EditorContent.Sanitize(snapshot.RootElement.GetProperty("quote").GetString()),
             BodyHtml = EditorContent.Sanitize(snapshot.RootElement.GetProperty("html").GetString()),
             Body = snapshot.RootElement.GetProperty("text").GetString() ?? "",
+            DraftText = snapshot.RootElement.TryGetProperty("draftText", out var dt) ? dt.GetString() : null,
             InReplyTo = _req.InReplyTo,
             CalendarIcs = _req.CalendarIcs, CalendarMethod = _req.CalendarMethod
         };
@@ -469,9 +667,49 @@ public partial class ComposeWindow : Window
             { StatusText.Text = L.T("En az bir alıcı girin."); return; }
             if (string.IsNullOrWhiteSpace(SubjectBox.Text) &&
                 MessageBox.Show(DialogOwner, L.T("Konu satırı boş. Yine de gönderilsin mi?"), L.T("İleti"), MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
-            StatusText.Text = L.T("Gönderiliyor...");
             request = await CollectAsync();
+            if (_attachments.Count == 0 && AttachmentReminder.ShouldWarn(request.BodyHtml, request.Body, _attachments.Count, request.DraftText, request.QuotedHtml, request.SignatureHtml, out var missingKeyword))
+            {
+                var choice = MissingAttachmentPrompt != null
+                    ? MissingAttachmentPrompt(missingKeyword ?? "")
+                    : MissingAttachmentDialog.Show(DialogOwner, missingKeyword ?? "");
+
+                if (choice == MissingAttachmentResult.Cancel)
+                    return;
+                if (choice == MissingAttachmentResult.AddAttachment)
+                {
+                    OnAttach(this, new RoutedEventArgs());
+                    return;
+                }
+            }
+
+            if (!_largeAttachmentDismissed && AttachmentCompressor.IsLarge(_attachments, out var totalBytes))
+            {
+                var mb = totalBytes / 1024d / 1024d;
+                var ans = MessageBox.Show(DialogOwner,
+                    L.F("Eklerin toplam boyutu 20 MB'ı aşıyor ({0:0.#} MB). Göndermeden önce ZIP olarak sıkıştırmak ister misiniz?", mb),
+                    L.T("Büyük Ek Uyarısı"),
+                    MessageBoxButton.YesNoCancel,
+                    MessageBoxImage.Question);
+                if (ans == MessageBoxResult.Cancel) return;
+                if (ans == MessageBoxResult.Yes)
+                {
+                    OnZipAttachments(this, new RoutedEventArgs());
+                    request = await CollectAsync();
+                }
+            }
             _drafts.Save(acc.Id, request);
+
+            if (UndoSendAction != null && AppSettings.Shared.UndoSendSeconds > 0)
+            {
+                _sent = true;
+                UndoSendAction(acc, request, AppSettings.Shared.UndoSendSeconds);
+                _closingConfirmed = true;
+                Close();
+                return;
+            }
+
+            StatusText.Text = L.T("Gönderiliyor...");
             LastSendResult = await _mail.SendAsync(acc, request);
             _sent = true;
             if (LastSendResult.Warning != null)
@@ -490,6 +728,126 @@ public partial class ComposeWindow : Window
             try { Sent?.Invoke(this, EventArgs.Empty); }
             finally { Close(); }
         }
+    }
+
+    void OnSendMenuClick(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu { PlacementTarget = (UIElement)sender, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        var title = new MenuItem { Header = L.T("Zamanlanmış gönder:"), IsEnabled = false, FontWeight = FontWeights.SemiBold };
+        menu.Items.Add(title);
+        menu.Items.Add(new Separator());
+
+        var tomorrow = DateTime.Today.AddDays(1).AddHours(9);
+        var tomorrowItem = new MenuItem { Header = L.F("Yarın sabah ({0:dddd 09:00})", tomorrow) };
+        tomorrowItem.Click += async (_, _) => await ScheduleSendAsync(tomorrow);
+        menu.Items.Add(tomorrowItem);
+
+        var daysUntilMon = ((int)DayOfWeek.Monday - (int)DateTime.Today.DayOfWeek + 7) % 7;
+        if (daysUntilMon == 0) daysUntilMon = 7;
+        var monday = DateTime.Today.AddDays(daysUntilMon).AddHours(9);
+        var mondayItem = new MenuItem { Header = L.F("Pazartesi sabah ({0:d MMM 09:00})", monday) };
+        mondayItem.Click += async (_, _) => await ScheduleSendAsync(monday);
+        menu.Items.Add(mondayItem);
+
+        menu.Items.Add(new Separator());
+        var customItem = new MenuItem { Header = L.T("Özel tarih ve saat…") };
+        customItem.Click += async (_, _) =>
+        {
+            var picked = PickScheduleTime(DialogOwner, DateTime.Today.AddDays(1).AddHours(9));
+            if (picked.HasValue) await ScheduleSendAsync(picked.Value);
+        };
+        menu.Items.Add(customItem);
+        menu.IsOpen = true;
+    }
+
+    async Task ScheduleSendAsync(DateTime scheduledLocal)
+    {
+        if (_uncertain || !_contentReady || _aiCts != null || !_state.TryBegin()) return;
+        SetBusy(true);
+        ComposeRequest? request = null;
+        try
+        {
+            if (From is not { } acc) return;
+            if (string.IsNullOrWhiteSpace(ToBox.Text) && string.IsNullOrWhiteSpace(CcBox.Text) && string.IsNullOrWhiteSpace(BccBox.Text))
+            { StatusText.Text = L.T("En az bir alıcı girin."); return; }
+            if (string.IsNullOrWhiteSpace(SubjectBox.Text) &&
+                MessageBox.Show(DialogOwner, L.T("Konu satırı boş. Yine de zamanlansın mı?"), L.T("İleti"), MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+
+            request = await CollectAsync();
+            if (_attachments.Count == 0 && AttachmentReminder.ShouldWarn(request.BodyHtml, request.Body, _attachments.Count, request.DraftText, request.QuotedHtml, request.SignatureHtml, out var missingKeyword))
+            {
+                var choice = MissingAttachmentPrompt != null
+                    ? MissingAttachmentPrompt(missingKeyword ?? "")
+                    : MissingAttachmentDialog.Show(DialogOwner, missingKeyword ?? "");
+
+                if (choice == MissingAttachmentResult.Cancel)
+                    return;
+                if (choice == MissingAttachmentResult.AddAttachment)
+                {
+                    OnAttach(this, new RoutedEventArgs());
+                    return;
+                }
+            }
+
+            if (!_largeAttachmentDismissed && AttachmentCompressor.IsLarge(_attachments, out var totalBytes))
+            {
+                var mb = totalBytes / 1024d / 1024d;
+                var ans = MessageBox.Show(DialogOwner,
+                    L.F("Eklerin toplam boyutu 20 MB'ı aşıyor ({0:0.#} MB). Göndermeden önce ZIP olarak sıkıştırmak ister misiniz?", mb),
+                    L.T("Büyük Ek Uyarısı"),
+                    MessageBoxButton.YesNoCancel,
+                    MessageBoxImage.Question);
+                if (ans == MessageBoxResult.Cancel) return;
+                if (ans == MessageBoxResult.Yes)
+                {
+                    OnZipAttachments(this, new RoutedEventArgs());
+                    request = await CollectAsync();
+                }
+            }
+            _drafts.Save(acc.Id, request);
+
+            if (ScheduleSendAction != null)
+            {
+                _sent = true;
+                ScheduleSendAction(acc, request, new DateTimeOffset(scheduledLocal));
+                _closingConfirmed = true;
+                Close();
+                return;
+            }
+            StatusText.Text = L.F("İleti zamanlandı: {0:g}", scheduledLocal);
+        }
+        catch (Exception ex) { StatusText.Text = L.T("Zamanlanamadı: ") + ex.Message; }
+        finally { if (request != null) RememberDraft(request); _state.End(); SetBusy(false); }
+    }
+
+    public static DateTime? PickScheduleTime(Window owner, DateTime initial)
+    {
+        var dlg = new Window
+        {
+            Title = L.T("Zamanlanmış Gönder"),
+            Width = 360,
+            Height = 180,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = owner,
+            ResizeMode = ResizeMode.NoResize,
+            Background = ThemeManager.Brush("BgSurfacePrimaryBrush"),
+            ShowInTaskbar = false
+        };
+        var sp = new StackPanel { Margin = new Thickness(20) };
+        sp.Children.Add(new TextBlock { Text = L.T("İletinin gönderileceği tarih ve saati seçin:"), FontSize = 12.5, Margin = new Thickness(0, 0, 0, 14), Foreground = ThemeManager.Brush("TextPrimaryBrush") });
+        var dt = new Calendar.DateTimeField(initial, showTime: true) { Margin = new Thickness(0, 0, 0, 20) };
+        sp.Children.Add(dt);
+        var bp = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        var ok = new Button { Content = L.T("Zamanla"), Style = (Style)dlg.FindResource("PrimaryButton"), Padding = new Thickness(14, 4, 14, 4), Margin = new Thickness(0, 0, 8, 0), IsDefault = true };
+        var cancel = new Button { Content = L.T("İptal"), Style = (Style)dlg.FindResource("FlatButton"), Padding = new Thickness(14, 4, 14, 4), IsCancel = true };
+        DateTime? result = null;
+        ok.Click += (_, _) => { result = dt.Value; dlg.DialogResult = true; dlg.Close(); };
+        cancel.Click += (_, _) => dlg.Close();
+        bp.Children.Add(ok); bp.Children.Add(cancel);
+        sp.Children.Add(bp);
+        dlg.Content = sp;
+        Services.UiTranslator.Apply(dlg);
+        return dlg.ShowDialog() == true ? result : null;
     }
 
     void RememberDraft(ComposeRequest r)

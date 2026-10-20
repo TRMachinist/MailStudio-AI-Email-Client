@@ -31,17 +31,22 @@ public static class DemoData
             "Quotation request – 120× flange DN100 PN16", "Teklif talebi – 120 adet flanş DN100 PN16",
             "<p>Hello,</p><p>please quote <b>120 pcs</b> of the attached flange <b>NW-1042 rev B</b> (S235JR, galvanized).</p><ul><li>Delivery: week 46</li><li>Tolerances per drawing, general ISO 2768-mK</li><li>3.1 material certificate required</li></ul><p>The DXF and the PDF drawing are attached.</p><p>Best regards,<br>Anna Keller<br>Purchasing · Northwind Machining (demo)</p>",
             "<p>Merhaba,</p><p>ekteki <b>NW-1042 rev B</b> flanştan <b>120 adet</b> için teklif rica ederiz (S235JR, galvaniz).</p><ul><li>Teslim: 46. hafta</li><li>Toleranslar resme göre, genel ISO 2768-mK</li><li>3.1 malzeme sertifikası istenir</li></ul><p>DXF ve PDF resim ektedir.</p><p>Saygılarımla,<br>Anna Keller<br>Satın Alma · Northwind Machining (demo)</p>",
-            0.4, Read: false, Flagged: true, Files: new[] { "flange-DN100.pdf", "flange-DN100.dxf" }),
+            0.4, Read: false, Flagged: true, Files: new[] { "flange-DN100-revB.pdf", "flange-DN100-revB.dxf", "flange-DN100.pdf", "flange-DN100.dxf" }),
         new(2, "INBOX", "Tom Becker", "t.becker@contoso-aero.example",
             "STEP model – bracket rev C", "STEP modeli – braket rev C",
             "<p>Hi team,</p><p>attached is the <b>STEP AP214</b> model of bracket rev C. Please check the stock size and the hole positions before CAM.</p><p>Thanks,<br>Tom</p>",
             "<p>Merhaba,</p><p>braket rev C'nin <b>STEP AP214</b> modeli ektedir. CAM öncesi ham malzeme ölçüsünü ve delik konumlarını kontrol eder misiniz?</p><p>Teşekkürler,<br>Tom</p>",
-            2.5, Read: false, Files: new[] { "bracket-revC.stp", "kickoff-bracket-revC.pptx" }),
+            2.5, Read: false, Files: new[] { "bracket-revC.stp", "bracket-revB.stp", "kickoff-bracket-revC.pptx" }),
         new(3, "INBOX", "Planning", "planning@northwind-machining.example",
-            "Delivery schedule – week 43", "Teslimat planı – 43. hafta",
-            "<p>Updated delivery schedule for week 43 attached. Totals are calculated in the sheet.</p>",
-            "<p>43. hafta güncel teslimat planı ektedir. Toplamlar tabloda hesaplanır.</p>",
-            5, Files: new[] { "delivery-schedule-wk43.xlsx" }),
+            "Delivery schedule – week 43 & 44", "Teslimat planı – 43. ve 44. hafta",
+            "<p>Updated delivery schedules for week 43 and week 44 attached. Totals are calculated in the sheets.</p>",
+            "<p>43. ve 44. hafta güncel teslimat planları ektedir. Toplamlar tablolarda hesaplanır.</p>",
+            5, Files: new[] { "delivery-schedule-wk43.xlsx", "delivery-schedule-wk44.xlsx" }),
+        new(10, "INBOX", "Anna Keller", "anna.keller@northwind-machining.example",
+            "Revision update – NW-1042 rev C flange", "Revizyon güncellemesi – NW-1042 rev C flanş",
+            "<p>Hello,</p><p>please find the updated revision <b>NW-1042 rev C</b> attached. The bolt holes were enlarged from Ø18 to Ø20, and flange thickness increased to 26 mm.</p><p>Best regards,<br>Anna Keller</p>",
+            "<p>Merhaba,</p><p>güncellenen <b>NW-1042 rev C</b> revizyonu ektedir. Cıvata delikleri Ø18'den Ø20'ye büyütüldü ve flanş kalınlığı 26 mm'ye çıkarıldı.</p><p>Saygılarımla,<br>Anna Keller</p>",
+            0.1, Read: false, Flagged: true, Files: new[] { "flange-DN100-revC.pdf", "flange-DN100-revC.dxf" }),
         new(4, "INBOX", "Quality Lab", "qa@contoso-aero.example",
             "First article inspection – NW-1042", "İlk numune muayenesi – NW-1042",
             "<p>The FAI report for NW-1042 is attached. All characteristics are within tolerance.</p><table border='1' cellpadding='4' style='border-collapse:collapse'><tr><th>Characteristic</th><th>Nominal</th><th>Measured</th></tr><tr><td>Outer Ø</td><td>220 ±0.2</td><td>220.06</td></tr><tr><td>Bore</td><td>Ø110 H7</td><td>110.012</td></tr></table>",
@@ -77,6 +82,11 @@ public static class DemoData
             "<p>Hi Anna,</p><p>thanks for the request, our offer follows tomorrow.</p>",
             "<p>Merhaba Anna,</p><p>talebiniz için teşekkürler, teklifimiz yarın gelecek.</p>",
             0.2),
+        new(21, "Sent", "Demo User", "demo@mailstudio.example",
+            "Quote: 250x custom flange NW-1042", "Teklif: 250 adet özel flanş NW-1042",
+            "<p>Dear Anna,</p><p>please find our quotation attached for 250 pcs flange NW-1042.</p>",
+            "<p>Sayın Anna,</p><p>250 adet NW-1042 flanş için teklifimiz ektedir.</p>",
+            96, Files: new[] { "flange-DN100.pdf" }),
     };
 
     /// <summary>Creates the demo account, mails and attachment files (idempotent).</summary>
@@ -107,6 +117,60 @@ public static class DemoData
                 Conditions = { new FormatCondition { Field = "from", Value = "news@" } } });
             AppSettings.Shared.Save();
         }
+        var ruleStore = new RuleStore();
+        if (ruleStore.Rules.Count == 0)
+        {
+            ruleStore.Rules.Add(new MailRule
+            {
+                Name = en ? "Quotation requests from Anna" : "Anna'dan gelen teklifler",
+                Enabled = true,
+                StopProcessing = true,
+                MatchAll = true,
+                Conditions = {
+                    new RuleCondition { Field = "from", Value = "anna.keller@" },
+                    new RuleCondition { Field = "subject", Value = en ? "Quotation;RFQ" : "Teklif;Fiyat" }
+                },
+                Actions = {
+                    new RuleAction { Type = "mark_as_flagged" },
+                    new RuleAction { Type = "set_category", Value = en ? "Quotations" : "Teklifler" }
+                }
+            });
+            ruleStore.Rules.Add(new MailRule
+            {
+                Name = en ? "Move newsletters to Newsletters folder" : "Bültenleri Bültenler klasörüne taşı",
+                Enabled = true,
+                StopProcessing = true,
+                MatchAll = true,
+                Conditions = {
+                    new RuleCondition { Field = "from", Value = "news@" }
+                },
+                Actions = {
+                    new RuleAction { Type = "move_to_folder", Value = en ? "Newsletters" : "Bültenler" }
+                }
+            });
+            ruleStore.Save();
+        }
+        var followUpStore = new FollowUpStore();
+        if (followUpStore.FollowUps.Count == 0)
+        {
+            var sentDate = DateTimeOffset.Now.AddDays(-4);
+            var dueDate = sentDate.AddDays(3);
+            var item = new FollowUpItem
+            {
+                AccountId = AccountId,
+                MessageId = "demo-21@mailstudio.example",
+                Subject = en ? "Quote: 250x custom flange NW-1042" : "Teklif: 250 adet özel flanş NW-1042",
+                Recipients = "anna.keller@northwind-machining.example",
+                SentDate = sentDate,
+                DueDays = 3,
+                DueDate = dueDate,
+                IsResolved = false,
+                TaskCreated = false
+            };
+            followUpStore.Add(item);
+            var taskStore = new Calendar.TaskStore();
+            followUpStore.CheckExpired(taskStore, DateTimeOffset.Now);
+        }
         var files = Path.Combine(AppPaths.Root, "demo-files");
         Directory.CreateDirectory(files);
         var source = Path.Combine(AppContext.BaseDirectory, "Demo");
@@ -125,6 +189,8 @@ public static class DemoData
                 AccountId = AccountId, Folder = m.Folder, Uid = m.Uid, UidValidity = 1, MessageId = $"demo-{m.Uid}@mailstudio.example",
                 FromName = m.FromName, FromAddress = m.FromAddress, To = "demo@mailstudio.example", Subject = subject,
                 Preview = text.Length > 160 ? text[..160] : text, Date = now.AddHours(-m.HoursAgo), HasAttachments = m.Files?.Length > 0,
+                ListUnsubscribe = m.Uid == 7 ? "<mailto:unsubscribe@northwind-machining.example?subject=unsubscribe>, <https://northwind-machining.example/unsubscribe?id=demo>" : "",
+                ListUnsubscribePost = m.Uid == 7 ? "List-Unsubscribe=One-Click" : ""
             };
             h.IsRead = m.Read; h.IsFlagged = m.Flagged;
             headers.Add(h);
@@ -136,8 +202,12 @@ public static class DemoData
             {
                 FileName = f, Part = f, Size = File.Exists(Path.Combine(files, f)) ? new FileInfo(Path.Combine(files, f)).Length : 1024,
             }).ToList();
+            var unsub = m.Uid == 7 ? "<mailto:unsubscribe@northwind-machining.example?subject=unsubscribe>, <https://northwind-machining.example/unsubscribe?id=demo>" : "";
+            var unsubPost = m.Uid == 7 ? "List-Unsubscribe=One-Click" : "";
             cache.SaveBody(AccountId, m.Folder, m.Uid, new MailContent { Html = WrapHtml(L.IsEnglish ? m.BodyEn : m.BodyTr), Text = MailService.HtmlToText(L.IsEnglish ? m.BodyEn : m.BodyTr), Attachments = atts,
-                CalendarIcs = m.Invitation ? InvitationIcs(en) : "" });
+                CalendarIcs = m.Invitation ? InvitationIcs(en) : "",
+                ListUnsubscribe = unsub,
+                ListUnsubscribePost = unsubPost });
             cache.SaveAttachments(AccountId, m.Folder, m.Uid, atts);
         }
         return acc;
@@ -179,7 +249,7 @@ public static class DemoData
             Add(new() { Title = T("Monthly quality review", "Aylık kalite değerlendirmesi"), Start = today.AddDays(-20).AddHours(16), End = today.AddDays(-20).AddHours(17), Category = "Kırmızı",
                 Repeat = new() { Frequency = Calendar.RepeatFrequency.Monthly, WeekOfMonth = -1, Days = { DayOfWeek.Friday } } });
         }
-        if (tasks.Tasks.Count == 0)
+        if (!tasks.Tasks.Any(t => t.SourceMail == $"{AccountId}|INBOX|1"))
         {
             tasks.Save(new() { Title = T("Prepare flange quotation NW-1042", "Flanş teklifini hazırla (NW-1042)"), DueDate = today, Priority = Calendar.TaskPriority.High, SourceMail = $"{AccountId}|INBOX|1",
                 SourceSubject = T("Quotation request – 120× flange DN100 PN16", "Teklif talebi – 120 adet flanş DN100 PN16"), SourceFrom = "Anna Keller", ReminderAt = today.AddDays(1).AddHours(9) });
@@ -192,14 +262,112 @@ public static class DemoData
         }
     }
 
+    /// <summary>Demo quotes for Quote Desk (Teklif Masası).</summary>
+    public static void SeedQuotes(QuoteStore quoteStore)
+    {
+        if (quoteStore.Quotes.Count > 0) return;
+        var en = L.IsEnglish;
+        var today = DateTime.Today;
+        string T(string e, string t) => en ? e : t;
+
+        quoteStore.AddOrUpdate(new QuoteItem
+        {
+            Customer = "Northwind Machining",
+            Contact = "Anna Keller",
+            ContactEmail = "anna.keller@northwind-machining.example",
+            PartNumber = "NW-1042",
+            Revision = "C",
+            Quantity = 120,
+            Material = "S235JR, galvaniz",
+            RequestedDelivery = today.AddDays(14),
+            Deadline = today.AddDays(2),
+            Status = QuoteStatus.InProgress,
+            Notes = T("Enlarged bolt holes Ø20, thickness 26mm. 3.1 cert required.", "Büyütülmüş cıvata delikleri Ø20, kalınlık 26 mm. 3.1 sertifika gerekli."),
+            SourceMail = $"{AccountId}|INBOX|10",
+            SourceSubject = T("Revision update – NW-1042 rev C flange", "Revizyon güncellemesi – NW-1042 rev C flanş"),
+            CreatedAt = DateTimeOffset.Now.AddHours(-1)
+        });
+
+        quoteStore.AddOrUpdate(new QuoteItem
+        {
+            Customer = "Contoso Aerospace",
+            Contact = "Tom Becker",
+            ContactEmail = "t.becker@contoso-aero.example",
+            PartNumber = "bracket",
+            Revision = "C",
+            Quantity = 250,
+            Material = "Alüminyum 7075-T6",
+            RequestedDelivery = today.AddDays(21),
+            Deadline = today.AddDays(1),
+            Status = QuoteStatus.New,
+            Notes = T("STEP AP214 file inspected. 5-axis CNC machining.", "STEP AP214 dosyası incelendi. 5 eksen CNC işleme."),
+            SourceMail = $"{AccountId}|INBOX|2",
+            SourceSubject = T("STEP model – bracket rev C", "STEP modeli – braket rev C"),
+            CreatedAt = DateTimeOffset.Now.AddHours(-3)
+        });
+
+        quoteStore.AddOrUpdate(new QuoteItem
+        {
+            Customer = "Schmidt Präzisionstechnik",
+            Contact = "Hans Weber",
+            ContactEmail = "h.weber@schmidt-pt.example",
+            PartNumber = "flange-DN100",
+            Revision = "B",
+            Quantity = 500,
+            Material = "Paslanmaz 1.4301 (AISI 304)",
+            RequestedDelivery = today.AddDays(30),
+            Deadline = today.AddDays(-2),
+            Status = QuoteStatus.InProgress,
+            Notes = T("Laser cut and CNC turned. Overdue reminder active.", "Lazer kesim ve CNC torna. Gecikme uyarısı aktif."),
+            SourceMail = $"{AccountId}|INBOX|1",
+            SourceSubject = T("Quotation request – 120× flange DN100 PN16", "Teklif talebi – 120 adet flanş DN100 PN16"),
+            CreatedAt = DateTimeOffset.Now.AddDays(-4)
+        });
+
+        quoteStore.AddOrUpdate(new QuoteItem
+        {
+            Customer = "Delta Otomotiv",
+            Contact = "Mustafa Yılmaz",
+            ContactEmail = "m.yilmaz@delta-oto.example",
+            PartNumber = "shaft-pin-M12",
+            Revision = "01",
+            Quantity = 5000,
+            Material = "Çelik St52-3",
+            RequestedDelivery = today.AddDays(10),
+            Deadline = today.AddDays(-5),
+            Status = QuoteStatus.Won,
+            Notes = T("Order confirmed. Production starts next week.", "Sipariş onaylandı. Üretim haftaya başlıyor."),
+            CreatedAt = DateTimeOffset.Now.AddDays(-7)
+        });
+    }
+
+    public static void SeedTemplates(TemplateStore store)
+    {
+        if (store.Templates.Count == 0) store.ResetToDefaults();
+    }
+
+    public static void SeedQuickSteps(QuickStepStore store)
+    {
+        if (store.Steps.Count == 0) store.ResetToDefaults();
+    }
+
+    public static void SeedSnooze(SnoozeStore store)
+    {
+        if (store.Items.Count > 0) return;
+        store.Snooze(AccountId, "INBOX", 8, DateTimeOffset.Now.AddDays(2),
+            L.IsEnglish ? "Material certificate 3.1 – heat 52817" : "Malzeme sertifikası 3.1 – döküm 52817",
+            "Quality Lab", wasRead: true, restoreAsUnread: true);
+    }
+
     static string WrapHtml(string body) => "<div style=\"font-family:Segoe UI,Calibri,sans-serif;font-size:14px\">" + body + "</div>";
 
     public static bool IsDemo(AccountConfig a) => a.ImapHost == Host;
 
     public static List<FolderInfo> Folders() => new()
     {
-        new("INBOX", L.T("Gelen Kutusu"), "", 0), new("Drafts", L.T("Taslaklar"), "", 1),
-        new("Sent", L.T("Gönderilmiş Öğeler"), "", 2), new("Trash", L.T("Silinmiş Öğeler"), "", 3), new("Archive", L.T("Arşiv"), "", 5),
+        new("INBOX", L.T("Gelen Kutusu"), "\uE715", 0), new("Drafts", L.T("Taslaklar"), "\uE70F", 1),
+        new("Sent", L.T("Gönderilmiş Öğeler"), "\uE724", 2), new("Trash", L.T("Silinmiş Öğeler"), "\uE74D", 3),
+        new("Archive", L.T("Arşiv"), "\uE7B8", 5), new("Newsletters", L.T("Bültenler"), "\uE7BC", 7),
     };
 
     /// <summary>Returns the demo copy of an attachment.</summary>
@@ -211,5 +379,11 @@ public static class DemoData
         var dest = AttachmentFiles.PathFor(targetDir, att);
         await using (var i = File.OpenRead(src)) await AttachmentFiles.WriteAsync(dest, s => i.CopyToAsync(s), default);
         return dest;
+    }
+
+    /// <summary>Ensures default search folders exist in searchfolders.json.</summary>
+    public static void SeedSearchFolders(SearchFolderStore searchFolderStore)
+    {
+        searchFolderStore.Load();
     }
 }

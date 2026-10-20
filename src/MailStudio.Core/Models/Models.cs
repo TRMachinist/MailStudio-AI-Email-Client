@@ -33,6 +33,13 @@ public class AccountConfig
     public bool OfflineAttachments { get; set; } = true;
     /// <summary>Attachments larger than this (MB) are not downloaded automatically; they download on click.</summary>
     public int OfflineMaxAttachmentMB { get; set; } = 30;
+    public string Color { get; set; } = "";
+    /// <summary>Synchronize calendar events with Microsoft Graph, Google Calendar API v3, or CalDAV (disabled by default).</summary>
+    public bool EnableCalendarSync { get; set; } = false;
+    public string CalDavUrl { get; set; } = "";
+    public string CalDavUser { get; set; } = "";
+    public DateTime? LastCalendarSyncUtc { get; set; }
+    public string? CalendarSyncStatus { get; set; }
 }
 
 public class MailSignature
@@ -72,6 +79,12 @@ public partial class FolderNode : ObservableObject
     public string Name { get; init; } = "";
     public string Icon { get; init; } = "";
     public bool IsAccountRoot { get; init; }
+    public bool IsUnifiedInbox { get; init; }
+    public bool IsSearchFolderRoot { get; init; }
+    public bool IsSearchFolder { get; init; }
+    public string? SearchFolderId { get; init; }
+    public string? CustomColor { get; init; }
+    public bool HasCustomColor => !string.IsNullOrEmpty(CustomColor);
     public int SortOrder { get; init; } = 50;
 
     [ObservableProperty] private int unreadCount;
@@ -101,11 +114,23 @@ public partial class MailHeader : ObservableObject
     public string To { get; init; } = "";
     public string Subject { get; init; } = "";
     public string Preview { get; init; } = "";
-    public DateTimeOffset Date { get; init; }
+    public DateTimeOffset Date { get; set; }
     public bool HasAttachments { get; init; }
+    public long Size { get; set; }
+    public string? Importance { get; set; } = "normal";
+    public string ListUnsubscribe { get; init; } = "";
+    public string ListUnsubscribePost { get; init; } = "";
+    public bool HasListUnsubscribe => !string.IsNullOrEmpty(ListUnsubscribe);
 
+    [ObservableProperty] private string accountName = "";
+    [ObservableProperty] private string accountColor = "#0078D4";
+    [ObservableProperty] private bool showAccountBadge;
+
+    [ObservableProperty] private string? category;
     [ObservableProperty] private bool isRead;
     [ObservableProperty] private bool isFlagged;
+    [ObservableProperty] private bool isSnoozed;
+    [ObservableProperty] private DateTimeOffset? snoozedUntil;
 
     // ---- Conditional formatting (Outlook "Conditional Formatting") ----
     [ObservableProperty] private string? formatFore;
@@ -187,6 +212,8 @@ public class MailContent
     public List<AttachmentInfo> Attachments { get; init; } = new();
     /// <summary>Meeting invitation (text/calendar part or .ics attachment), raw iCalendar text; empty if none.</summary>
     public string CalendarIcs { get; init; } = "";
+    public string ListUnsubscribe { get; init; } = "";
+    public string ListUnsubscribePost { get; init; } = "";
 }
 
 public class AttachmentInfo
@@ -196,6 +223,12 @@ public class AttachmentInfo
     /// <summary>IMAP body part number (e.g. "2", "1.3"); clicking an attachment downloads only this part.</summary>
     public string Part { get; init; } = "";
     public string SizeDisplay => Size > 1024 * 1024 ? $"{Size / 1024d / 1024d:0.0} MB" : $"{Math.Max(1, Size / 1024)} KB";
+}
+
+public record ContactAttachmentItem(string FileName, string Extension, long Size, string Part, string AccountId, string Folder, uint Uid, string Subject, DateTimeOffset Date)
+{
+    public string SizeDisplay => Size > 1024 * 1024 ? $"{Size / 1024d / 1024d:0.0} MB" : $"{Math.Max(1, Size / 1024)} KB";
+    public string DateDisplay => Date.ToLocalTime().ToString("g");
 }
 
 public class ComposeRequest
@@ -217,6 +250,8 @@ public class ComposeRequest
     public string Cc { get; set; } = "";
     public string Subject { get; set; } = "";
     public string Body { get; set; } = "";
+    /// <summary>Active draft plain text excluding quote and signature.</summary>
+    public string? DraftText { get; set; }
     /// <summary>Formatted body (HTML). If set it is sent instead of Body; Body is its plain-text version.</summary>
     public string? BodyHtml { get; set; }
     /// <summary>Quoted original message (HTML) below a reply/forward.</summary>
@@ -227,4 +262,6 @@ public class ComposeRequest
     public string? CalendarIcs { get; set; }
     /// <summary>iCalendar METHOD of <see cref="CalendarIcs"/>: REQUEST, REPLY or CANCEL.</summary>
     public string? CalendarMethod { get; set; }
+    /// <summary>Follow-up reminder: if no reply is received within this many days (0 = no follow-up).</summary>
+    public int FollowUpDays { get; set; }
 }

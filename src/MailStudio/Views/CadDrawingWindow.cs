@@ -121,6 +121,7 @@ public sealed class CadDrawingWindow : Window
         B("", L.T("Çizimdeki tüm yazıları panoya kopyala"), CopyTexts);
         Sep();
         B("", L.T("Varsayılan CAD programında aç"), () => { try { Process.Start(new ProcessStartInfo(_path) { UseShellExecute = true }); } catch (Exception ex) { _status.Text = ex.Message; } }, L.T("Programda aç"));
+        B("⚖", L.T("Önceki revizyonla karşılaştır"), async () => await CompareRevisionAsync(), L.T("Revizyon Karşılaştır"));
         return bar;
     }
 
@@ -202,6 +203,26 @@ public sealed class CadDrawingWindow : Window
     {
         if (_texts.Count == 0) { _status.Text = L.T("Çizimde yazı yok."); return; }
         try { Clipboard.SetText(string.Join(Environment.NewLine, _texts.Select(t => t.text))); _status.Text = L.F("{0} yazı panoya kopyalandı.", _texts.Count); } catch { }
+    }
+
+    async Task CompareRevisionAsync()
+    {
+        var oldPath = await RevisionLookup.PickOlderAsync(this, _path);
+        if (string.IsNullOrEmpty(oldPath) || !File.Exists(oldPath)) return;
+        if (RevisionLookup.ShowDiff != null) { await RevisionLookup.ShowDiff(oldPath, _path); return; }
+
+        _status.Text = L.T("Önceki revizyonla karşılaştırılıyor...");
+        try
+        {
+            var report = await RevisionService.CompareAsync(oldPath, _path, () => _worker, _life.Token);
+            var win = new RevisionDiffWindow(report) { Owner = this };
+            win.Show();
+            _status.Text = L.F("Revizyon karşılaştırma tamamlandı: {0} fark bulundu.", report.TotalChanges);
+        }
+        catch (Exception ex)
+        {
+            _status.Text = L.T("Karşılaştırma hatası: ") + ex.Message;
+        }
     }
 }
 
