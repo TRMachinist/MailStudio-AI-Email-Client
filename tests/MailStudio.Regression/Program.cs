@@ -901,13 +901,13 @@ await Test("undo send and scheduled send: undo aborts before SMTP; scheduled sen
     Check(smtp.Mime.Contains("Morning Report"), "delivered message contains correct subject");
     Check(reloadedOutbox.Items.Count == 0, "sent item cleared from outbox queue");
 
-    // 3. Two queue runs at the same time never send one item twice
+    // 3. Two queue runs at the same time never send one item twice (queue logic only: a counting sender)
     var twice = new OutboxItem { AccountId = acc.Id, Request = new ComposeRequest { To = "carol@example.test", Subject = "Once only", Body = "x" }, ScheduledTime = DateTimeOffset.Now.AddSeconds(-1) };
     reloadedOutbox.Add(twice);
-    var slowSends = 0;
-    Func<AccountConfig, OutboxItem, Task> slow = async (a, i) => { Interlocked.Increment(ref slowSends); await Task.Delay(300); await service.SendAsync(a, i.Request); };
+    var sends = new List<string>();
+    Func<AccountConfig, OutboxItem, Task> slow = async (a, i) => { lock (sends) sends.Add(i.Request.Subject); await Task.Delay(300); };
     var runs = await Task.WhenAll(reloadedOutbox.ProcessDueSendsAsync(_ => acc, slow), reloadedOutbox.ProcessDueSendsAsync(_ => acc, slow));
-    Check(runs.Sum() == 1 && slowSends == 1 && smtp.Accepted == 2, $"concurrent queue runs sent the item exactly once (sends {slowSends}, smtp {smtp.Accepted})");
+    Check(runs.Sum() == 1 && sends.Count == 1, $"concurrent queue runs sent the item exactly once ({sends.Count})");
 
     // 4. Restart: a due item is HELD (asked), never sent automatically; an item that was being sent becomes Uncertain
     var held = new OutboxItem { AccountId = acc.Id, Request = new ComposeRequest { To = "dave@example.test", Subject = "Overdue", Body = "x" }, ScheduledTime = DateTimeOffset.Now.AddHours(1) };
@@ -919,12 +919,22 @@ await Test("undo send and scheduled send: undo aborts before SMTP; scheduled sen
     Check(afterRestart.Find(held.Id)?.Status == OutboxStatus.Held, "overdue scheduled mail is held for the user");
     Check(afterRestart.Find(undoLeft.Id)?.Status == OutboxStatus.Held, "mail left in the undo window at exit is held, not lost");
     Check(afterRestart.Find(inFlight.Id)?.Status == OutboxStatus.Uncertain, "mail interrupted while sending is Uncertain");
-    var autoSent = await afterRestart.ProcessDueSendsAsync(_ => acc, SendWith(service), DateTimeOffset.Now.AddHours(3));
-    Check(autoSent == 0 && smtp.Accepted == 2, "nothing held or uncertain is sent automatically");
+    sends.Clear();
+    Func<AccountConfig, OutboxItem, Task> count = (a, i) => { sends.Add(i.Request.Subject); return Task.CompletedTask; };
+    var autoSent = await afterRestart.ProcessDueSendsAsync(_ => acc, count, DateTimeOffset.Now.AddHours(3));
+    Check(autoSent == 0 && sends.Count == 0, "nothing held or uncertain is sent automatically");
     Check(afterRestart.Release(held.Id), "user releases a held mail");
-    var released = await afterRestart.ProcessDueSendsAsync(_ => acc, SendWith(service));
-    Check(released == 1 && smtp.Accepted == 3, "released mail sent once");
+    var released = await afterRestart.ProcessDueSendsAsync(_ => acc, count);
+    Check(released == 1 && sends.SequenceEqual(new[] { "Overdue" }), "released mail sent once");
     Check(!afterRestart.Remove("nope") && afterRestart.Items.Count == 2, "unknown id is not removed");
+    // a failing send is marked Failed, not retried automatically
+    var failing = new OutboxItem { AccountId = acc.Id, Request = new ComposeRequest { To = "x@example.test", Subject = "Will fail", Body = "x" }, ScheduledTime = DateTimeOffset.Now.AddSeconds(-1) };
+    afterRestart.Add(failing);
+    await afterRestart.ProcessDueSendsAsync(_ => acc, (a, i) => throw new InvalidOperationException("SMTP down"));
+    Check(afterRestart.Find(failing.Id)?.Status == OutboxStatus.Failed, "failed send marked Failed");
+    sends.Clear();
+    await afterRestart.ProcessDueSendsAsync(_ => acc, count);
+    Check(sends.Count == 0, "failed mail is not retried by itself");
 
     // 5. A corrupt outbox.json is kept as a backup, not silently lost
     File.WriteAllText(outboxPath, "{ bozuk");
