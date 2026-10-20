@@ -495,167 +495,298 @@ public static class ShowcaseVideo
         try { c.Close(); } catch { }
     }
 
-    /// <summary>`--showcase-18 &lt;folder&gt;`: the 1.8 film – revision comparison, quote desk, calendar week view, tasks follow-up, newsletter unsubscribe, unified inbox, rules.</summary>
+    /// <summary>
+    /// `--showcase-18 &lt;folder&gt;`: the 1.8 scenes, each one really doing the thing it shows (pick the earlier revision,
+    /// compare, add the changes to the reply, undo a send, snooze, follow-up...). Every scene is at least ~5 s.
+    /// The screen must stay unlocked while recording (a locked session gives empty frames).
+    /// </summary>
     public static async Task Run18Async(MainWindow main, string outDir)
     {
         _out = outDir; Directory.CreateDirectory(_out);
+        AppSettings.Shared.UndoSendSeconds = 10;
         try
         {
             Place(main); await Task.Delay(2500);
             var list = (ListBox)main.FindName("MessageList");
             await Until(() => list.Items.Count >= 8);
-            MailHeader Msg(uint uid) => list.Items.OfType<MailHeader>().First(m => m.Uid == uid);
-            var cache = Field<Services.MailCache>(main, "_cache");
+            var cache = Field<MailCache>(main, "_cache");
+            var all = cache.GetHeaders(DemoData.AccountId, "INBOX", 200);
+            MailHeader With(string file) => all.First(h => cache.GetAttachments(h.AccountId, h.Folder, h.Uid).Any(a => a.FileName == file));
+            AttachmentInfo Att(MailHeader h, string file) => cache.GetAttachments(h.AccountId, h.Folder, h.Uid).First(a => a.FileName == file);
+            async Task<string> Download(MailHeader h, string file) => (await (Task<string?>)Call(main, "DownloadAttachmentAsync", h, Att(h, file))!)!;
+            ListBoxItem? Row(MailHeader m) => list.ItemContainerGenerator.ContainerFromItem(list.Items.OfType<MailHeader>().FirstOrDefault(x => x.Uid == m.Uid)) as ListBoxItem;
+            async Task Select(MailHeader m, int pause = 900)
+            {
+                if (Row(m) is { } row) await Move(Center(main, row, 0.45, 0.5), 600);
+                var fx = ClickFx(); await Task.Delay(90);
+                list.SelectedItem = list.Items.OfType<MailHeader>().FirstOrDefault(x => x.Uid == m.Uid); await fx; await Idle(pause);
+            }
 
-            // 1) c31-revdiff: Revision Comparison
+            // ---- c31: revision comparison: the earlier revision is found in Anna's older mail, compared, added to the reply
             try
             {
-                var m10 = list.Items.OfType<MailHeader>().FirstOrDefault(x => x.Uid == 10) ?? Msg(1);
-                list.SelectedItem = m10; await Idle(1000);
-                var atts = cache.GetAttachments(m10.AccountId, m10.Folder, m10.Uid);
-                var att = atts.FirstOrDefault(a => a.FileName.Contains("revC") || a.FileName.Contains("flange")) ?? atts.First();
-                var before = Application.Current.Windows.OfType<Window>().ToHashSet();
-                _ = (Task?)Call(main, "CompareAttachmentRevisionAsync", att);
-                var diffWin = await WaitNew<Views.RevisionDiffWindow>(before, null, 40);
-                Place(diffWin); await Idle(1500);
-                Rec.Start(diffWin, "c31-revdiff");
-                Rec.Cursor = new Point(W * 0.5, H * 0.45);
-                await Move(new Point(W * 0.35, H * 0.35), 700);
-                await Task.Delay(1000);
-                await Move(new Point(W * 0.45, H * 0.45), 600);
-                await Task.Delay(1200);
-                var addReply = FindEl<Button>(diffWin, b => TextOf(b).Contains(L.T("Farkı yanıta ekle")) || TextOf(b).Contains("Fark"));
-                if (addReply != null) await Move(addReply, 600);
-                await Task.Delay(1600);
+                var revC = With("flange-DN100-revC.dxf");
+                list.SelectedItem = list.Items.OfType<MailHeader>().FirstOrDefault(x => x.Uid == revC.Uid); await Idle(1500);
+                Rec.Start(main, "c31-mail");
+                Rec.Cursor = new Point(W * 0.3, H * 0.4);
+                await Select(revC, 1200);
+                var chip = FindEl<ButtonBase>(main, b => b.Tag is AttachmentInfo a && a.FileName == "flange-DN100-revC.dxf");
+                if (chip != null) { await Move(chip, 700); var fx = ClickFx(); await Task.Delay(400); await fx; }
+                await Task.Delay(900);
                 Rec.Stop();
-                diffWin.Close(); await Idle(800);
-            }
-            catch (Exception ex) { Log.Add("FAIL revdiff: " + ex.Message); }
 
-            // 2) c32-quotes: RFQ Quote Desk
+                var newPath = await Download(revC, "flange-DN100-revC.dxf");
+                var before = Application.Current.Windows.OfType<Window>().ToHashSet();
+                var pick = main.Dispatcher.InvokeAsync(() => (Task<string?>)Call(main, "PickOlderRevisionAsync", main, newPath)!);
+                var chooser = await WaitNew<Window>(before, w => w.Title == L.T("Önceki revizyonu seçin"), 20);
+                await Idle(700);
+                Rec.Start(chooser, "c31a-choose");
+                Rec.Cursor = new Point(chooser.ActualWidth * 0.3, chooser.ActualHeight * 0.3);
+                var lb = FindEl<ListBox>(chooser, _ => true);
+                if (lb != null) { await Move(Center(chooser, lb, 0.3, 0.08), 800); await Task.Delay(1200); }
+                var cmp = Btn(chooser, L.T("Karşılaştır"));
+                await Move(cmp!, 700); await Task.Delay(500);
+                var cfx = ClickFx(); await Task.Delay(120); Rec.Stop();
+                cmp!.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent, cmp)); await cfx;
+                var oldPath = await await pick.Task;
+
+                before = Application.Current.Windows.OfType<Window>().ToHashSet();
+                _ = (Task)Call(main, "ShowRevisionDiffAsync", oldPath!, newPath, revC)!;
+                var diff = await WaitNew<Views.RevisionDiffWindow>(before, null, 90);
+                Place(diff); await Idle(1500);
+                Rec.Start(diff, "c31-revdiff");
+                Rec.Cursor = new Point(W * 0.5, H * 0.75);
+                var lv = FindEl<ListView>(diff, _ => true);
+                if (lv != null)
+                {
+                    for (int i = 0; i < Math.Min(5, lv.Items.Count); i++)
+                    {
+                        if (lv.ItemContainerGenerator.ContainerFromIndex(i) is ListViewItem it) { await Move(Center(diff, it, 0.35, 0.5), 500); lv.SelectedIndex = i; await Task.Delay(700); }
+                    }
+                }
+                await Click(Btn(diff, L.T("Farkı Yanıta Ekle")), 700);
+                await Task.Delay(800);
+                Rec.Stop();
+                diff.Close(); await Idle(2500);
+                Rec.Start(main, "c31b-reply");
+                Rec.Cursor = new Point(W * 0.62, H * 0.55);
+                await Move(new Point(W * 0.6, H * 0.42), 900); await Task.Delay(2600);
+                Rec.Stop();
+                foreach (var c in main.OwnedWindows.OfType<Views.ComposeWindow>().ToList()) ForceClose(c);
+                var inline = Field<Views.ComposeWindow?>(main, "_inlineCompose"); if (inline != null) ForceClose(inline);
+                await Idle(800);
+            }
+            catch (Exception ex) { Log.Add("FAIL revision: " + ex); }
+
+            // ---- c32: STEP revision: holes by diameter, volume, size
+            try
+            {
+                var stepMail = With("bracket-revC.stp");
+                var o = await Download(stepMail, "bracket-revB.stp"); var n = await Download(stepMail, "bracket-revC.stp");
+                var before = Application.Current.Windows.OfType<Window>().ToHashSet();
+                _ = (Task)Call(main, "ShowRevisionDiffAsync", o, n, stepMail)!;
+                var diff = await WaitNew<Views.RevisionDiffWindow>(before, null, 120);
+                Place(diff); await Idle(1500);
+                Rec.Start(diff, "c32-step");
+                Rec.Cursor = new Point(W * 0.5, H * 0.7);
+                var lv = FindEl<ListView>(diff, _ => true);
+                if (lv != null)
+                    for (int i = 0; i < Math.Min(4, lv.Items.Count); i++)
+                        if (lv.ItemContainerGenerator.ContainerFromIndex(i) is ListViewItem it) { await Move(Center(diff, it, 0.3, 0.5), 500); lv.SelectedIndex = i; await Task.Delay(800); }
+                await Task.Delay(1200);
+                Rec.Stop();
+                diff.Close(); await Idle(800);
+            }
+            catch (Exception ex) { Log.Add("FAIL step: " + ex); }
+
+            // ---- c33: quote desk: search, select, mark as won
             try
             {
                 main.SwitchModule(PimModule.Quotes); await Idle(1500);
-                Rec.Start(main, "c32-quotes");
-                Rec.Cursor = new Point(W * 0.5, H * 0.5);
-                var grid = FindEl<DataGrid>(main, g => g.Name == "QuoteGrid" || g.Items.Count > 0);
-                if (grid != null && grid.Items.Count > 0)
-                {
-                    await Move(new Point(W * 0.45, H * 0.35), 700);
-                    await Task.Delay(1000);
-                    await Move(new Point(W * 0.55, H * 0.45), 600);
-                    await Task.Delay(1000);
-                }
-                var expBtn = FindEl<Button>(main, b => TextOf(b).Contains(L.T("Excel'e Aktar")) || TextOf(b).Contains("Excel"));
-                if (expBtn != null) await Move(expBtn, 700);
-                await Task.Delay(1500);
-                Rec.Stop();
-            }
-            catch (Exception ex) { Log.Add("FAIL quotes: " + ex.Message); }
-
-            // 3) c33-calendar: Calendar Week View
-            try
-            {
-                main.SwitchModule(PimModule.Calendar); await Idle(1500);
-                var cv = Field<Views.Calendar.CalendarView?>(main, "_calendarView");
-                if (cv != null) cv.SetMode(CalendarViewMode.Week);
-                await Idle(800);
-                Rec.Start(main, "c33-calendar");
-                Rec.Cursor = new Point(W * 0.5, H * 0.5);
-                await Move(new Point(W * 0.45, H * 0.45), 700);
-                await Task.Delay(1200);
-                await Move(new Point(W * 0.65, H * 0.55), 700);
-                await Task.Delay(1200);
-                var syncBtn = FindEl<ButtonBase>(main, b => TextOf(b).Contains(L.T("Eşitle")) || TextOf(b).Contains("Sync"));
-                if (syncBtn != null) await Move(syncBtn, 700);
-                await Task.Delay(1500);
-                Rec.Stop();
-            }
-            catch (Exception ex) { Log.Add("FAIL calendar: " + ex.Message); }
-
-            // 4) c34-tasks: Tasks & Follow-up
-            try
-            {
-                main.SwitchModule(PimModule.Tasks); await Idle(1500);
-                Rec.Start(main, "c34-tasks");
-                Rec.Cursor = new Point(W * 0.5, H * 0.5);
-                await Move(new Point(W * 0.45, H * 0.35), 700);
-                await Task.Delay(1200);
-                await Move(new Point(W * 0.55, H * 0.5), 700);
-                await Task.Delay(1200);
-                Rec.Stop();
-            }
-            catch (Exception ex) { Log.Add("FAIL tasks: " + ex.Message); }
-
-            // 5) c35-mail18: Newsletter Unsubscribe & Unified Inbox
-            try
-            {
-                main.SwitchModule(PimModule.Mail); await Idle(1200);
-                var newsMail = list.Items.OfType<MailHeader>().FirstOrDefault(x => x.Uid == 7) ?? Msg(1);
-                list.SelectedItem = newsMail; await Idle(1200);
-                Rec.Start(main, "c35-mail18");
-                Rec.Cursor = new Point(W * 0.5, H * 0.5);
-                var unsubBar = main.FindName("UnsubscribeBar") as FrameworkElement;
-                if (unsubBar != null && unsubBar.IsVisible)
-                {
-                    await Move(unsubBar, 700);
-                    await Task.Delay(1200);
-                }
-                var tree = main.FindName("FolderTree") as FrameworkElement;
-                if (tree != null)
-                {
-                    await Move(new Point(W * 0.1, H * 0.2), 700);
-                    await Task.Delay(1400);
-                }
-                Rec.Stop();
-            }
-            catch (Exception ex) { Log.Add("FAIL mail18: " + ex.Message); }
-
-            // 6) c36-compose18: Smart Sending & Missing Attachment Warning
-            try
-            {
-                var before = Application.Current.Windows.OfType<Window>().ToHashSet();
-                _ = main.Dispatcher.BeginInvoke(() => Call(main, "OnNewMail", main, new RoutedEventArgs()));
-                var compose = await WaitNew<Views.ComposeWindow>(before, null, 20);
-                Place(compose); await Idle(1500);
-                Rec.Start(compose, "c36-compose18");
-                Rec.Cursor = new Point(W * 0.5, H * 0.5);
-                var toBox = compose.FindName("ToBox") as FrameworkElement;
-                if (toBox != null) { await Move(toBox, 600); await Task.Delay(800); }
-                var sendBtn = compose.FindName("SendSplitButton") as FrameworkElement ?? FindEl<ButtonBase>(compose, b => TextOf(b).Contains(L.T("Gönder")));
-                if (sendBtn != null) { await Move(sendBtn, 600); await Task.Delay(1000); }
-
-                // Show missing attachment dialog
-                var beforeDlg = Application.Current.Windows.OfType<Window>().ToHashSet();
-                _ = compose.Dispatcher.BeginInvoke(() => Views.MissingAttachmentDialog.Show(compose, "ektedir"));
-                var dlg = await WaitNew<Window>(beforeDlg, w => w.Title == L.T("Ek unutulmuş olabilir"), 10);
-                await Idle(600);
-                await Move(dlg, 500);
+                var desk = Field<Views.Quotes.QuoteDeskView?>(main, "_quoteDeskView")!;
+                Rec.Start(main, "c33-quotes");
+                Rec.Cursor = new Point(W * 0.5, H * 0.55);
+                var search = FindEl<TextBox>(main, t => t.IsVisible && t.ActualWidth > 100);
+                if (search != null) await Move(search, 700);
+                foreach (var ch in "NW-") { desk.SearchText += ch; await Task.Delay(220); }
+                await Task.Delay(900);
+                desk.SearchText = ""; await Task.Delay(500);
+                var first = Field<ListView>(desk, "_list");
+                if (first.ItemContainerGenerator.ContainerFromIndex(0) is ListViewItem row) { await Move(Center(main, row, 0.3, 0.5), 600); first.SelectedIndex = 0; await Task.Delay(700); }
+                await Click(Btn(main, L.T("Kazanıldı")), 700);
                 await Task.Delay(1400);
-                dlg.Close(); await Idle(500);
-
                 Rec.Stop();
-                ForceClose(compose); await Idle(500);
             }
-            catch (Exception ex) { Log.Add("FAIL compose18: " + ex.Message); }
+            catch (Exception ex) { Log.Add("FAIL quotes: " + ex); }
 
-            // 7) c37-rules: Rules Engine
+            // ---- c34: rules: test a rule on the sample, show the result
             try
             {
+                main.SwitchModule(PimModule.Mail); await Idle(800);
                 var before = Application.Current.Windows.OfType<Window>().ToHashSet();
                 _ = main.Dispatcher.BeginInvoke(() => Call(main, "OnRules", main, new RoutedEventArgs()));
                 var rw = await WaitNew<Views.RulesWindow>(before, null, 20);
                 Place(rw); await Idle(1200);
-                Rec.Start(rw, "c37-rules");
-                Rec.Cursor = new Point(W * 0.5, H * 0.5);
-                await Move(new Point(W * 0.4, H * 0.35), 700);
-                await Task.Delay(1200);
-                await Move(new Point(W * 0.5, H * 0.6), 700);
-                await Task.Delay(1400);
+                Rec.Start(rw, "c34-rules");
+                Rec.Cursor = new Point(W * 0.2, H * 0.3);
+                var lbx = FindEl<ListBox>(rw, _ => true);
+                if (lbx?.ItemContainerGenerator.ContainerFromIndex(0) is ListBoxItem r0) { await Move(Center(rw, r0, 0.4, 0.5), 600); await Task.Delay(800); }
+                await Click(Btn(rw, L.T("Bu kuralı test et")), 800);
+                await Task.Delay(2200);
                 Rec.Stop();
                 rw.Close(); await Idle(800);
             }
-            catch (Exception ex) { Log.Add("FAIL rules: " + ex.Message); }
+            catch (Exception ex) { Log.Add("FAIL rules: " + ex); }
+
+            // ---- c35: missing attachment warning, then send → undo
+            try
+            {
+                var anna = all.First(h => h.FromAddress.StartsWith("anna", StringComparison.OrdinalIgnoreCase));
+                var before = Application.Current.Windows.OfType<Window>().ToHashSet();
+                Call(main, "OpenCompose", new ComposeRequest { To = anna.FromAddress, Subject = L.T("NW-1042 rev C – teklifimiz"), Body = L.T("Merhaba Anna, teklifimiz ektedir.") }, DemoData.AccountId, true);
+                var comp = await WaitNew<Views.ComposeWindow>(before, null, 20);
+                Place(comp); await Until(() => comp.IsEditorInitialized, 30); await Idle(1500);
+                Rec.Start(comp, "c35a-compose");
+                Rec.Cursor = new Point(W * 0.4, H * 0.5);
+                await Move(new Point(W * 0.35, H * 0.42), 700); await Task.Delay(900);
+                var send = Btn(comp, L.T("Gönder"));
+                before = Application.Current.Windows.OfType<Window>().ToHashSet();
+                await Click(send, 700);
+                await Task.Delay(500);
+                Rec.Stop();
+                var dlg = await WaitNew<Window>(before, w => w.Title == L.T("Ek unutulmuş olabilir"), 15);
+                await Idle(600);
+                Rec.Start(dlg, "c35b-missing");
+                Rec.Cursor = new Point(dlg.ActualWidth * 0.5, dlg.ActualHeight * 0.4);
+                await Task.Delay(1800);
+                var cancel = Btn(dlg, L.T("Dosya Ekle")) ?? Btn(dlg, L.T("İptal"));
+                if (cancel != null) await Move(cancel, 700);
+                await Task.Delay(800);
+                Rec.Stop();
+                dlg.Close(); await Idle(800);
+                // a mail without "attached": Send → the undo bar
+                ForceClose(comp); await Idle(600);
+                before = Application.Current.Windows.OfType<Window>().ToHashSet();
+                Call(main, "OpenCompose", new ComposeRequest { To = anna.FromAddress, Subject = L.T("NW-1042 rev C onayı"), Body = L.T("Merhaba Anna, rev C çizimi onaylandı.") }, DemoData.AccountId, true);
+                comp = await WaitNew<Views.ComposeWindow>(before, null, 20);
+                Place(comp); await Until(() => comp.IsEditorInitialized, 30); await Idle(1200);
+                Btn(comp, L.T("Gönder"))!.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent, Btn(comp, L.T("Gönder"))));
+                await Until(() => ((FrameworkElement)main.FindName("UndoSendBar")).IsVisible, 15);
+                await Idle(500);
+                Rec.Start(main, "c35-undo");
+                Rec.Cursor = new Point(W * 0.5, H * 0.6);
+                await Task.Delay(2200);
+                before = Application.Current.Windows.OfType<Window>().ToHashSet();
+                await Click((ButtonBase)main.FindName("UndoSendButton"), 900);
+                await Task.Delay(1600);
+                Rec.Stop();
+                foreach (var c in Application.Current.Windows.OfType<Views.ComposeWindow>().Where(c => !before.Contains(c)).ToList()) ForceClose(c);
+            }
+            catch (Exception ex) { Log.Add("FAIL undo: " + ex); }
+
+            // ---- c36: send later → Outbox
+            try
+            {
+                var acc = Field<AccountStore>(main, "_store").Accounts.First();
+                main.ScheduleSend(acc, new ComposeRequest { To = "anna.keller@northwind-machining.example", Subject = L.T("Haftalık teslim planı"), Body = "x" }, DateTimeOffset.Now.Date.AddDays(1).AddHours(8));
+                var before = Application.Current.Windows.OfType<Window>().ToHashSet();
+                _ = main.Dispatcher.BeginInvoke(() => Call(main, "ShowOutboxWindow"));
+                var ow = await WaitNew<Views.OutboxWindow>(before, null, 15);
+                await Idle(900);
+                Rec.Start(ow, "c36-outbox");
+                Rec.Cursor = new Point(ow.ActualWidth * 0.5, ow.ActualHeight * 0.5);
+                await Move(new Point(ow.ActualWidth * 0.3, ow.ActualHeight * 0.22), 700); await Task.Delay(1500);
+                var edit = Btn(ow, L.T("Düzenle")); if (edit != null) await Move(edit, 700);
+                await Task.Delay(1500);
+                Rec.Stop();
+                ow.Close(); await Idle(600);
+            }
+            catch (Exception ex) { Log.Add("FAIL outbox: " + ex); }
+
+            // ---- c37: follow-up task and the reminder draft
+            try
+            {
+                main.SwitchModule(PimModule.Tasks); await Idle(1500);
+                Rec.Start(main, "c37-followup");
+                Rec.Cursor = new Point(W * 0.4, H * 0.3);
+                var item = FindEl<ListBoxItem>(main, i => i.Tag is Services.Calendar.TaskItem t && t.Category == "Cevap bekleniyor");
+                if (item != null) { await Move(Center(main, item, 0.3, 0.5), 700); item.IsSelected = true; await Task.Delay(1200); }
+                var remind = Btn(main, L.T("Hatırlatma maili yaz"));
+                if (remind != null) await Move(remind, 800);
+                await Task.Delay(1600);
+                Rec.Stop();
+            }
+            catch (Exception ex) { Log.Add("FAIL followup: " + ex); }
+
+            // ---- c38: snooze → back later; Snoozed tab
+            try
+            {
+                main.SwitchModule(PimModule.Mail); await Idle(1000);
+                var m = list.Items.OfType<MailHeader>().Skip(2).First();
+                Rec.Start(main, "c38-snooze");
+                Rec.Cursor = new Point(W * 0.4, H * 0.5);
+                await Select(m, 800);
+                var snoozeBtn = Btn(main, L.T("Ertele"));
+                if (snoozeBtn != null) { await Move(snoozeBtn, 700); var fx = ClickFx(); await Task.Delay(200); await fx; }
+                main.SnoozeSelected(DateTimeOffset.Now.Date.AddDays(1).AddHours(9));
+                await Task.Delay(1400);
+                await Click((ButtonBase)main.FindName("FilterSnoozed"), 800);
+                await Task.Delay(1600);
+                await Click((ButtonBase)main.FindName("FilterAll"), 700);
+                await Task.Delay(600);
+                Rec.Stop();
+            }
+            catch (Exception ex) { Log.Add("FAIL snooze: " + ex); }
+
+            // ---- c39: all inboxes, search folder, newsletter unsubscribe bar
+            try
+            {
+                var roots = Field<System.Collections.ObjectModel.ObservableCollection<FolderNode>>(main, "_roots");
+                Rec.Start(main, "c39-inbox");
+                Rec.Cursor = new Point(W * 0.08, H * 0.25);
+                var unified = roots.FirstOrDefault(r => r.IsUnifiedInbox);
+                if (unified != null) { await Move(new Point(W * 0.07, H * 0.215), 600); Call(main, "SelectFolder", unified); await Task.Delay(1300); }
+                var sf = roots.FirstOrDefault(r => r.IsSearchFolderRoot)?.Children.LastOrDefault();
+                if (sf != null) { await Move(new Point(W * 0.08, H * 0.51), 700); Call(main, "SelectFolder", sf); await Task.Delay(1500); }
+                if (unified != null) { Call(main, "SelectFolder", unified); await Idle(800); }
+                var news = list.Items.OfType<MailHeader>().FirstOrDefault(x => NewsletterHelper.IsNewsletter(x));
+                if (news != null) await Select(news, 1500);
+                var unsub = main.FindName("UnsubscribeButton") as FrameworkElement;
+                if (unsub is { IsVisible: true }) await Move(unsub, 800);
+                await Task.Delay(1800);
+                Rec.Stop();
+            }
+            catch (Exception ex) { Log.Add("FAIL inbox: " + ex); }
+
+            // ---- c40: calendar week and the account calendar choice in the event form
+            try
+            {
+                main.SwitchModule(PimModule.Calendar); await Idle(1200);
+                var cv = Field<CalendarView?>(main, "_calendarView");
+                cv?.SetMode(CalendarViewMode.Week); await Idle(800);
+                Rec.Start(main, "c40-calendar");
+                Rec.Cursor = new Point(W * 0.5, H * 0.5);
+                await Move(new Point(W * 0.55, H * 0.45), 700); await Task.Delay(1000);
+                var sync = Btn(main, L.T("Şimdi Eşitle"));
+                if (sync != null) await Move(sync, 800);
+                await Task.Delay(1500);
+                Rec.Stop();
+                var acc = Field<AccountStore>(main, "_store").Accounts.First();
+                acc.EnableCalendarSync = true;
+                var before = Application.Current.Windows.OfType<Window>().ToHashSet();
+                _ = main.Dispatcher.BeginInvoke(() => cv!.NewEvent(false));
+                var ew = await WaitNew<EventWindow>(before, null, 15);
+                await Idle(900);
+                Rec.Start(ew, "c40b-event");
+                Rec.Cursor = new Point(ew.ActualWidth * 0.4, ew.ActualHeight * 0.3);
+                var combo = FindEl<ComboBox>(ew, c => c.Items.OfType<ComboBoxItem>().Any(i => (i.Tag as string) == acc.Id));
+                if (combo != null) { await Move(combo, 900); combo.SelectedIndex = 1; await Task.Delay(1500); }
+                await Task.Delay(800);
+                Rec.Stop();
+                ew.Close(); acc.EnableCalendarSync = false;
+                main.SwitchModule(PimModule.Mail);
+            }
+            catch (Exception ex) { Log.Add("FAIL calendar: " + ex); }
 
             Log.Add("OK 18");
         }
