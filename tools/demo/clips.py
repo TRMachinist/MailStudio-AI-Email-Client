@@ -36,10 +36,11 @@ for scene in sorted(os.listdir(rec)):
     sizes = Counter(s for s in (jpeg_size(os.path.join(d, f)) for f, _ in rows) if s)
     w, h = sizes.most_common(1)[0][0] if sizes else (0, 0)
     w, h = w + w % 2, h + h % 2
-    vf = (f'scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:0:0:white,setsar=1,fps=30' if w and h
-          else 'fps=30,pad=ceil(iw/2)*2:ceil(ih/2)*2')
+    # JPEG frames are full-range (yuvj420p, "deprecated pixel format"): convert to standard limited-range yuv420p
+    vf = (f'scale={w}:{h}:force_original_aspect_ratio=decrease:out_range=tv,pad={w}:{h}:0:0:white,setsar=1,fps=30,format=yuv420p' if w and h
+          else 'fps=30,pad=ceil(iw/2)*2:ceil(ih/2)*2,scale=out_range=tv,format=yuv420p')
     if len(sizes) > 1: print(scene, 'frame sizes', dict(sizes), '->', (w, h))
     subprocess.run(['ffmpeg', '-y', '-v', 'error', '-f', 'concat', '-safe', '0', '-i', lst,
                     '-vf', vf, '-c:v', 'libx264', '-preset', 'slow', '-crf', '15',
-                    '-pix_fmt', 'yuv420p', dst], check=True)
+                    '-pix_fmt', 'yuv420p', '-color_range', 'tv', dst], check=True)
     print(scene, len(rows), 'frames', round((rows[-1][1] - rows[0][1]) / 1000, 2), 's')
