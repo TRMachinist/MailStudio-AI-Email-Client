@@ -2,13 +2,13 @@ import React from 'react';
 import {AbsoluteFill, Audio, Img, OffthreadVideo, Sequence, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig, Easing} from 'remotion';
 import en from './timeline-en.json';
 import tr from './timeline-tr.json';
-import en16 from './timeline16-en.json';
-import tr16 from './timeline16-tr.json';
-import {TEXT, TEXT16} from './text';
+import enNew18 from './timelinenew18-en.json';
+import trNew18 from './timelinenew18-tr.json';
+import {TEXT, TEXT18} from './text';
 
-export type FilmSet = 'main' | 'v16';
+export type FilmSet = 'main' | 'v18';
 const SetCtx = React.createContext<FilmSet>('main');
-const useTexts = (lang: 'en' | 'tr') => (React.useContext(SetCtx) === 'v16' ? TEXT16 : TEXT)[lang] as any;
+const useTexts = (lang: 'en' | 'tr') => (React.useContext(SetCtx) === 'v18' ? TEXT18 : TEXT)[lang] as any;
 const isIntro = (id: string) => id.endsWith('01');
 const isOutro = (id: string) => id.endsWith('10');
 
@@ -217,8 +217,8 @@ export const Film: React.FC<{lang: 'en' | 'tr'; set?: FilmSet}> = ({lang, set = 
 );
 
 const FilmBody: React.FC<{lang: 'en' | 'tr'; set: FilmSet}> = ({lang, set}) => {
-  const tl = (set === 'v16' ? (lang === 'en' ? en16 : tr16) : (lang === 'en' ? en : tr)) as unknown as TL;
-  const texts = (set === 'v16' ? TEXT16 : TEXT)[lang] as any;
+  const tl = (set === 'v18' ? (lang === 'en' ? enNew18 : trNew18) : (lang === 'en' ? en : tr)) as unknown as TL;
+  const texts = (set === 'v18' ? TEXT18 : TEXT)[lang] as any;
   const f = useCurrentFrame();
   const {width, V} = useL();
   const last = tl.scenes[tl.scenes.length - 1];

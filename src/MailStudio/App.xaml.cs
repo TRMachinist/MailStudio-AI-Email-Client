@@ -114,6 +114,12 @@ public partial class App : Application
             var target = System.IO.Path.GetFullPath(e.Args[videoAt + 1]);
             window.ContentRendered += async (_, _) => await Services.ShowcaseVideo.RunAsync(window, target);
         }
+        var showcase18At = Array.IndexOf(e.Args, "--showcase-18");
+        if (demo && showcase18At >= 0 && showcase18At + 1 < e.Args.Length)
+        {
+            var target = System.IO.Path.GetFullPath(e.Args[showcase18At + 1]);
+            window.ContentRendered += async (_, _) => await Services.ShowcaseVideo.Run18Async(window, target);
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)

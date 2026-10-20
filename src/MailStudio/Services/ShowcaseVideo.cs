@@ -9,6 +9,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using MailStudio.Models;
+using MailStudio.Views.Calendar;
 using D = System.Drawing;
 
 namespace MailStudio.Services;
@@ -486,5 +487,179 @@ public static class ShowcaseVideo
         try { Rec.Stop(); } catch { }
         File.WriteAllLines(Path.Combine(_out, "showcase.log"), Log);
         Environment.Exit(0);
+    }
+
+    static void ForceClose(Views.ComposeWindow c)
+    {
+        try { typeof(Views.ComposeWindow).GetField("_confirmClose", Any)?.SetValue(c, (Func<MessageBoxResult>)(() => MessageBoxResult.No)); } catch { }
+        try { c.Close(); } catch { }
+    }
+
+    /// <summary>`--showcase-18 &lt;folder&gt;`: the 1.8 film – revision comparison, quote desk, calendar week view, tasks follow-up, newsletter unsubscribe, unified inbox, rules.</summary>
+    public static async Task Run18Async(MainWindow main, string outDir)
+    {
+        _out = outDir; Directory.CreateDirectory(_out);
+        try
+        {
+            Place(main); await Task.Delay(2500);
+            var list = (ListBox)main.FindName("MessageList");
+            await Until(() => list.Items.Count >= 8);
+            MailHeader Msg(uint uid) => list.Items.OfType<MailHeader>().First(m => m.Uid == uid);
+            var cache = Field<Services.MailCache>(main, "_cache");
+
+            // 1) c31-revdiff: Revision Comparison
+            try
+            {
+                var m10 = list.Items.OfType<MailHeader>().FirstOrDefault(x => x.Uid == 10) ?? Msg(1);
+                list.SelectedItem = m10; await Idle(1000);
+                var atts = cache.GetAttachments(m10.AccountId, m10.Folder, m10.Uid);
+                var att = atts.FirstOrDefault(a => a.FileName.Contains("revC") || a.FileName.Contains("flange")) ?? atts.First();
+                var before = Application.Current.Windows.OfType<Window>().ToHashSet();
+                _ = (Task?)Call(main, "CompareAttachmentRevisionAsync", att);
+                var diffWin = await WaitNew<Views.RevisionDiffWindow>(before, null, 40);
+                Place(diffWin); await Idle(1500);
+                Rec.Start(diffWin, "c31-revdiff");
+                Rec.Cursor = new Point(W * 0.5, H * 0.45);
+                await Move(new Point(W * 0.35, H * 0.35), 700);
+                await Task.Delay(1000);
+                await Move(new Point(W * 0.45, H * 0.45), 600);
+                await Task.Delay(1200);
+                var addReply = FindEl<Button>(diffWin, b => TextOf(b).Contains(L.T("Farkı yanıta ekle")) || TextOf(b).Contains("Fark"));
+                if (addReply != null) await Move(addReply, 600);
+                await Task.Delay(1600);
+                Rec.Stop();
+                diffWin.Close(); await Idle(800);
+            }
+            catch (Exception ex) { Log.Add("FAIL revdiff: " + ex.Message); }
+
+            // 2) c32-quotes: RFQ Quote Desk
+            try
+            {
+                main.SwitchModule(PimModule.Quotes); await Idle(1500);
+                Rec.Start(main, "c32-quotes");
+                Rec.Cursor = new Point(W * 0.5, H * 0.5);
+                var grid = FindEl<DataGrid>(main, g => g.Name == "QuoteGrid" || g.Items.Count > 0);
+                if (grid != null && grid.Items.Count > 0)
+                {
+                    await Move(new Point(W * 0.45, H * 0.35), 700);
+                    await Task.Delay(1000);
+                    await Move(new Point(W * 0.55, H * 0.45), 600);
+                    await Task.Delay(1000);
+                }
+                var expBtn = FindEl<Button>(main, b => TextOf(b).Contains(L.T("Excel'e Aktar")) || TextOf(b).Contains("Excel"));
+                if (expBtn != null) await Move(expBtn, 700);
+                await Task.Delay(1500);
+                Rec.Stop();
+            }
+            catch (Exception ex) { Log.Add("FAIL quotes: " + ex.Message); }
+
+            // 3) c33-calendar: Calendar Week View
+            try
+            {
+                main.SwitchModule(PimModule.Calendar); await Idle(1500);
+                var cv = Field<Views.Calendar.CalendarView?>(main, "_calendarView");
+                if (cv != null) cv.SetMode(CalendarViewMode.Week);
+                await Idle(800);
+                Rec.Start(main, "c33-calendar");
+                Rec.Cursor = new Point(W * 0.5, H * 0.5);
+                await Move(new Point(W * 0.45, H * 0.45), 700);
+                await Task.Delay(1200);
+                await Move(new Point(W * 0.65, H * 0.55), 700);
+                await Task.Delay(1200);
+                var syncBtn = FindEl<ButtonBase>(main, b => TextOf(b).Contains(L.T("Eşitle")) || TextOf(b).Contains("Sync"));
+                if (syncBtn != null) await Move(syncBtn, 700);
+                await Task.Delay(1500);
+                Rec.Stop();
+            }
+            catch (Exception ex) { Log.Add("FAIL calendar: " + ex.Message); }
+
+            // 4) c34-tasks: Tasks & Follow-up
+            try
+            {
+                main.SwitchModule(PimModule.Tasks); await Idle(1500);
+                Rec.Start(main, "c34-tasks");
+                Rec.Cursor = new Point(W * 0.5, H * 0.5);
+                await Move(new Point(W * 0.45, H * 0.35), 700);
+                await Task.Delay(1200);
+                await Move(new Point(W * 0.55, H * 0.5), 700);
+                await Task.Delay(1200);
+                Rec.Stop();
+            }
+            catch (Exception ex) { Log.Add("FAIL tasks: " + ex.Message); }
+
+            // 5) c35-mail18: Newsletter Unsubscribe & Unified Inbox
+            try
+            {
+                main.SwitchModule(PimModule.Mail); await Idle(1200);
+                var newsMail = list.Items.OfType<MailHeader>().FirstOrDefault(x => x.Uid == 7) ?? Msg(1);
+                list.SelectedItem = newsMail; await Idle(1200);
+                Rec.Start(main, "c35-mail18");
+                Rec.Cursor = new Point(W * 0.5, H * 0.5);
+                var unsubBar = main.FindName("UnsubscribeBar") as FrameworkElement;
+                if (unsubBar != null && unsubBar.IsVisible)
+                {
+                    await Move(unsubBar, 700);
+                    await Task.Delay(1200);
+                }
+                var tree = main.FindName("FolderTree") as FrameworkElement;
+                if (tree != null)
+                {
+                    await Move(new Point(W * 0.1, H * 0.2), 700);
+                    await Task.Delay(1400);
+                }
+                Rec.Stop();
+            }
+            catch (Exception ex) { Log.Add("FAIL mail18: " + ex.Message); }
+
+            // 6) c36-compose18: Smart Sending & Missing Attachment Warning
+            try
+            {
+                var before = Application.Current.Windows.OfType<Window>().ToHashSet();
+                _ = main.Dispatcher.BeginInvoke(() => Call(main, "OnNewMail", main, new RoutedEventArgs()));
+                var compose = await WaitNew<Views.ComposeWindow>(before, null, 20);
+                Place(compose); await Idle(1500);
+                Rec.Start(compose, "c36-compose18");
+                Rec.Cursor = new Point(W * 0.5, H * 0.5);
+                var toBox = compose.FindName("ToBox") as FrameworkElement;
+                if (toBox != null) { await Move(toBox, 600); await Task.Delay(800); }
+                var sendBtn = compose.FindName("SendSplitButton") as FrameworkElement ?? FindEl<ButtonBase>(compose, b => TextOf(b).Contains(L.T("Gönder")));
+                if (sendBtn != null) { await Move(sendBtn, 600); await Task.Delay(1000); }
+
+                // Show missing attachment dialog
+                var beforeDlg = Application.Current.Windows.OfType<Window>().ToHashSet();
+                _ = compose.Dispatcher.BeginInvoke(() => Views.MissingAttachmentDialog.Show(compose, "ektedir"));
+                var dlg = await WaitNew<Window>(beforeDlg, w => w.Title == L.T("Ek unutulmuş olabilir"), 10);
+                await Idle(600);
+                await Move(dlg, 500);
+                await Task.Delay(1400);
+                dlg.Close(); await Idle(500);
+
+                Rec.Stop();
+                ForceClose(compose); await Idle(500);
+            }
+            catch (Exception ex) { Log.Add("FAIL compose18: " + ex.Message); }
+
+            // 7) c37-rules: Rules Engine
+            try
+            {
+                var before = Application.Current.Windows.OfType<Window>().ToHashSet();
+                _ = main.Dispatcher.BeginInvoke(() => Call(main, "OnRules", main, new RoutedEventArgs()));
+                var rw = await WaitNew<Views.RulesWindow>(before, null, 20);
+                Place(rw); await Idle(1200);
+                Rec.Start(rw, "c37-rules");
+                Rec.Cursor = new Point(W * 0.5, H * 0.5);
+                await Move(new Point(W * 0.4, H * 0.35), 700);
+                await Task.Delay(1200);
+                await Move(new Point(W * 0.5, H * 0.6), 700);
+                await Task.Delay(1400);
+                Rec.Stop();
+                rw.Close(); await Idle(800);
+            }
+            catch (Exception ex) { Log.Add("FAIL rules: " + ex.Message); }
+
+            Log.Add("OK 18");
+        }
+        catch (Exception ex) { Log.Add("FAIL 18 " + ex); }
+        Finish();
     }
 }

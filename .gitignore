@@ -12,8 +12,9 @@ out/
 
 # Demo film (generated)
 node_modules/
+package-lock.json
 tools/demo/film/public/
-tools/demo/film/src/timeline-*.json
+tools/demo/film/src/timeline*.json
 tools/demo/voice-*/
 
 # Python
