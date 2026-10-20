@@ -332,6 +332,7 @@
                         <RadioButton x:Name="FilterUnread" Style="{StaticResource FilterTab}" Checked="OnFilterChanged">Okunmamış</RadioButton>
                         <RadioButton x:Name="FilterFlagged" Style="{StaticResource FilterTab}" Checked="OnFilterChanged">Bayraklı</RadioButton>
                         <RadioButton x:Name="FilterSnoozed" Style="{StaticResource FilterTab}" Checked="OnFilterChanged">Ertelenen</RadioButton>
+                        <RadioButton x:Name="FilterNewsletters" Style="{StaticResource FilterTab}" Checked="OnFilterChanged">Bültenler</RadioButton>
                     </StackPanel>
                 </DockPanel>
                 <ListView Grid.Row="2" x:Name="MessageList" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource BorderSubtleBrush}" Background="Transparent"
@@ -360,6 +361,7 @@
                             <MenuItem Header="Görev olarak ekle" Icon="&#xE762;" InputGestureText="Ctrl+Shift+K" Click="OnMailToTask"/>
                             <MenuItem Header="Toplantı ayarla" Icon="&#xE787;" Click="OnMailToMeeting"/>
                             <MenuItem Header="Bunun gibi mailler için kural oluştur…" Icon="&#xE71E;" Click="OnCreateRuleFromMail"/>
+                            <MenuItem Header="Bu göndereni her zaman Bültenler klasörüne taşı" Icon="&#xE8DE;" Click="OnAlwaysMoveToNewslettersClick"/>
                             <MenuItem Header="Teklif masasına ekle" Icon="&#xE8A1;" Click="OnMailAddToQuoteDesk"/>
                             <MenuItem Header="Hızlı Adımlar" Icon="&#xE715;" x:Name="QuickStepsContextMenu" SubmenuOpened="OnQuickStepsSubmenuOpened"/>
                             <Separator/>
@@ -518,6 +520,18 @@
                             </DockPanel>
                         </Border>
                         <Border x:Name="InviteBar" Visibility="Collapsed" Background="{DynamicResource AccentSubtleBrush}" BorderBrush="{DynamicResource AccentSubtleBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,8"/>
+                        <Border x:Name="UnsubscribeBar" Visibility="Collapsed" Background="{DynamicResource BgSurfaceSecondaryBrush}" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" CornerRadius="6" Padding="10,6" Margin="0,0,0,8">
+                            <DockPanel>
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="8,0,0,0">
+                                    <Button x:Name="UnsubscribeButton" Content="Abonelikten çık" Click="OnUnsubscribeClick" Style="{StaticResource FlatButton}" Margin="0,0,6,0"/>
+                                    <Button x:Name="MoveToNewslettersButton" Content="Her zaman Bültenler'e taşı" Click="OnAlwaysMoveToNewslettersClick" Style="{StaticResource FlatButton}"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="&#xE715;" FontFamily="{StaticResource Icons}" Margin="0,1,6,0" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="UnsubscribeBarText" Text="Bu ileti bir bülten veya toplu listedir." Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>

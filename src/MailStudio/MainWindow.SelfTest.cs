@@ -68,6 +68,7 @@ public partial class MainWindow
             ("templates and quick steps: template insertion, manager dialog, macro execution", StepTemplatesAndQuickSteps),
             ("mail snooze: hide from list, filter tab, custom date dialog, wake up", StepSnooze),
             ("unified inbox and search folders: all inboxes node, saved searches, criteria execution", StepUnifiedInboxAndSearchFolders),
+            ("newsletters and unsubscribe: header parsing, unsubscribe bar, filter tab, move to newsletters rule", StepNewslettersAndUnsubscribe),
             ("reminders window", StepReminders),
             ("other windows: accounts, signatures, rules, skills, agents", StepOtherWindows),
             ("dark theme screenshots", StepDarkTheme),
@@ -706,6 +707,60 @@ public partial class MainWindow
         // Restore to inbox
         if (unifiedNode != null) { SelectFolder(unifiedNode); await Wait(400); }
         Pass("unified inbox and search folders");
+    }
+
+    async Task StepNewslettersAndUnsubscribe()
+    {
+        // 1. Select the demo newsletter mail (Uid = 7, Northwind Newsletter)
+        var newsletterMail = MessageList.Items.OfType<MailHeader>().FirstOrDefault(m => m.Uid == 7);
+        Check(newsletterMail != null, "newsletter demo mail (Uid=7) found");
+        if (newsletterMail != null)
+        {
+            MessageList.SelectedItem = newsletterMail;
+            await Until(() => _current == newsletterMail && _currentContent != null, 8000);
+            await Wait(600);
+
+            // 2. UnsubscribeBar visibility and buttons
+            Check(UnsubscribeBar.Visibility == Visibility.Visible, "UnsubscribeBar visible for newsletter mail");
+            Check(UnsubscribeButton.IsVisible, "UnsubscribeButton visible");
+            Check(MoveToNewslettersButton.IsVisible, "MoveToNewslettersButton visible");
+            Shot(this, "newsletter-reading-pane");
+            CheckAirspace(this, "newsletter reading pane");
+            CheckTexts(this, "newsletter reading pane");
+
+            // 3. Filter tab 'Bültenler'
+            if (FilterNewsletters != null && FilterAll != null)
+            {
+                FilterNewsletters.IsChecked = true; await Wait(400);
+                var filtered = MessageList.Items.OfType<MailHeader>().ToList();
+                Check(filtered.Any(h => h.Uid == 7), "newsletter mail visible under Bültenler filter");
+                Check(filtered.All(h => NewsletterHelper.IsNewsletter(h, _ruleStore)), "all mails under Bültenler filter are newsletters");
+                Shot(this, "newsletter-filter-tab");
+
+                // Switch back to 'Tümü'
+                FilterAll.IsChecked = true; await Wait(300);
+            }
+
+            // 4. Test unsubscribe mail draft opening
+            OpenUnsubscribeMailDraft("mailto:unsubscribe@northwind-machining.example?subject=unsubscribe");
+            await Wait(500);
+            var composeWin = OwnedWindows.OfType<ComposeWindow>().FirstOrDefault();
+            Check(composeWin != null, "unsubscribe compose draft opened");
+            if (composeWin != null)
+            {
+                var toBox = composeWin.FindName("ToBox") as Views.RecipientBox;
+                Check(toBox != null && toBox.Text.Contains("unsubscribe@northwind-machining.example"), "compose To contains unsubscribe address");
+                Shot(composeWin, "newsletter-unsubscribe-compose");
+                CheckTexts(composeWin, "unsubscribe compose");
+                ForceClose(composeWin);
+            }
+
+            // 5. Test 'Bu göndereni her zaman Bültenler klasörüne taşı'
+            await AlwaysMoveSenderToNewslettersAsync(newsletterMail);
+            await Wait(400);
+            Check(_ruleStore.Rules.Any(r => r.Conditions.Any(c => c.Field == "from" && (c.Value ?? "").Contains("news@northwind-machining.example"))), "rule added to move sender to Newsletters folder");
+        }
+        Pass("newsletters and unsubscribe");
     }
 
     async Task StepReminders()

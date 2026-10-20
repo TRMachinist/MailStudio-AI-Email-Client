@@ -112,6 +112,9 @@ public partial class MailHeader : ObservableObject
     public bool HasAttachments { get; init; }
     public long Size { get; set; }
     public string? Importance { get; set; } = "normal";
+    public string ListUnsubscribe { get; init; } = "";
+    public string ListUnsubscribePost { get; init; } = "";
+    public bool HasListUnsubscribe => !string.IsNullOrEmpty(ListUnsubscribe);
 
     [ObservableProperty] private string accountName = "";
     [ObservableProperty] private string accountColor = "#0078D4";
@@ -203,6 +206,8 @@ public class MailContent
     public List<AttachmentInfo> Attachments { get; init; } = new();
     /// <summary>Meeting invitation (text/calendar part or .ics attachment), raw iCalendar text; empty if none.</summary>
     public string CalendarIcs { get; init; } = "";
+    public string ListUnsubscribe { get; init; } = "";
+    public string ListUnsubscribePost { get; init; } = "";
 }
 
 public class AttachmentInfo

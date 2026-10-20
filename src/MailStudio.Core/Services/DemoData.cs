@@ -189,6 +189,8 @@ public static class DemoData
                 AccountId = AccountId, Folder = m.Folder, Uid = m.Uid, UidValidity = 1, MessageId = $"demo-{m.Uid}@mailstudio.example",
                 FromName = m.FromName, FromAddress = m.FromAddress, To = "demo@mailstudio.example", Subject = subject,
                 Preview = text.Length > 160 ? text[..160] : text, Date = now.AddHours(-m.HoursAgo), HasAttachments = m.Files?.Length > 0,
+                ListUnsubscribe = m.Uid == 7 ? "<mailto:unsubscribe@northwind-machining.example?subject=unsubscribe>, <https://northwind-machining.example/unsubscribe?id=demo>" : "",
+                ListUnsubscribePost = m.Uid == 7 ? "List-Unsubscribe=One-Click" : ""
             };
             h.IsRead = m.Read; h.IsFlagged = m.Flagged;
             headers.Add(h);
@@ -200,8 +202,12 @@ public static class DemoData
             {
                 FileName = f, Part = f, Size = File.Exists(Path.Combine(files, f)) ? new FileInfo(Path.Combine(files, f)).Length : 1024,
             }).ToList();
+            var unsub = m.Uid == 7 ? "<mailto:unsubscribe@northwind-machining.example?subject=unsubscribe>, <https://northwind-machining.example/unsubscribe?id=demo>" : "";
+            var unsubPost = m.Uid == 7 ? "List-Unsubscribe=One-Click" : "";
             cache.SaveBody(AccountId, m.Folder, m.Uid, new MailContent { Html = WrapHtml(L.IsEnglish ? m.BodyEn : m.BodyTr), Text = MailService.HtmlToText(L.IsEnglish ? m.BodyEn : m.BodyTr), Attachments = atts,
-                CalendarIcs = m.Invitation ? InvitationIcs(en) : "" });
+                CalendarIcs = m.Invitation ? InvitationIcs(en) : "",
+                ListUnsubscribe = unsub,
+                ListUnsubscribePost = unsubPost });
             cache.SaveAttachments(AccountId, m.Folder, m.Uid, atts);
         }
         return acc;
@@ -359,8 +365,9 @@ public static class DemoData
 
     public static List<FolderInfo> Folders() => new()
     {
-        new("INBOX", L.T("Gelen Kutusu"), "", 0), new("Drafts", L.T("Taslaklar"), "", 1),
-        new("Sent", L.T("Gönderilmiş Öğeler"), "", 2), new("Trash", L.T("Silinmiş Öğeler"), "", 3), new("Archive", L.T("Arşiv"), "", 5),
+        new("INBOX", L.T("Gelen Kutusu"), "\uE715", 0), new("Drafts", L.T("Taslaklar"), "\uE70F", 1),
+        new("Sent", L.T("Gönderilmiş Öğeler"), "\uE724", 2), new("Trash", L.T("Silinmiş Öğeler"), "\uE74D", 3),
+        new("Archive", L.T("Arşiv"), "\uE7B8", 5), new("Newsletters", L.T("Bültenler"), "\uE7BC", 7),
     };
 
     /// <summary>Returns the demo copy of an attachment.</summary>

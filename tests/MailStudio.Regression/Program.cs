@@ -1618,5 +1618,74 @@ await Test("arama klasörleri: SearchFolderStore kalıcılık, varsayılanlar ve
     Check(store.Folders.Count == 3, "Custom search folder successfully deleted");
 }));
 
+await Test("newsletters: List-Unsubscribe parsing (mailto/http/one-click), mailto URI decomposition, newsletter detection, rule generation, and cache move", async () =>
+{
+    // 1. Header parsing tests
+    var hBoth = "<mailto:unsubscribe@example.com?subject=unsubscribe>, <https://example.com/unsub?id=12345>";
+    var parsedBoth = NewsletterHelper.ParseUnsubscribe(hBoth, "List-Unsubscribe=One-Click");
+    Check(parsedBoth != null, "parsedBoth not null");
+    Check(parsedBoth!.MailtoUri == "mailto:unsubscribe@example.com?subject=unsubscribe", "MailtoUri extracted");
+    Check(parsedBoth.HttpUri == "https://example.com/unsub?id=12345", "HttpUri extracted");
+    Check(parsedBoth.HasOneClick, "HasOneClick detected");
+
+    var hHttpOnly = "<https://newsletter.example.org/optout>";
+    var parsedHttp = NewsletterHelper.ParseUnsubscribe(hHttpOnly);
+    Check(parsedHttp != null && parsedHttp.HttpUri == "https://newsletter.example.org/optout" && parsedHttp.MailtoUri == null && !parsedHttp.HasOneClick, "Http only parsed");
+
+    var hMailtoOnly = "<mailto:leave-list@example.com>";
+    var parsedMailto = NewsletterHelper.ParseUnsubscribe(hMailtoOnly);
+    Check(parsedMailto != null && parsedMailto.MailtoUri == "mailto:leave-list@example.com" && parsedMailto.HttpUri == null, "Mailto only parsed");
+
+    Check(NewsletterHelper.ParseUnsubscribe("") == null, "Empty header returns null");
+    Check(NewsletterHelper.ParseUnsubscribe("invalid-without-scheme") == null, "Invalid header returns null");
+
+    // 2. Mailto decomposition tests
+    var (to1, sub1, body1) = NewsletterHelper.ParseMailto("mailto:unsub@example.com?subject=Unsubscribe%20Me&body=Please%20remove");
+    Check(to1 == "unsub@example.com", "to address extracted");
+    Check(sub1 == "Unsubscribe Me", "subject decoded");
+    Check(body1 == "Please remove", "body decoded");
+
+    var (to2, sub2, body2) = NewsletterHelper.ParseMailto("mailto:simple-leave@example.com");
+    Check(to2 == "simple-leave@example.com" && sub2 == "Unsubscribe", "simple mailto default subject");
+
+    // 3. Newsletter detection
+    var m1 = new MailHeader { FromAddress = "news@machining.example", Subject = "Haftalık Bülten", Folder = "INBOX" };
+    Check(NewsletterHelper.IsNewsletter(m1), "m1 detected by from + subject");
+
+    var m2 = new MailHeader { FromAddress = "regular.supplier@example.com", Subject = "Teklif", Folder = "Newsletters" };
+    Check(NewsletterHelper.IsNewsletter(m2), "m2 detected by folder");
+
+    var m3 = new MailHeader { FromAddress = "supplier@example.com", Subject = "Part order", Folder = "INBOX", ListUnsubscribe = "<https://example.com/unsub>" };
+    Check(NewsletterHelper.IsNewsletter(m3), "m3 detected by ListUnsubscribe header");
+
+    var mNormal = new MailHeader { FromAddress = "john.doe@contoso.example", Subject = "Drawing review", Folder = "INBOX" };
+    Check(!NewsletterHelper.IsNewsletter(mNormal), "mNormal is not a newsletter");
+
+    // 4. Rule generation
+    var rule = NewsletterHelper.CreateMoveToNewslettersRule(m1, "Newsletters");
+    Check(rule.Conditions.Any(c => c.Field == "from" && c.Value == "news@machining.example"), "rule has from condition");
+    Check(rule.Actions.Any(a => a.Type == "move_to_folder" && a.Value == "Newsletters"), "rule moves to Newsletters");
+
+    // 5. MailCache MoveMessage test
+    var cDir = Path.Combine(root, "cache-newsletter-move");
+    Directory.CreateDirectory(cDir);
+    var cache = new MailCache(Path.Combine(cDir, "mail.db"));
+    cache.Init();
+    var mailToMove = new MailHeader
+    {
+        AccountId = "acc1", Folder = "INBOX", Uid = 10,
+        Subject = "Bülten", FromName = "News", FromAddress = "news@example.com",
+        ListUnsubscribe = "<https://example.com/unsub>"
+    };
+    cache.UpsertHeaders(new[] { mailToMove });
+    cache.SaveBody("acc1", "INBOX", 10, new MailContent { Html = "<p>News</p>", Text = "News", ListUnsubscribe = "<https://example.com/unsub>" });
+
+    var newUid = cache.MoveMessage("acc1", "INBOX", "Newsletters", 10);
+    Check(newUid > 0, "MoveMessage allocated new UID in Newsletters folder");
+    Check(cache.GetHeaders("acc1", "INBOX").Count == 0, "INBOX message removed");
+    var movedList = cache.GetHeaders("acc1", "Newsletters");
+    Check(movedList.Count == 1 && movedList[0].Uid == newUid && movedList[0].Folder == "Newsletters" && movedList[0].ListUnsubscribe == "<https://example.com/unsub>", "Moved message intact in Newsletters folder with ListUnsubscribe header");
+});
+
 Console.WriteLine($"RESULT {passed} passed. Synthetic evidence: {root}");
 

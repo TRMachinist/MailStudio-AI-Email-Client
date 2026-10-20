@@ -818,6 +818,21 @@ internal static class Program
             sfDialog.Close();
 
             Console.WriteLine("PASS Birleşik Gelen Kutusu ve Kayıtlı Aramalar UI views and interactions"); _passed++;
+
+            // 3.10 Bültenler ve Abonelikten Çıkma UI check
+            var filterNewsTab = main.FindName("FilterNewsletters") as RadioButton;
+            Check(filterNewsTab != null, "FilterNewsletters radio button exists in MainWindow");
+
+            var unsubBar = main.FindName("UnsubscribeBar") as Border;
+            Check(unsubBar != null, "UnsubscribeBar exists in MainWindow reading pane");
+
+            var unsubBtn = main.FindName("UnsubscribeButton") as Button;
+            Check(unsubBtn != null && unsubBtn.Content != null, "UnsubscribeButton exists in UnsubscribeBar");
+
+            var moveNewsBtn = main.FindName("MoveToNewslettersButton") as Button;
+            Check(moveNewsBtn != null, "MoveToNewslettersButton exists in UnsubscribeBar");
+
+            Console.WriteLine("PASS Bültenler ve Abonelikten Çıkma UI elements verified"); _passed++;
         }
 
         if (L.IsEnglish)

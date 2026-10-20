@@ -799,6 +799,7 @@ public partial class MainWindow : Window
         bool isSnoozed = _snoozeStore.IsSnoozed(h.AccountId, h.Folder, h.Uid);
         if (FilterSnoozed?.IsChecked == true) return isSnoozed;
         if (isSnoozed) return false;
+        if (FilterNewsletters?.IsChecked == true) return NewsletterHelper.IsNewsletter(h, _ruleStore);
         if (FilterUnread?.IsChecked == true) return !h.IsRead;
         if (FilterFlagged?.IsChecked == true) return h.IsFlagged;
         return true;
@@ -900,6 +901,7 @@ public partial class MainWindow : Window
         AvatarBorder.Background = AvatarBrush(h.FromAddress);
         AttachmentList.ItemsSource = null;
         InviteBar.Visibility = Visibility.Collapsed;
+        UnsubscribeBar.Visibility = Visibility.Collapsed;
         IncludeMailText.Text = L.T("Bağlam: ") + h.SubjectDisplay;
 
         // The attachment list was saved during sync: show it immediately
@@ -943,10 +945,136 @@ public partial class MainWindow : Window
         CcText.Text = string.IsNullOrWhiteSpace(c.Cc) ? "" : L.T("Bilgi: ") + c.Cc;
         AddressChips.Fill(CcPanel, L.T("Bilgi: "), c.Cc);
         try { ShowInvitation(h, c); } catch (Exception ex) { InviteBar.Visibility = Visibility.Collapsed; Status(L.T("Davet okunamadı: ") + ex.Message); }
+        try { UpdateUnsubscribeBar(h, c); } catch { UnsubscribeBar.Visibility = Visibility.Collapsed; }
         if (c.Attachments.Count > 0) AttachmentList.ItemsSource = c.Attachments;
         if (!_webReady) return;
 
         MailHtml.Show(MailWeb, c.Html);
+    }
+
+    void UpdateUnsubscribeBar(MailHeader h, MailContent c)
+    {
+        var unsubHeader = !string.IsNullOrEmpty(c.ListUnsubscribe) ? c.ListUnsubscribe : h.ListUnsubscribe;
+        var unsubPost = !string.IsNullOrEmpty(c.ListUnsubscribePost) ? c.ListUnsubscribePost : h.ListUnsubscribePost;
+        var info = NewsletterHelper.ParseUnsubscribe(unsubHeader, unsubPost);
+        bool isNewsletter = info != null || NewsletterHelper.IsNewsletter(h, _ruleStore, c);
+
+        if (isNewsletter)
+        {
+            UnsubscribeBar.Visibility = Visibility.Visible;
+            UnsubscribeButton.Visibility = info != null ? Visibility.Visible : Visibility.Collapsed;
+            UnsubscribeButton.Tag = info;
+            UnsubscribeBarText.Text = info != null
+                ? L.T("Bu ileti bir bülten veya toplu listedir.")
+                : L.T("Bu ileti bir bülten olarak algılandı.");
+        }
+        else
+        {
+            UnsubscribeBar.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    async void OnUnsubscribeClick(object sender, RoutedEventArgs e)
+    {
+        var h = _current;
+        if (h == null) return;
+        var info = (sender as FrameworkElement)?.Tag as UnsubscribeInfo
+                   ?? NewsletterHelper.ParseUnsubscribe(_currentContent?.ListUnsubscribe ?? h.ListUnsubscribe,
+                                                        _currentContent?.ListUnsubscribePost ?? h.ListUnsubscribePost);
+
+        if (info == null)
+        {
+            Status(L.T("Abonelikten çıkma bağlantısı bulunamadı."));
+            return;
+        }
+
+        if (!string.IsNullOrEmpty(info.HttpUri))
+        {
+            var msg = L.F("Abonelikten çıkmak için web sitesi açılsın mı?\n\n{0}", info.HttpUri);
+            var title = L.T("Abonelikten Çık");
+            var res = MessageBox.Show(this, msg, title, MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (res == MessageBoxResult.Yes)
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo { FileName = info.HttpUri, UseShellExecute = true });
+                    Status(L.T("Web sitesi tarayıcıda açıldı."));
+                }
+                catch (Exception ex)
+                {
+                    Status(L.T("Bağlantı açılamadı: ") + ex.Message);
+                }
+                return;
+            }
+            else if (string.IsNullOrEmpty(info.MailtoUri))
+            {
+                return;
+            }
+        }
+
+        if (!string.IsNullOrEmpty(info.MailtoUri))
+        {
+            OpenUnsubscribeMailDraft(info.MailtoUri);
+        }
+    }
+
+    public void OpenUnsubscribeMailDraft(string mailtoUri)
+    {
+        var (to, subject, body) = NewsletterHelper.ParseMailto(mailtoUri);
+        var acc = Acc(_current?.AccountId ?? "") ?? _store.Accounts.FirstOrDefault();
+        if (acc == null) return;
+
+        var req = new ComposeRequest
+        {
+            To = to,
+            Subject = string.IsNullOrWhiteSpace(subject) ? "Unsubscribe" : subject,
+            BodyHtml = string.IsNullOrWhiteSpace(body) ? "<p>Unsubscribe</p>" : $"<p>{System.Net.WebUtility.HtmlEncode(body)}</p>",
+            Body = string.IsNullOrWhiteSpace(body) ? "Unsubscribe" : body
+        };
+        OpenCompose(req, acc.Id);
+        Status(L.T("Abonelikten çıkma e-postası taslak olarak açıldı."));
+    }
+
+    async void OnAlwaysMoveToNewslettersClick(object sender, RoutedEventArgs e)
+    {
+        var h = _current ?? MessageList.SelectedItem as MailHeader;
+        if (h == null) return;
+        await AlwaysMoveSenderToNewslettersAsync(h);
+    }
+
+    public async Task AlwaysMoveSenderToNewslettersAsync(MailHeader h)
+    {
+        var senderAddr = !string.IsNullOrEmpty(h.FromAddress) ? h.FromAddress : h.FromName;
+        if (string.IsNullOrWhiteSpace(senderAddr)) return;
+
+        var folderName = L.IsEnglish ? "Newsletters" : "Bültenler";
+
+        // Check if rule already exists
+        var existing = _ruleStore.Rules.FirstOrDefault(r =>
+            r.Conditions.Any(c => c.Field == "from" && c.Value.Equals(senderAddr, StringComparison.OrdinalIgnoreCase)) &&
+            r.Actions.Any(a => a.Type == "move_to_folder" &&
+                               (a.Value.Equals("Newsletters", StringComparison.OrdinalIgnoreCase) ||
+                                a.Value.Equals("Bültenler", StringComparison.OrdinalIgnoreCase))));
+
+        if (existing == null)
+        {
+            var rule = NewsletterHelper.CreateMoveToNewslettersRule(h, folderName);
+            _ruleStore.Rules.Add(rule);
+            _ruleStore.Save();
+        }
+
+        var acc = Acc(h.AccountId);
+        if (acc != null)
+        {
+            var matching = _messages.Where(m => m.FromAddress.Equals(h.FromAddress, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (!matching.Contains(h)) matching.Add(h);
+            foreach (var m in matching)
+            {
+                try { await _mail.MoveAsync(acc, m, folderName); } catch { }
+            }
+            LoadMessagesFromCache();
+            Status(L.F("'{0}' göndereni için kural oluşturuldu ve iletiler Bültenler klasörüne taşındı.", h.FromDisplay));
+        }
     }
 
     async void OnMessageDoubleClick(object sender, MouseButtonEventArgs e)

@@ -168,7 +168,7 @@ public sealed class RevisionDiffWindow : Window
         _categoryFilter.Width = 140;
         _categoryFilter.Items.Add(L.T("Tümü"));
         var categories = _report.Items.Select(i => i.Category).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct().OrderBy(c => c);
-        foreach (var c in categories) _categoryFilter.Items.Add(c);
+        foreach (var c in categories) _categoryFilter.Items.Add(L.T(c));
         _categoryFilter.SelectedIndex = 0;
         _categoryFilter.SelectionChanged += (_, _) => ApplyFilter();
         rightStack.Children.Add(_categoryFilter);
@@ -193,7 +193,7 @@ public sealed class RevisionDiffWindow : Window
         {
             Header = L.T("Kategori"),
             Width = 110,
-            DisplayMemberBinding = new Binding("Category")
+            DisplayMemberBinding = new Binding("CategoryDisplay")
         });
 
         grid.Columns.Add(new GridViewColumn
@@ -331,7 +331,7 @@ public sealed class RevisionDiffWindow : Window
         }
         else
         {
-            _diffList.ItemsSource = _report.Items.Where(i => string.Equals(i.Category, sel, StringComparison.OrdinalIgnoreCase)).ToList();
+            _diffList.ItemsSource = _report.Items.Where(i => string.Equals(L.T(i.Category), sel, StringComparison.OrdinalIgnoreCase)).ToList();
         }
     }
 
