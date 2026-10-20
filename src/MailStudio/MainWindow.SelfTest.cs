@@ -176,20 +176,27 @@ public partial class MainWindow
 
     int _blankShots; bool _blankAborted, _stopRequested;
 
-    /// <summary>True when (almost) every sampled pixel inside the window frame has the same colour.</summary>
+    /// <summary>
+    /// True when the window content (below the title bar, inside the frame) has at most 3 exact colours - what
+    /// PrintWindow returns while the session is locked. A white drawing or page still has anti-aliased text and lines.
+    /// </summary>
     static bool IsBlank(System.Drawing.Bitmap bmp)
     {
         if (bmp.Width < 120 || bmp.Height < 120) return false;
-        var counts = new Dictionary<int, int>();
-        int total = 0;
-        for (int y = 40; y < bmp.Height - 10; y += Math.Max(1, (bmp.Height - 50) / 40))
-            for (int x = 10; x < bmp.Width - 10; x += Math.Max(1, (bmp.Width - 20) / 40))
+        var rect = new System.Drawing.Rectangle(12, 40, bmp.Width - 24, bmp.Height - 52);
+        var data = bmp.LockBits(rect, System.Drawing.Imaging.ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        try
+        {
+            var colours = new HashSet<int>();
+            var row = new int[rect.Width];
+            for (int y = 0; y < rect.Height; y += 2)
             {
-                var c = bmp.GetPixel(x, y);
-                var key = (c.R / 16 << 8) | (c.G / 16 << 4) | (c.B / 16);
-                counts[key] = counts.GetValueOrDefault(key) + 1; total++;
+                Marshal.Copy(data.Scan0 + y * data.Stride, row, 0, rect.Width);
+                foreach (var px in row) { colours.Add(px & 0xFFFFFF); if (colours.Count > 3) return false; }
             }
-        return total > 0 && counts.Values.Max() >= total * 0.985;
+            return true;
+        }
+        finally { bmp.UnlockBits(data); }
     }
 
     static IEnumerable<DependencyObject> Tree(DependencyObject root)

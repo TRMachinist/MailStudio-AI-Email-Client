@@ -155,14 +155,14 @@ public sealed class QuoteEditDialog : Window
 
         AddRow(L.T("Müşteri / Firma:"), _customer);
         AddRow(L.T("İlgili Kişi:"), _contact);
-        AddRow(L.T("E-posta:"), _email);
+        AddRow(L.T("E-posta") + ":", _email);
         AddRow(L.T("Parça Numarası:"), _partNumber);
 
         var revQtyPanel = new StackPanel { Orientation = Orientation.Horizontal };
         revQtyPanel.Children.Add(_revision);
         var qtyLbl = new TextBlock
         {
-            Text = L.T("Adet:"),
+            Text = L.T("Adet") + ":",
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(20, 0, 8, 0),
             FontWeight = FontWeights.Medium
@@ -170,13 +170,13 @@ public sealed class QuoteEditDialog : Window
         qtyLbl.SetResourceReference(TextBlock.ForegroundProperty, "TextSecondaryBrush");
         revQtyPanel.Children.Add(qtyLbl);
         revQtyPanel.Children.Add(_quantity);
-        AddRow(L.T("Revizyon:"), revQtyPanel);
+        AddRow(L.T("Revizyon") + ":", revQtyPanel);
 
-        AddRow(L.T("Malzeme:"), _material);
+        AddRow(L.T("Malzeme") + ":", _material);
         AddRow(L.T("Son Teklif Tarihi:"), _deadline);
         AddRow(L.T("İstenen Teslim:"), _requestedDelivery);
-        AddRow(L.T("Durum:"), _status);
-        AddRow(L.T("Notlar:"), _notes);
+        AddRow(L.T("Durum") + ":", _status);
+        AddRow(L.T("Notlar") + ":", _notes);
 
         formScroll.Content = formGrid;
         root.Children.Add(formScroll);

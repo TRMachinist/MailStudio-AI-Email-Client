@@ -186,7 +186,7 @@ public sealed class QuickStepManagerWindow : Window
         Grid.SetColumn(iconStack, 2);
 
         var scStack = new StackPanel();
-        scStack.Children.Add(new TextBlock { Text = L.T("Kısayol:"), FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 4), Foreground = ThemeManager.Brush("TextPrimaryBrush") });
+        scStack.Children.Add(new TextBlock { Text = L.T("Kısayol") + ":", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 4), Foreground = ThemeManager.Brush("TextPrimaryBrush") });
         _shortcutBox.Items.Add(L.T("(Yok)"));
         for (int i = 1; i <= 9; i++)
         {

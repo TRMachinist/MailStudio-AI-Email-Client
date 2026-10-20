@@ -55,7 +55,7 @@ public class QuoteItem
     };
 
     [JsonIgnore]
-    public string QuantityDisplay => Quantity > 0 ? Quantity.ToString("N0", L.Culture) + " " + L.T("adet") : "-";
+    public string QuantityDisplay => Quantity > 0 ? L.F("{0} adet", Quantity.ToString("N0", L.Culture)) : "-";
 
     [JsonIgnore]
     public string DeadlineDisplay => Deadline.HasValue ? Deadline.Value.ToString("d MMM yyyy", L.Culture) : "-";
