@@ -101,7 +101,7 @@ public sealed class SearchFolderStore
             {
                 if (File.Exists(_path))
                 {
-                    var json = File.ReadAllText(_path);
+                    var json = JsonFile.ReadOrBackup(_path);
                     _folders = JsonSerializer.Deserialize<List<SearchFolderItem>>(json, JsonOptions) ?? new();
                 }
             }
@@ -126,7 +126,7 @@ public sealed class SearchFolderStore
             {
                 var dir = Path.GetDirectoryName(_path);
                 if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-                File.WriteAllText(_path, JsonSerializer.Serialize(_folders, JsonOptions));
+                JsonFile.WriteAtomic(_path, JsonSerializer.Serialize(_folders, JsonOptions));
             }
             catch { }
         }

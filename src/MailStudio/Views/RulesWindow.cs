@@ -48,6 +48,7 @@ public sealed class RulesWindow : Window
         _ai = ai;
         _providerName = providerName;
         _runOnFolder = runOnFolder;
+        UiTranslator.SetSkip(_list, true);   // rule names are user text
 
         Title = L.T("Kurallar ve Uyarılar");
         Width = 920;
@@ -234,7 +235,9 @@ public sealed class RulesWindow : Window
             {
                 if (_edit == null) return;
                 Store();
-                await _runOnFolder(_edit);
+                RuleEngine.Normalize(_edit);
+                try { await _runOnFolder(_edit); }
+                catch (Exception ex) { MessageBox.Show(this, ex.Message, L.T("Kurallar")); }
             };
             DockPanel.SetDock(runBtn, Dock.Left);
             footGrid.Children.Add(runBtn);
@@ -249,19 +252,28 @@ public sealed class RulesWindow : Window
         {
             Store();
             _rules.RemoveAll(r => r.Conditions.Count == 0 && r.Actions.Count == 0);
-            _store.Rules.Clear();
-            _store.Rules.AddRange(_rules);
-            _store.Save();
-            DialogResult = true;
-            Close();
+            foreach (var r in _rules)
+            {
+                RuleEngine.Normalize(r);
+                if (RuleEngine.Validate(r) is { } problem)
+                {
+                    RefreshList(_rules.IndexOf(r));
+                    MessageBox.Show(this, $"{r.Name}: {problem}", L.T("Kurallar"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+            }
+            try
+            {
+                _store.Rules.Clear();
+                _store.Rules.AddRange(_rules);
+                _store.Save();
+            }
+            catch (Exception ex) { MessageBox.Show(this, L.T("Kurallar kaydedilemedi: ") + ex.Message, L.T("Kurallar")); return; }
+            Done(true);
         };
 
         var cancel = new Button { Content = L.T("Kapat"), IsCancel = true, MinWidth = 90 };
-        cancel.Click += (_, _) =>
-        {
-            DialogResult = false;
-            Close();
-        };
+        cancel.Click += (_, _) => Done(false);
 
         fb.Children.Add(ok);
         fb.Children.Add(cancel);
@@ -302,6 +314,12 @@ public sealed class RulesWindow : Window
         if (j < 0 || j >= _rules.Count) return;
         (_rules[i], _rules[j]) = (_rules[j], _rules[i]);
         RefreshList(j);
+    }
+
+    void Done(bool ok)
+    {
+        try { DialogResult = ok; } catch (InvalidOperationException) { }   // opened with Show()
+        Close();
     }
 
     void RefreshList(int select)

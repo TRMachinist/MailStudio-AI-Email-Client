@@ -387,6 +387,8 @@ public sealed class QuoteDeskView : UserControl
 
     public void Refresh()
     {
+        _store.ReloadIfChanged();
+        var selectedId = (_list.SelectedItem as QuoteRowVm)?.Item.Id;
         var quotes = _store.Quotes;
         var qry = _search.Text.Trim().ToLowerInvariant();
 
@@ -460,6 +462,7 @@ public sealed class QuoteDeskView : UserControl
         // Map to view models
         var rows = _currentView.Select(q => new QuoteRowVm(q)).ToList();
         _list.ItemsSource = rows;
+        if (selectedId != null) _list.SelectedItem = rows.FirstOrDefault(r => r.Item.Id == selectedId);
 
         _emptyHint.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 

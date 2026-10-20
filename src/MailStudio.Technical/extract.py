@@ -56,6 +56,45 @@ def pdf_summary(path, ocr=True, max_pages=30, limit=MAX_TEXT):
 
 
 # ---------------------------------------------------------------- STEP
+def _holes(shape):
+    """Real holes: concave cylindrical faces whose faces around one axis close a full circle.
+    Fillets and bosses (convex, or less than a full turn) are not counted. Returns [{'diameter_mm', 'count'}]."""
+    import math
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopAbs import TopAbs_FACE, TopAbs_REVERSED
+    from OCP.TopoDS import TopoDS
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.GeomAbs import GeomAbs_Cylinder
+    to_face = getattr(TopoDS, 'Face_s', None) or getattr(TopoDS, 'Face')
+    groups = {}
+    ex = TopExp_Explorer(shape, TopAbs_FACE)
+    while ex.More():
+        face = to_face(ex.Current()); ex.Next()
+        s = BRepAdaptor_Surface(face)
+        if s.GetType() != GeomAbs_Cylinder:
+            continue
+        cyl = s.Cylinder(); r = cyl.Radius(); ax = cyl.Axis(); d = ax.Direction(); o = ax.Location()
+        u1, u2, v1, v2 = s.FirstUParameter(), s.LastUParameter(), s.FirstVParameter(), s.LastVParameter()
+        p = s.Value((u1 + u2) / 2, (v1 + v2) / 2)
+        # geometric normal is radial-outward for a direct frame; the face orientation flips it
+        sign = 1 if cyl.Position().Direct() else -1
+        if face.Orientation() == TopAbs_REVERSED: sign = -sign
+        if sign > 0:
+            continue  # material normal points away from the axis: a boss / outer diameter, not a hole
+        dx, dy, dz = d.X(), d.Y(), d.Z()
+        if (dx, dy, dz) < (0, 0, 0): dx, dy, dz = -dx, -dy, -dz
+        t = o.X() * dx + o.Y() * dy + o.Z() * dz
+        foot = (round(o.X() - dx * t, 2), round(o.Y() - dy * t, 2), round(o.Z() - dz * t, 2))
+        key = (round(2 * r, 3), round(dx, 3), round(dy, 3), round(dz, 3)) + foot
+        groups[key] = groups.get(key, 0.0) + abs(u2 - u1)
+        _ = p
+    counts = {}
+    for key, span in groups.items():
+        if span >= 2 * math.pi * 0.98:
+            counts[key[0]] = counts.get(key[0], 0) + 1
+    return [{'diameter_mm': dia, 'count': n} for dia, n in sorted(counts.items())]
+
+
 def step_summary(path, pmi_reader=None):
     from OCP.STEPCAFControl import STEPCAFControl_Reader
     from OCP.TDocStd import TDocStd_Document
@@ -95,7 +134,8 @@ def step_summary(path, pmi_reader=None):
             k = str(BRepAdaptor_Surface(TopoDS.Face_s(ex.Current())).GetType()).split('_')[-1].split('.')[-1]
             kinds[k] = kinds.get(k, 0) + 1; ex.Next()
         out_bodies.append({'name': b['name'], 'size_xyz_mm': size(box), 'volume_mm3': vol, 'surface_mm2': area,
-                           'center_of_mass_mm': com, 'face_types': kinds, 'cylindrical_faces': kinds.get('Cylinder', 0)})
+                           'center_of_mass_mm': com, 'face_types': kinds, 'cylindrical_faces': kinds.get('Cylinder', 0),
+                           'holes': _holes(b['shape'])})
     whole = compound([b['shape'] for b in bodies]); box = bbox(whole); vol, area, _ = props(whole)
     pmi = []
     if pmi_reader is not None:

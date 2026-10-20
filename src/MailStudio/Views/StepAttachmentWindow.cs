@@ -249,19 +249,9 @@ public sealed partial class StepAttachmentWindow : Window
 
     async Task CompareRevisionAsync()
     {
-        var candidates = RevisionService.FindCandidates(null, "", _sourcePath);
-        string? oldPath = candidates.Count > 0 ? candidates[0].FilePath : null;
-        if (string.IsNullOrEmpty(oldPath) || !File.Exists(oldPath))
-        {
-            var dlg = new Microsoft.Win32.OpenFileDialog
-            {
-                Title = L.T("Önceki revizyon STEP dosyasını seçin"),
-                Filter = "STEP (*.step;*.stp)|*.step;*.stp|All files (*.*)|*.*",
-                InitialDirectory = Path.GetDirectoryName(_sourcePath)
-            };
-            if (dlg.ShowDialog(this) == true) oldPath = dlg.FileName;
-        }
+        var oldPath = await RevisionLookup.PickOlderAsync(this, _sourcePath);
         if (string.IsNullOrEmpty(oldPath) || !File.Exists(oldPath)) return;
+        if (RevisionLookup.ShowDiff != null) { await RevisionLookup.ShowDiff(oldPath, _sourcePath); return; }
 
         _status.Text = L.T("Önceki revizyonla karşılaştırılıyor...");
         try

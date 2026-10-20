@@ -8,9 +8,7 @@ using MailStudio.Models;
 
 namespace MailStudio.Services.Calendar;
 
-/// <summary>
-/// Summary of a calendar synchronization run across one or more accounts.
-/// </summary>
+/// <summary>Summary of a calendar synchronization run across one or more accounts.</summary>
 public sealed class CalendarSyncResult
 {
     public bool Success { get; set; } = true;
@@ -22,6 +20,7 @@ public sealed class CalendarSyncResult
     public int UpdatedRemote { get; set; }
     public int DeletedRemote { get; set; }
     public int ConflictsResolved { get; set; }
+    public int Skipped { get; set; }
     public string? Error { get; set; }
     public string? StatusMessage { get; set; }
 
@@ -36,19 +35,21 @@ public sealed class CalendarSyncResult
         UpdatedRemote += other.UpdatedRemote;
         DeletedRemote += other.DeletedRemote;
         ConflictsResolved += other.ConflictsResolved;
+        Skipped += other.Skipped;
         if (!string.IsNullOrEmpty(other.Error))
             Error = string.IsNullOrEmpty(Error) ? other.Error : Error + "; " + other.Error;
     }
 }
 
 /// <summary>
-/// Two-way synchronization service for Microsoft Graph (Outlook.com / Microsoft 365),
-/// Google Calendar API v3, and CalDAV (Yandex, Nextcloud, custom).
-///
-/// Execution order:
-/// 1. Read: pull changes from server to local CalendarStore (conflicts resolved: server wins with note).
-/// 2. Write: push local additions, modifications and tombstones to server.
-/// If sync is disabled on the account, zero network calls are performed.
+/// Two-way calendar sync with Microsoft Graph (Outlook.com / Microsoft 365), Google Calendar API v3 and CalDAV.
+/// Safety rules:
+/// <list type="bullet">
+/// <item>Off by default per account; when off, no network request is made at all.</item>
+/// <item>Only a time window (60 days back, 400 days ahead) is read, with every page; if the listing is incomplete nothing is deleted locally.</item>
+/// <item>Only events the user put in that account's calendar (<see cref="CalendarEvent.AccountId"/>) are uploaded; local-only events never leave the computer.</item>
+/// <item>Conflict (changed on both sides): the server wins and the local version is kept in the notes.</item>
+/// </list>
 /// </summary>
 public class CalendarSyncService : IDisposable
 {
@@ -59,68 +60,59 @@ public class CalendarSyncService : IDisposable
 
     public string GraphBaseUrl { get; set; } = "https://graph.microsoft.com/v1.0";
     public string GoogleBaseUrl { get; set; } = "https://www.googleapis.com/calendar/v3";
+    /// <summary>Test hook: bearer token used instead of OAuth.</summary>
     public string? CustomAccessToken { get; set; }
+    public int DaysBack { get; set; } = 60;
+    public int DaysAhead { get; set; } = 400;
 
     public CalendarSyncService(CalendarStore calendar, OAuthService? oauth = null, HttpClient? httpClient = null)
     {
         _calendar = calendar;
         _oauth = oauth;
-        if (httpClient != null)
-        {
-            _http = httpClient;
-            _ownsHttpClient = false;
-        }
-        else
-        {
-            _http = new HttpClient();
-            _ownsHttpClient = true;
-        }
+        _http = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
+        _ownsHttpClient = httpClient == null;
     }
 
     public CalendarSyncService(CalendarStore calendar, HttpMessageHandler handler)
-        : this(calendar, null, new HttpClient(handler))
-    {
-        _ownsHttpClient = true;
-    }
+        : this(calendar, null, new HttpClient(handler)) => _ownsHttpClient = true;
 
-    public void Dispose()
-    {
-        if (_ownsHttpClient) _http.Dispose();
-    }
+    public void Dispose() { if (_ownsHttpClient) _http.Dispose(); }
 
-    /// <summary>
-    /// Synchronizes all enabled accounts sequentially.
-    /// </summary>
+    /// <summary>Synchronizes all accounts that have calendar sync turned on, one after another.</summary>
     public async Task<CalendarSyncResult> SyncAllAccountsAsync(IEnumerable<AccountConfig> accounts, CancellationToken ct = default)
     {
         var total = new CalendarSyncResult();
-        foreach (var acc in accounts)
-        {
-            if (!acc.EnableCalendarSync) continue;
-            var r = await SyncAccountAsync(acc, ct);
-            total.Merge(r);
-        }
+        foreach (var acc in accounts.Where(a => a.EnableCalendarSync).ToList())
+            total.Merge(await SyncAccountAsync(acc, ct));
         return total;
     }
 
-    /// <summary>
-    /// Synchronizes a single account. If EnableCalendarSync is false, makes zero network calls.
-    /// </summary>
+    /// <summary>Synchronizes one account. Makes no network call when sync is off for it.</summary>
     public async Task<CalendarSyncResult> SyncAccountAsync(AccountConfig account, CancellationToken ct = default)
     {
         if (!account.EnableCalendarSync)
-        {
-            return new CalendarSyncResult { Success = true, StatusMessage = L.T("Takvim eşitlemesi bu hesap için kapalı.") };
-        }
-
+            return new CalendarSyncResult { StatusMessage = L.T("Takvim eşitlemesi bu hesap için kapalı.") };
         try
         {
-            return account.AuthType switch
+            IProvider provider = account.AuthType switch
             {
-                AuthType.Microsoft => await SyncMicrosoftGraphAsync(account, ct),
-                AuthType.Google => await SyncGoogleCalendarAsync(account, ct),
-                _ => await SyncCalDavAsync(account, ct)
+                AuthType.Microsoft => new GraphProvider(this, await TokenAsync(account, ct)),
+                AuthType.Google => new GoogleProvider(this, await TokenAsync(account, ct)),
+                _ => new CalDavProvider(this, account)
             };
+            var r = await RunAsync(account, provider, ct);
+            account.LastCalendarSyncUtc = DateTime.UtcNow;
+            account.CalendarSyncStatus = r.Skipped > 0
+                ? L.F("Takvim eşitlemesi tamamlandı ({0} etkinlik atlandı).", r.Skipped)
+                : L.T("Takvim eşitlemesi tamamlandı.");
+            r.StatusMessage = account.CalendarSyncStatus;
+            return r;
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (SyncAuthException ex)
+        {
+            account.CalendarSyncStatus = L.T("Takvim yetkilendirmesi gerekli. Lütfen hesap ayarlarından oturumu yenileyin.");
+            return new CalendarSyncResult { Success = false, Error = ex.Message, StatusMessage = account.CalendarSyncStatus };
         }
         catch (Exception ex)
         {
@@ -129,752 +121,428 @@ public class CalendarSyncService : IDisposable
         }
     }
 
-    // ------------------------------------------------------------------ Microsoft Graph
+    async Task<string> TokenAsync(AccountConfig account, CancellationToken ct)
+    {
+        if (!string.IsNullOrEmpty(CustomAccessToken)) return CustomAccessToken;
+        if (_oauth == null) throw new InvalidOperationException(L.T("OAuth servisi bulunamadı."));
+        try { return await _oauth.GetCalendarAccessTokenAsync(account, ct); }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex) { throw new SyncAuthException(ex.Message); }
+    }
 
-    async Task<CalendarSyncResult> SyncMicrosoftGraphAsync(AccountConfig account, CancellationToken ct)
+    // ------------------------------------------------------------------ the merge (provider independent)
+
+    async Task<CalendarSyncResult> RunAsync(AccountConfig account, IProvider p, CancellationToken ct)
     {
         var result = new CalendarSyncResult();
-        string token = CustomAccessToken ?? "";
-        if (string.IsNullOrEmpty(token))
+        var from = DateTime.Today.AddDays(-DaysBack);
+        var to = DateTime.Today.AddDays(DaysAhead);
+
+        // 1. read the server (all pages of the window)
+        var (remote, complete) = await p.ListAsync(from, to, ct);
+        result.Fetched = remote.Count;
+        var tombs = _calendar.GetTombstones(account.Id);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var r in remote)
         {
-            if (_oauth == null)
-                throw new InvalidOperationException(L.T("OAuth servisi bulunamadı."));
-            try
+            seen.Add(r.Id);
+            var local = _calendar.Events.FirstOrDefault(x => x.AccountId == account.Id && x.ExternalId == r.Id);
+            if (local == null)
             {
-                token = await _oauth.GetCalendarAccessTokenAsync(account, ct);
+                if (tombs.Any(t => t.ExternalId == r.Id)) continue;   // deleted here, the delete is pushed below
+                var ev = r.Event ?? new CalendarEvent();
+                ev.AccountId = account.Id;
+                ev.ExternalId = r.Id;
+                ev.ExternalEtag = r.Etag;
+                Apply(ev, r);
+                _calendar.SaveSynced(ev);
+                result.CreatedLocally++;
+                continue;
             }
-            catch (Exception ex)
+            var remoteChanged = !string.Equals(local.ExternalEtag, r.Etag, StringComparison.Ordinal);
+            if (!remoteChanged) continue;
+            if (local.SyncDirty)
             {
-                account.CalendarSyncStatus = L.T("Takvim yetkilendirmesi gerekli. Lütfen hesap ayarlarından oturumu yenileyin.");
-                return new CalendarSyncResult { Success = false, Error = ex.Message, StatusMessage = account.CalendarSyncStatus };
+                var note = L.F("[Çakışma çözüldü: Sunucu sürümü uygulandı. Yerel: {0} ({1:g})]", local.Title, local.Start);
+                Apply(local, r);
+                local.Notes = string.IsNullOrWhiteSpace(local.Notes) ? note : local.Notes + "\n" + note;
+                result.ConflictsResolved++;
             }
+            else Apply(local, r);
+            local.ExternalEtag = r.Etag;
+            _calendar.SaveSynced(local);
+            result.UpdatedLocally++;
         }
 
-        var baseUrl = GraphBaseUrl.TrimEnd('/');
-
-        // 1. READ PHASE (Sunucudan yerel takvime)
-        var getReq = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/me/events?$top=250");
-        getReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        var getRes = await _http.SendAsync(getReq, ct);
-        if (!getRes.IsSuccessStatusCode)
+        // 2. deleted on the server: only when the whole window was read, and never an unsent local change
+        if (complete)
         {
-            if (getRes.StatusCode == HttpStatusCode.Unauthorized || getRes.StatusCode == HttpStatusCode.Forbidden)
-                account.CalendarSyncStatus = L.T("Takvim yetkilendirmesi gerekli. Lütfen hesap ayarlarından oturumu yenileyin.");
-            else
-                account.CalendarSyncStatus = L.F("Microsoft Graph hatası: {0}", (int)getRes.StatusCode);
-            return new CalendarSyncResult { Success = false, Error = account.CalendarSyncStatus, StatusMessage = account.CalendarSyncStatus };
-        }
-
-        var getJson = await getRes.Content.ReadAsStringAsync(ct);
-        var seenRemoteIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        using (var doc = JsonDocument.Parse(getJson))
-        {
-            if (doc.RootElement.TryGetProperty("value", out var valueElem) && valueElem.ValueKind == JsonValueKind.Array)
+            foreach (var lev in _calendar.Events.Where(x => x.AccountId == account.Id && !string.IsNullOrEmpty(x.ExternalId)
+                                                             && !x.SyncDirty && x.Start >= from && x.Start < to).ToList())
             {
-                foreach (var ev in valueElem.EnumerateArray())
-                {
-                    result.Fetched++;
-                    var id = ev.GetProperty("id").GetString() ?? "";
-                    if (string.IsNullOrEmpty(id)) continue;
-                    seenRemoteIds.Add(id);
-
-                    var changeKey = ev.TryGetProperty("changeKey", out var ck) ? ck.GetString() : null;
-                    var subject = ev.TryGetProperty("subject", out var sb) ? sb.GetString() ?? "" : "";
-                    var isAllDay = ev.TryGetProperty("isAllDay", out var ad) && ad.GetBoolean();
-                    var location = ev.TryGetProperty("location", out var loc) && loc.TryGetProperty("displayName", out var dn) ? dn.GetString() ?? "" : "";
-
-                    string notes = "";
-                    if (ev.TryGetProperty("body", out var b) && b.TryGetProperty("content", out var bc)) notes = bc.GetString() ?? "";
-                    else if (ev.TryGetProperty("bodyPreview", out var bp)) notes = bp.GetString() ?? "";
-
-                    DateTime start = DateTime.Now;
-                    if (ev.TryGetProperty("start", out var s) && s.TryGetProperty("dateTime", out var sdt))
-                        DateTime.TryParse(sdt.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out start);
-
-                    DateTime end = start.AddHours(1);
-                    if (ev.TryGetProperty("end", out var e) && e.TryGetProperty("dateTime", out var edt))
-                        DateTime.TryParse(edt.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out end);
-
-                    var local = _calendar.FindByExternalId(id) ??
-                                _calendar.Events.FirstOrDefault(x => x.AccountId == account.Id && x.ExternalId == id);
-
-                    if (local == null)
-                    {
-                        // Check if deleted locally
-                        var tomb = _calendar.GetTombstones(account.Id).FirstOrDefault(t => string.Equals(t.ExternalId, id, StringComparison.OrdinalIgnoreCase));
-                        if (tomb != null) continue;
-
-                        var newEv = new CalendarEvent
-                        {
-                            AccountId = account.Id,
-                            ExternalId = id,
-                            ExternalEtag = changeKey,
-                            Title = subject,
-                            Notes = notes,
-                            Start = start,
-                            End = end,
-                            AllDay = isAllDay,
-                            Location = location
-                        };
-                        _calendar.Save(newEv);
-                        newEv.Modified = DateTime.Now.AddMinutes(-1);
-                        newEv.LastSyncedUtc = DateTime.UtcNow;
-                        result.CreatedLocally++;
-                    }
-                    else
-                    {
-                        bool localModified = local.LastSyncedUtc != null && local.Modified.ToUniversalTime() > local.LastSyncedUtc.Value;
-                        bool remoteModified = local.ExternalEtag == null || !string.Equals(local.ExternalEtag, changeKey, StringComparison.Ordinal);
-
-                        if (localModified && remoteModified)
-                        {
-                            // Conflict! Server wins with note
-                            var conflictNote = L.F("[Çakışma çözüldü: Sunucu sürümü uygulandı. Yerel: {0} ({1:g})]", local.Title, local.Start);
-                            local.Notes = string.IsNullOrWhiteSpace(notes) ? conflictNote : notes + "\n" + conflictNote;
-                            local.Title = subject;
-                            local.Start = start;
-                            local.End = end;
-                            local.Location = location;
-                            local.AllDay = isAllDay;
-                            local.ExternalEtag = changeKey;
-                            _calendar.Save(local);
-                            local.Modified = DateTime.Now.AddMinutes(-1);
-                            local.LastSyncedUtc = DateTime.UtcNow;
-                            result.ConflictsResolved++;
-                            result.UpdatedLocally++;
-                        }
-                        else if (remoteModified)
-                        {
-                            local.Title = subject;
-                            local.Notes = notes;
-                            local.Start = start;
-                            local.End = end;
-                            local.Location = location;
-                            local.AllDay = isAllDay;
-                            local.ExternalEtag = changeKey;
-                            _calendar.Save(local);
-                            local.Modified = DateTime.Now.AddMinutes(-1);
-                            local.LastSyncedUtc = DateTime.UtcNow;
-                            result.UpdatedLocally++;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Server deletions
-        var localAccountEvents = _calendar.Events.Where(x => x.AccountId == account.Id && !string.IsNullOrEmpty(x.ExternalId)).ToList();
-        foreach (var lev in localAccountEvents)
-        {
-            if (!seenRemoteIds.Contains(lev.ExternalId!))
-            {
+                if (seen.Contains(lev.ExternalId!)) continue;
                 _calendar.DeleteSilently(lev.Id);
                 result.DeletedLocally++;
             }
         }
 
-        // 2. WRITE PHASE (Yerelde yapılan değişiklikler sunucuya)
-        // 2a. Process tombstones (deleted locally)
-        var tombstones = _calendar.GetTombstones(account.Id);
-        var removedTombstoneIds = new List<string>();
-        foreach (var t in tombstones)
+        // 3. push local deletions
+        var done = new List<string>();
+        foreach (var t in tombs)
         {
-            if (!string.IsNullOrEmpty(t.ExternalId))
+            if (string.IsNullOrEmpty(t.ExternalId) || await p.DeleteAsync(t.ExternalId, ct))
             {
-                var delReq = new HttpRequestMessage(HttpMethod.Delete, $"{baseUrl}/me/events/{t.ExternalId}");
-                delReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-                var delRes = await _http.SendAsync(delReq, ct);
-                if (delRes.IsSuccessStatusCode || delRes.StatusCode == HttpStatusCode.NotFound)
-                {
-                    removedTombstoneIds.Add(t.Id);
-                    result.DeletedRemote++;
-                }
+                done.Add(t.Id);
+                if (!string.IsNullOrEmpty(t.ExternalId)) result.DeletedRemote++;
+            }
+        }
+        if (done.Count > 0) _calendar.RemoveTombstones(account.Id, done);
+
+        // 4. push new and changed events of this account's calendar
+        foreach (var ev in _calendar.Events.Where(x => x.AccountId == account.Id && (string.IsNullOrEmpty(x.ExternalId) || x.SyncDirty)).ToList())
+        {
+            if (!p.CanWrite(ev)) { result.Skipped++; continue; }
+            if (string.IsNullOrEmpty(ev.ExternalId))
+            {
+                var (id, etag) = await p.CreateAsync(ev, ct);
+                if (id == null) continue;
+                ev.ExternalId = id; ev.ExternalEtag = etag;
+                _calendar.SaveSynced(ev);
+                result.CreatedRemote++;
             }
             else
             {
-                removedTombstoneIds.Add(t.Id);
-            }
-        }
-        if (removedTombstoneIds.Count > 0) _calendar.RemoveTombstones(account.Id, removedTombstoneIds);
-
-        // 2b. New local events (no ExternalId)
-        var newLocals = _calendar.Events.Where(x => (x.AccountId == account.Id || string.IsNullOrEmpty(x.AccountId)) && string.IsNullOrEmpty(x.ExternalId)).ToList();
-        foreach (var ev in newLocals)
-        {
-            ev.AccountId = account.Id;
-            var payload = new
-            {
-                subject = ev.Title,
-                body = new { contentType = "Text", content = ev.Notes ?? "" },
-                start = new { dateTime = ev.Start.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss"), timeZone = "UTC" },
-                end = new { dateTime = ev.End.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss"), timeZone = "UTC" },
-                location = new { displayName = ev.Location ?? "" },
-                isAllDay = ev.AllDay
-            };
-            var postReq = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/me/events");
-            postReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-            postReq.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-            var postRes = await _http.SendAsync(postReq, ct);
-            if (postRes.IsSuccessStatusCode)
-            {
-                var pJson = await postRes.Content.ReadAsStringAsync(ct);
-                using var pDoc = JsonDocument.Parse(pJson);
-                ev.ExternalId = pDoc.RootElement.GetProperty("id").GetString();
-                if (pDoc.RootElement.TryGetProperty("changeKey", out var ck)) ev.ExternalEtag = ck.GetString();
-                _calendar.Save(ev);
-                ev.Modified = DateTime.Now.AddMinutes(-1);
-                ev.LastSyncedUtc = DateTime.UtcNow;
-                result.CreatedRemote++;
-            }
-        }
-
-        // 2c. Updated local events
-        var modifiedLocals = _calendar.Events.Where(x => x.AccountId == account.Id && !string.IsNullOrEmpty(x.ExternalId)
-                                                       && x.LastSyncedUtc != null && x.Modified.ToUniversalTime() > x.LastSyncedUtc.Value).ToList();
-        foreach (var ev in modifiedLocals)
-        {
-            var payload = new
-            {
-                subject = ev.Title,
-                body = new { contentType = "Text", content = ev.Notes ?? "" },
-                start = new { dateTime = ev.Start.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss"), timeZone = "UTC" },
-                end = new { dateTime = ev.End.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss"), timeZone = "UTC" },
-                location = new { displayName = ev.Location ?? "" },
-                isAllDay = ev.AllDay
-            };
-            var patchReq = new HttpRequestMessage(HttpMethod.Patch, $"{baseUrl}/me/events/{ev.ExternalId}");
-            patchReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-            patchReq.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-            var patchRes = await _http.SendAsync(patchReq, ct);
-            if (patchRes.IsSuccessStatusCode)
-            {
-                var pJson = await patchRes.Content.ReadAsStringAsync(ct);
-                using var pDoc = JsonDocument.Parse(pJson);
-                if (pDoc.RootElement.TryGetProperty("changeKey", out var ck)) ev.ExternalEtag = ck.GetString();
-                _calendar.Save(ev);
-                ev.Modified = DateTime.Now.AddMinutes(-1);
-                ev.LastSyncedUtc = DateTime.UtcNow;
+                var etag = await p.UpdateAsync(ev, ct);
+                if (etag == null) continue;
+                ev.ExternalEtag = etag;
+                _calendar.SaveSynced(ev);
                 result.UpdatedRemote++;
             }
         }
-
-        account.LastCalendarSyncUtc = DateTime.UtcNow;
-        account.CalendarSyncStatus = L.T("Takvim eşitlemesi tamamlandı.");
-        result.Success = true;
-        result.StatusMessage = account.CalendarSyncStatus;
         return result;
+    }
+
+    static void Apply(CalendarEvent local, RemoteEvent r)
+    {
+        local.Title = r.Title;
+        local.Notes = r.Notes;
+        local.Location = r.Location;
+        local.Start = r.Start;
+        local.End = r.End;
+        local.AllDay = r.AllDay;
+        if (r.Event != null && !ReferenceEquals(r.Event, local)) local.Repeat = r.Event.Repeat;
+    }
+
+    sealed class SyncAuthException(string message) : Exception(message);
+
+    sealed record RemoteEvent(string Id, string? Etag, string Title, string Notes, string Location, DateTime Start, DateTime End, bool AllDay)
+    {
+        /// <summary>CalDAV: the full parsed event (keeps recurrence).</summary>
+        public CalendarEvent? Event { get; init; }
+    }
+
+    interface IProvider
+    {
+        Task<(List<RemoteEvent> Events, bool Complete)> ListAsync(DateTime from, DateTime to, CancellationToken ct);
+        bool CanWrite(CalendarEvent e);
+        Task<(string? Id, string? Etag)> CreateAsync(CalendarEvent e, CancellationToken ct);
+        Task<string?> UpdateAsync(CalendarEvent e, CancellationToken ct);
+        Task<bool> DeleteAsync(string externalId, CancellationToken ct);
+    }
+
+    async Task<HttpResponseMessage> SendAsync(HttpRequestMessage req, CancellationToken ct)
+    {
+        var res = await _http.SendAsync(req, ct);
+        if (res.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            throw new SyncAuthException(((int)res.StatusCode).ToString(CultureInfo.InvariantCulture));
+        return res;
+    }
+
+    static string Str(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+    static string Iso(DateTime local) => local.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
+
+    // ------------------------------------------------------------------ Microsoft Graph
+
+    sealed class GraphProvider(CalendarSyncService s, string token) : IProvider
+    {
+        string Base => s.GraphBaseUrl.TrimEnd('/');
+
+        HttpRequestMessage Req(HttpMethod m, string url)
+        {
+            var r = new HttpRequestMessage(m, url);
+            r.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            r.Headers.TryAddWithoutValidation("Prefer", "outlook.timezone=\"UTC\", outlook.body-content-type=\"text\"");
+            return r;
+        }
+
+        public async Task<(List<RemoteEvent>, bool)> ListAsync(DateTime from, DateTime to, CancellationToken ct)
+        {
+            var list = new List<RemoteEvent>();
+            string? url = $"{Base}/me/calendarView?startDateTime={Iso(from)}&endDateTime={Iso(to)}&$top=200";
+            for (var page = 0; url != null; page++)
+            {
+                if (page >= 100) return (list, false);
+                using var res = await s.SendAsync(Req(HttpMethod.Get, url), ct);
+                if (!res.IsSuccessStatusCode) throw new InvalidOperationException(L.F("Microsoft Graph hatası: {0}", (int)res.StatusCode));
+                using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync(ct));
+                if (doc.RootElement.TryGetProperty("value", out var arr) && arr.ValueKind == JsonValueKind.Array)
+                    foreach (var ev in arr.EnumerateArray())
+                    {
+                        var id = Str(ev, "id");
+                        if (id.Length == 0 || ev.TryGetProperty("isCancelled", out var c) && c.ValueKind == JsonValueKind.True) continue;
+                        var allDay = ev.TryGetProperty("isAllDay", out var ad) && ad.ValueKind == JsonValueKind.True;
+                        var start = Time(ev, "start", allDay) ?? DateTime.Now;
+                        var end = Time(ev, "end", allDay) ?? start.AddHours(1);
+                        var notes = ev.TryGetProperty("body", out var b) ? Str(b, "content") : Str(ev, "bodyPreview");
+                        if (notes.Length == 0) notes = Str(ev, "bodyPreview");
+                        var loc = ev.TryGetProperty("location", out var l) && l.ValueKind == JsonValueKind.Object ? Str(l, "displayName") : "";
+                        list.Add(new RemoteEvent(id, Str(ev, "changeKey"), Str(ev, "subject"), notes.Trim(), loc, start, end, allDay));
+                    }
+                url = doc.RootElement.TryGetProperty("@odata.nextLink", out var next) ? next.GetString() : null;
+            }
+            return (list, true);
+        }
+
+        /// <summary>Graph returns times in UTC (Prefer header) without a 'Z'; all-day events are plain dates.</summary>
+        static DateTime? Time(JsonElement ev, string name, bool allDay)
+        {
+            if (!ev.TryGetProperty(name, out var t)) return null;
+            var text = Str(t, "dateTime");
+            if (!DateTime.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out var utc)) return null;
+            if (allDay) return DateTime.SpecifyKind(utc.Date, DateTimeKind.Unspecified);
+            var tz = Str(t, "timeZone");
+            if (tz.Length > 0 && !tz.Equals("UTC", StringComparison.OrdinalIgnoreCase))
+            {
+                // A server that ignored the Prefer header: the time is in the named zone
+                var zone = Ics.FindZone(tz);
+                if (zone != null) return TimeZoneInfo.ConvertTime(DateTime.SpecifyKind(utc, DateTimeKind.Unspecified), zone, TimeZoneInfo.Local);
+            }
+            return utc.ToLocalTime();
+        }
+
+        public bool CanWrite(CalendarEvent e) => e.Repeat == null;   // series are edited in Outlook; occurrences from calendarView are single events
+
+        object Payload(CalendarEvent e) => new
+        {
+            subject = e.Title,
+            body = new { contentType = "Text", content = e.Notes ?? "" },
+            start = e.AllDay ? new { dateTime = e.Start.Date.ToString("yyyy-MM-dd'T'00:00:00", CultureInfo.InvariantCulture), timeZone = "UTC" }
+                             : new { dateTime = e.Start.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture), timeZone = "UTC" },
+            end = e.AllDay ? new { dateTime = (e.End.Date > e.Start.Date ? e.End.Date : e.Start.Date.AddDays(1)).ToString("yyyy-MM-dd'T'00:00:00", CultureInfo.InvariantCulture), timeZone = "UTC" }
+                           : new { dateTime = e.End.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture), timeZone = "UTC" },
+            location = new { displayName = e.Location ?? "" },
+            isAllDay = e.AllDay
+        };
+
+        public async Task<(string?, string?)> CreateAsync(CalendarEvent e, CancellationToken ct)
+        {
+            var req = Req(HttpMethod.Post, $"{Base}/me/events");
+            req.Content = new StringContent(JsonSerializer.Serialize(Payload(e)), Encoding.UTF8, "application/json");
+            using var res = await s.SendAsync(req, ct);
+            if (!res.IsSuccessStatusCode) return (null, null);
+            using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync(ct));
+            return (Str(doc.RootElement, "id"), Str(doc.RootElement, "changeKey"));
+        }
+
+        public async Task<string?> UpdateAsync(CalendarEvent e, CancellationToken ct)
+        {
+            var req = Req(HttpMethod.Patch, $"{Base}/me/events/{Uri.EscapeDataString(e.ExternalId!)}");
+            req.Content = new StringContent(JsonSerializer.Serialize(Payload(e)), Encoding.UTF8, "application/json");
+            using var res = await s.SendAsync(req, ct);
+            if (!res.IsSuccessStatusCode) return null;
+            using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync(ct));
+            return Str(doc.RootElement, "changeKey");
+        }
+
+        public async Task<bool> DeleteAsync(string id, CancellationToken ct)
+        {
+            using var res = await s.SendAsync(Req(HttpMethod.Delete, $"{Base}/me/events/{Uri.EscapeDataString(id)}"), ct);
+            return res.IsSuccessStatusCode || res.StatusCode == HttpStatusCode.NotFound;
+        }
     }
 
     // ------------------------------------------------------------------ Google Calendar
 
-    async Task<CalendarSyncResult> SyncGoogleCalendarAsync(AccountConfig account, CancellationToken ct)
+    sealed class GoogleProvider(CalendarSyncService s, string token) : IProvider
     {
-        var result = new CalendarSyncResult();
-        string token = CustomAccessToken ?? "";
-        if (string.IsNullOrEmpty(token))
+        string Base => s.GoogleBaseUrl.TrimEnd('/') + "/calendars/primary/events";
+
+        HttpRequestMessage Req(HttpMethod m, string url)
         {
-            if (_oauth == null)
-                throw new InvalidOperationException(L.T("OAuth servisi bulunamadı."));
-            try
+            var r = new HttpRequestMessage(m, url);
+            r.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            return r;
+        }
+
+        public async Task<(List<RemoteEvent>, bool)> ListAsync(DateTime from, DateTime to, CancellationToken ct)
+        {
+            var list = new List<RemoteEvent>();
+            string? pageToken = null;
+            for (var page = 0; ; page++)
             {
-                token = await _oauth.GetCalendarAccessTokenAsync(account, ct);
-            }
-            catch (Exception ex)
-            {
-                account.CalendarSyncStatus = L.T("Takvim yetkilendirmesi gerekli. Lütfen hesap ayarlarından oturumu yenileyin.");
-                return new CalendarSyncResult { Success = false, Error = ex.Message, StatusMessage = account.CalendarSyncStatus };
+                if (page >= 100) return (list, false);
+                var url = $"{Base}?singleEvents=true&maxResults=250&timeMin={Uri.EscapeDataString(Iso(from))}&timeMax={Uri.EscapeDataString(Iso(to))}"
+                          + (pageToken != null ? "&pageToken=" + Uri.EscapeDataString(pageToken) : "");
+                using var res = await s.SendAsync(Req(HttpMethod.Get, url), ct);
+                if (!res.IsSuccessStatusCode) throw new InvalidOperationException(L.F("Google Calendar hatası: {0}", (int)res.StatusCode));
+                using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync(ct));
+                if (doc.RootElement.TryGetProperty("items", out var arr) && arr.ValueKind == JsonValueKind.Array)
+                    foreach (var ev in arr.EnumerateArray())
+                    {
+                        var id = Str(ev, "id");
+                        if (id.Length == 0 || Str(ev, "status") == "cancelled") continue;
+                        var (start, allDay) = Time(ev, "start");
+                        var (end, _) = Time(ev, "end");
+                        var st = start ?? DateTime.Now;
+                        list.Add(new RemoteEvent(id, Str(ev, "etag"), Str(ev, "summary"), Str(ev, "description"), Str(ev, "location"),
+                            st, end ?? st.AddHours(1), allDay));
+                    }
+                pageToken = doc.RootElement.TryGetProperty("nextPageToken", out var n) ? n.GetString() : null;
+                if (string.IsNullOrEmpty(pageToken)) return (list, true);
             }
         }
 
-        var baseUrl = GoogleBaseUrl.TrimEnd('/');
-
-        // 1. READ PHASE
-        var getReq = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/calendars/primary/events?maxResults=250");
-        getReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        var getRes = await _http.SendAsync(getReq, ct);
-        if (!getRes.IsSuccessStatusCode)
+        static (DateTime?, bool) Time(JsonElement ev, string name)
         {
-            if (getRes.StatusCode == HttpStatusCode.Unauthorized || getRes.StatusCode == HttpStatusCode.Forbidden)
-                account.CalendarSyncStatus = L.T("Takvim yetkilendirmesi gerekli. Lütfen hesap ayarlarından oturumu yenileyin.");
-            else
-                account.CalendarSyncStatus = L.F("Google Calendar hatası: {0}", (int)getRes.StatusCode);
-            return new CalendarSyncResult { Success = false, Error = account.CalendarSyncStatus, StatusMessage = account.CalendarSyncStatus };
+            if (!ev.TryGetProperty(name, out var t)) return (null, false);
+            var date = Str(t, "date");
+            if (date.Length > 0 && DateTime.TryParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d)) return (d, true);
+            var dt = Str(t, "dateTime");
+            if (DateTimeOffset.TryParse(dt, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var o)) return (o.LocalDateTime, false);
+            return (null, false);
         }
 
-        var getJson = await getRes.Content.ReadAsStringAsync(ct);
-        var seenRemoteIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        public bool CanWrite(CalendarEvent e) => e.Repeat == null;
 
-        using (var doc = JsonDocument.Parse(getJson))
-        {
-            if (doc.RootElement.TryGetProperty("items", out var itemsElem) && itemsElem.ValueKind == JsonValueKind.Array)
+        object Payload(CalendarEvent e) => e.AllDay
+            ? new
             {
-                foreach (var ev in itemsElem.EnumerateArray())
-                {
-                    result.Fetched++;
-                    var id = ev.GetProperty("id").GetString() ?? "";
-                    if (string.IsNullOrEmpty(id)) continue;
-
-                    var status = ev.TryGetProperty("status", out var st) ? st.GetString() : "confirmed";
-                    if (status == "cancelled")
-                    {
-                        // Treated as deleted on server
-                        var delLocal = _calendar.FindByExternalId(id);
-                        if (delLocal != null && delLocal.AccountId == account.Id)
-                        {
-                            _calendar.DeleteSilently(delLocal.Id);
-                            result.DeletedLocally++;
-                        }
-                        continue;
-                    }
-
-                    seenRemoteIds.Add(id);
-                    var etag = ev.TryGetProperty("etag", out var et) ? et.GetString() : null;
-                    var summary = ev.TryGetProperty("summary", out var sm) ? sm.GetString() ?? "" : "";
-                    var description = ev.TryGetProperty("description", out var ds) ? ds.GetString() ?? "" : "";
-                    var location = ev.TryGetProperty("location", out var lc) ? lc.GetString() ?? "" : "";
-
-                    bool isAllDay = false;
-                    DateTime start = DateTime.Now;
-                    DateTime end = start.AddHours(1);
-
-                    if (ev.TryGetProperty("start", out var s))
-                    {
-                        if (s.TryGetProperty("date", out var sdate))
-                        {
-                            isAllDay = true;
-                            DateTime.TryParse(sdate.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out start);
-                        }
-                        else if (s.TryGetProperty("dateTime", out var sdt))
-                        {
-                            DateTime.TryParse(sdt.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out start);
-                        }
-                    }
-
-                    if (ev.TryGetProperty("end", out var e))
-                    {
-                        if (e.TryGetProperty("date", out var edate))
-                            DateTime.TryParse(edate.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out end);
-                        else if (e.TryGetProperty("dateTime", out var edt))
-                            DateTime.TryParse(edt.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out end);
-                    }
-
-                    var local = _calendar.FindByExternalId(id) ??
-                                _calendar.Events.FirstOrDefault(x => x.AccountId == account.Id && x.ExternalId == id);
-
-                    if (local == null)
-                    {
-                        var tomb = _calendar.GetTombstones(account.Id).FirstOrDefault(t => string.Equals(t.ExternalId, id, StringComparison.OrdinalIgnoreCase));
-                        if (tomb != null) continue;
-
-                        var newEv = new CalendarEvent
-                        {
-                            AccountId = account.Id,
-                            ExternalId = id,
-                            ExternalEtag = etag,
-                            Title = summary,
-                            Notes = description,
-                            Start = start,
-                            End = end,
-                            AllDay = isAllDay,
-                            Location = location
-                        };
-                        _calendar.Save(newEv);
-                        newEv.Modified = DateTime.Now.AddMinutes(-1);
-                        newEv.LastSyncedUtc = DateTime.UtcNow;
-                        result.CreatedLocally++;
-                    }
-                    else
-                    {
-                        bool localModified = local.LastSyncedUtc != null && local.Modified.ToUniversalTime() > local.LastSyncedUtc.Value;
-                        bool remoteModified = local.ExternalEtag == null || !string.Equals(local.ExternalEtag, etag, StringComparison.Ordinal);
-
-                        if (localModified && remoteModified)
-                        {
-                            var conflictNote = L.F("[Çakışma çözüldü: Sunucu sürümü uygulandı. Yerel: {0} ({1:g})]", local.Title, local.Start);
-                            local.Notes = string.IsNullOrWhiteSpace(description) ? conflictNote : description + "\n" + conflictNote;
-                            local.Title = summary;
-                            local.Start = start;
-                            local.End = end;
-                            local.Location = location;
-                            local.AllDay = isAllDay;
-                            local.ExternalEtag = etag;
-                            _calendar.Save(local);
-                            local.Modified = DateTime.Now.AddMinutes(-1);
-                            local.LastSyncedUtc = DateTime.UtcNow;
-                            result.ConflictsResolved++;
-                            result.UpdatedLocally++;
-                        }
-                        else if (remoteModified)
-                        {
-                            local.Title = summary;
-                            local.Notes = description;
-                            local.Start = start;
-                            local.End = end;
-                            local.Location = location;
-                            local.AllDay = isAllDay;
-                            local.ExternalEtag = etag;
-                            _calendar.Save(local);
-                            local.Modified = DateTime.Now.AddMinutes(-1);
-                            local.LastSyncedUtc = DateTime.UtcNow;
-                            result.UpdatedLocally++;
-                        }
-                    }
-                }
+                summary = e.Title, description = e.Notes ?? "", location = e.Location ?? "",
+                start = (object)new { date = e.Start.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) },
+                end = (object)new { date = (e.End.Date > e.Start.Date ? e.End.Date : e.Start.Date.AddDays(1)).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) }
             }
-        }
-
-        // Server deletions
-        var localAccountEvents = _calendar.Events.Where(x => x.AccountId == account.Id && !string.IsNullOrEmpty(x.ExternalId)).ToList();
-        foreach (var lev in localAccountEvents)
-        {
-            if (!seenRemoteIds.Contains(lev.ExternalId!))
+            : new
             {
-                _calendar.DeleteSilently(lev.Id);
-                result.DeletedLocally++;
-            }
-        }
-
-        // 2. WRITE PHASE
-        // 2a. Tombstones
-        var tombstones = _calendar.GetTombstones(account.Id);
-        var removedTombstoneIds = new List<string>();
-        foreach (var t in tombstones)
-        {
-            if (!string.IsNullOrEmpty(t.ExternalId))
-            {
-                var delReq = new HttpRequestMessage(HttpMethod.Delete, $"{baseUrl}/calendars/primary/events/{t.ExternalId}");
-                delReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-                var delRes = await _http.SendAsync(delReq, ct);
-                if (delRes.IsSuccessStatusCode || delRes.StatusCode == HttpStatusCode.NotFound)
-                {
-                    removedTombstoneIds.Add(t.Id);
-                    result.DeletedRemote++;
-                }
-            }
-            else
-            {
-                removedTombstoneIds.Add(t.Id);
-            }
-        }
-        if (removedTombstoneIds.Count > 0) _calendar.RemoveTombstones(account.Id, removedTombstoneIds);
-
-        // 2b. New local events
-        var newLocals = _calendar.Events.Where(x => (x.AccountId == account.Id || string.IsNullOrEmpty(x.AccountId)) && string.IsNullOrEmpty(x.ExternalId)).ToList();
-        foreach (var ev in newLocals)
-        {
-            ev.AccountId = account.Id;
-            object startObj = ev.AllDay
-                ? new { date = ev.Start.ToString("yyyy-MM-dd") }
-                : new { dateTime = ev.Start.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ") };
-            object endObj = ev.AllDay
-                ? new { date = ev.End.ToString("yyyy-MM-dd") }
-                : new { dateTime = ev.End.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ") };
-
-            var payload = new
-            {
-                summary = ev.Title,
-                description = ev.Notes ?? "",
-                location = ev.Location ?? "",
-                start = startObj,
-                end = endObj
+                summary = e.Title, description = e.Notes ?? "", location = e.Location ?? "",
+                start = (object)new { dateTime = Iso(e.Start) },
+                end = (object)new { dateTime = Iso(e.End) }
             };
-            var postReq = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/calendars/primary/events");
-            postReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-            postReq.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-            var postRes = await _http.SendAsync(postReq, ct);
-            if (postRes.IsSuccessStatusCode)
-            {
-                var pJson = await postRes.Content.ReadAsStringAsync(ct);
-                using var pDoc = JsonDocument.Parse(pJson);
-                ev.ExternalId = pDoc.RootElement.GetProperty("id").GetString();
-                if (pDoc.RootElement.TryGetProperty("etag", out var et)) ev.ExternalEtag = et.GetString();
-                _calendar.Save(ev);
-                ev.Modified = DateTime.Now.AddMinutes(-1);
-                ev.LastSyncedUtc = DateTime.UtcNow;
-                result.CreatedRemote++;
-            }
-        }
 
-        // 2c. Updated local events
-        var modifiedLocals = _calendar.Events.Where(x => x.AccountId == account.Id && !string.IsNullOrEmpty(x.ExternalId)
-                                                       && x.LastSyncedUtc != null && x.Modified.ToUniversalTime() > x.LastSyncedUtc.Value).ToList();
-        foreach (var ev in modifiedLocals)
+        public async Task<(string?, string?)> CreateAsync(CalendarEvent e, CancellationToken ct)
         {
-            object startObj = ev.AllDay
-                ? new { date = ev.Start.ToString("yyyy-MM-dd") }
-                : new { dateTime = ev.Start.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ") };
-            object endObj = ev.AllDay
-                ? new { date = ev.End.ToString("yyyy-MM-dd") }
-                : new { dateTime = ev.End.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ") };
-
-            var payload = new
-            {
-                summary = ev.Title,
-                description = ev.Notes ?? "",
-                location = ev.Location ?? "",
-                start = startObj,
-                end = endObj
-            };
-            var patchReq = new HttpRequestMessage(HttpMethod.Patch, $"{baseUrl}/calendars/primary/events/{ev.ExternalId}");
-            patchReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-            patchReq.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-            var patchRes = await _http.SendAsync(patchReq, ct);
-            if (patchRes.IsSuccessStatusCode)
-            {
-                var pJson = await patchRes.Content.ReadAsStringAsync(ct);
-                using var pDoc = JsonDocument.Parse(pJson);
-                if (pDoc.RootElement.TryGetProperty("etag", out var et)) ev.ExternalEtag = et.GetString();
-                _calendar.Save(ev);
-                ev.Modified = DateTime.Now.AddMinutes(-1);
-                ev.LastSyncedUtc = DateTime.UtcNow;
-                result.UpdatedRemote++;
-            }
+            var req = Req(HttpMethod.Post, Base);
+            req.Content = new StringContent(JsonSerializer.Serialize(Payload(e)), Encoding.UTF8, "application/json");
+            using var res = await s.SendAsync(req, ct);
+            if (!res.IsSuccessStatusCode) return (null, null);
+            using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync(ct));
+            return (Str(doc.RootElement, "id"), Str(doc.RootElement, "etag"));
         }
 
-        account.LastCalendarSyncUtc = DateTime.UtcNow;
-        account.CalendarSyncStatus = L.T("Takvim eşitlemesi tamamlandı.");
-        result.Success = true;
-        result.StatusMessage = account.CalendarSyncStatus;
-        return result;
+        public async Task<string?> UpdateAsync(CalendarEvent e, CancellationToken ct)
+        {
+            var req = Req(HttpMethod.Patch, $"{Base}/{Uri.EscapeDataString(e.ExternalId!)}");
+            req.Content = new StringContent(JsonSerializer.Serialize(Payload(e)), Encoding.UTF8, "application/json");
+            using var res = await s.SendAsync(req, ct);
+            if (!res.IsSuccessStatusCode) return null;
+            using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync(ct));
+            return Str(doc.RootElement, "etag");
+        }
+
+        public async Task<bool> DeleteAsync(string id, CancellationToken ct)
+        {
+            using var res = await s.SendAsync(Req(HttpMethod.Delete, $"{Base}/{Uri.EscapeDataString(id)}"), ct);
+            return res.IsSuccessStatusCode || res.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone;
+        }
     }
 
     // ------------------------------------------------------------------ CalDAV (RFC 4791)
 
-    string GetCalDavUrl(AccountConfig account)
+    sealed class CalDavProvider : IProvider
     {
-        if (!string.IsNullOrWhiteSpace(account.CalDavUrl))
-            return account.CalDavUrl.TrimEnd('/');
+        readonly CalendarSyncService _s;
+        readonly string _url;
+        readonly AuthenticationHeaderValue _auth;
 
-        var user = !string.IsNullOrWhiteSpace(account.CalDavUser)
-            ? account.CalDavUser
-            : (!string.IsNullOrWhiteSpace(account.UserName) ? account.UserName : account.Email);
-
-        if (account.ImapHost.Contains("yandex", StringComparison.OrdinalIgnoreCase))
-            return $"https://caldav.yandex.ru/calendars/{user}/events";
-
-        var host = string.IsNullOrWhiteSpace(account.ImapHost) ? "localhost" : account.ImapHost;
-        return $"https://{host}/caldav/calendars/{user}/events";
-    }
-
-    AuthenticationHeaderValue GetCalDavAuthHeader(AccountConfig account)
-    {
-        if (!string.IsNullOrEmpty(CustomAccessToken))
-            return new AuthenticationHeaderValue("Bearer", CustomAccessToken);
-
-        var user = !string.IsNullOrWhiteSpace(account.CalDavUser)
-            ? account.CalDavUser
-            : (!string.IsNullOrWhiteSpace(account.UserName) ? account.UserName : account.Email);
-
-        var pass = !string.IsNullOrWhiteSpace(account.CalDavPassword)
-            ? account.CalDavPassword
-            : AccountStore.Unprotect(account.ProtectedPassword);
-
-        var bytes = Encoding.UTF8.GetBytes($"{user}:{pass}");
-        return new AuthenticationHeaderValue("Basic", Convert.ToBase64String(bytes));
-    }
-
-    async Task<CalendarSyncResult> SyncCalDavAsync(AccountConfig account, CancellationToken ct)
-    {
-        var result = new CalendarSyncResult();
-        var calDavUrl = GetCalDavUrl(account);
-        var authHeader = GetCalDavAuthHeader(account);
-
-        // 1. READ PHASE (REPORT or GET)
-        var queryXml = @"<C:calendar-query xmlns:D=""DAV:"" xmlns:C=""urn:ietf:params:xml:ns:caldav"">
-  <D:prop>
-    <D:getetag/>
-    <C:calendar-data/>
-  </D:prop>
-  <C:filter>
-    <C:comp-filter name=""VCALENDAR"">
-      <C:comp-filter name=""VEVENT""/>
-    </C:comp-filter>
-  </C:filter>
-</C:calendar-query>";
-
-        var reportReq = new HttpRequestMessage(new HttpMethod("REPORT"), calDavUrl);
-        reportReq.Headers.Authorization = authHeader;
-        reportReq.Headers.Add("Depth", "1");
-        reportReq.Content = new StringContent(queryXml, Encoding.UTF8, "application/xml");
-
-        var reportRes = await _http.SendAsync(reportReq, ct);
-        if (!reportRes.IsSuccessStatusCode)
+        public CalDavProvider(CalendarSyncService s, AccountConfig a)
         {
-            if (reportRes.StatusCode == HttpStatusCode.Unauthorized || reportRes.StatusCode == HttpStatusCode.Forbidden)
-                account.CalendarSyncStatus = L.T("Takvim yetkilendirmesi gerekli. Lütfen hesap ayarlarından oturumu yenileyin.");
+            _s = s;
+            // The address must be entered by the user: the mail password is never sent to a guessed server.
+            if (string.IsNullOrWhiteSpace(a.CalDavUrl) || !a.CalDavUrl.Trim().StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(L.T("CalDAV adresi girilmemiş (https://...). Hesap ayarlarındaki takvim bölümüne yaz."));
+            _url = a.CalDavUrl.Trim().TrimEnd('/');
+            if (!string.IsNullOrEmpty(s.CustomAccessToken)) _auth = new AuthenticationHeaderValue("Bearer", s.CustomAccessToken);
             else
-                account.CalendarSyncStatus = L.F("CalDAV hatası: {0}", (int)reportRes.StatusCode);
-            return new CalendarSyncResult { Success = false, Error = account.CalendarSyncStatus, StatusMessage = account.CalendarSyncStatus };
+            {
+                var user = !string.IsNullOrWhiteSpace(a.CalDavUser) ? a.CalDavUser : !string.IsNullOrWhiteSpace(a.UserName) ? a.UserName : a.Email;
+                var pass = AccountStore.Unprotect(a.ProtectedPassword);
+                _auth = new AuthenticationHeaderValue("Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes($"{user}:{pass}")));
+            }
         }
 
-        var xmlContent = await reportRes.Content.ReadAsStringAsync(ct);
-        var seenRemoteIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        try
+        HttpRequestMessage Req(HttpMethod m, string url)
         {
-            var doc = XDocument.Parse(xmlContent);
+            var r = new HttpRequestMessage(m, url);
+            r.Headers.Authorization = _auth;
+            return r;
+        }
+
+        string Abs(string href) => href.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? href
+            : href.StartsWith('/') ? new Uri(new Uri(_url), href).ToString() : $"{_url}/{href}";
+
+        public async Task<(List<RemoteEvent>, bool)> ListAsync(DateTime from, DateTime to, CancellationToken ct)
+        {
+            static string T(DateTime d) => d.ToUniversalTime().ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture);
+            var query = $@"<C:calendar-query xmlns:D=""DAV:"" xmlns:C=""urn:ietf:params:xml:ns:caldav"">
+  <D:prop><D:getetag/><C:calendar-data/></D:prop>
+  <C:filter><C:comp-filter name=""VCALENDAR""><C:comp-filter name=""VEVENT""><C:time-range start=""{T(from)}"" end=""{T(to)}""/></C:comp-filter></C:comp-filter></C:filter>
+</C:calendar-query>";
+            var req = Req(new HttpMethod("REPORT"), _url);
+            req.Headers.Add("Depth", "1");
+            req.Content = new StringContent(query, Encoding.UTF8, "application/xml");
+            using var res = await _s.SendAsync(req, ct);
+            if (!res.IsSuccessStatusCode) throw new InvalidOperationException(L.F("CalDAV hatası: {0}", (int)res.StatusCode));
+            var doc = XDocument.Parse(await res.Content.ReadAsStringAsync(ct));
+            var list = new List<RemoteEvent>();
             foreach (var resp in doc.Descendants().Where(x => x.Name.LocalName == "response"))
             {
-                var href = resp.Descendants().FirstOrDefault(x => x.Name.LocalName == "href")?.Value?.Trim() ?? "";
-                var etag = resp.Descendants().FirstOrDefault(x => x.Name.LocalName == "getetag")?.Value?.Trim() ?? "";
-                var calData = resp.Descendants().FirstOrDefault(x => x.Name.LocalName == "calendar-data")?.Value?.Trim() ?? "";
-
-                if (string.IsNullOrEmpty(calData)) continue;
-                result.Fetched++;
-
-                var parsed = Ics.Parse(calData);
-                foreach (var ev in parsed.Events)
-                {
-                    var extId = !string.IsNullOrEmpty(href) ? href : ev.Uid;
-                    seenRemoteIds.Add(extId);
-
-                    var local = _calendar.FindByExternalId(extId) ??
-                                _calendar.Events.FirstOrDefault(x => x.AccountId == account.Id && (x.ExternalId == extId || x.Uid == ev.Uid));
-
-                    if (local == null)
-                    {
-                        var tomb = _calendar.GetTombstones(account.Id).FirstOrDefault(t => string.Equals(t.ExternalId, extId, StringComparison.OrdinalIgnoreCase));
-                        if (tomb != null) continue;
-
-                        ev.AccountId = account.Id;
-                        ev.ExternalId = extId;
-                        ev.ExternalEtag = etag;
-                        _calendar.Save(ev);
-                        ev.Modified = DateTime.Now.AddMinutes(-1);
-                        ev.LastSyncedUtc = DateTime.UtcNow;
-                        result.CreatedLocally++;
-                    }
-                    else
-                    {
-                        bool localModified = local.LastSyncedUtc != null && local.Modified.ToUniversalTime() > local.LastSyncedUtc.Value;
-                        bool remoteModified = local.ExternalEtag == null || !string.Equals(local.ExternalEtag, etag, StringComparison.Ordinal);
-
-                        if (localModified && remoteModified)
-                        {
-                            var conflictNote = L.F("[Çakışma çözüldü: Sunucu sürümü uygulandı. Yerel: {0} ({1:g})]", local.Title, local.Start);
-                            local.Notes = string.IsNullOrWhiteSpace(ev.Notes) ? conflictNote : ev.Notes + "\n" + conflictNote;
-                            local.Title = ev.Title;
-                            local.Start = ev.Start;
-                            local.End = ev.End;
-                            local.Location = ev.Location;
-                            local.AllDay = ev.AllDay;
-                            local.ExternalEtag = etag;
-                            _calendar.Save(local);
-                            local.Modified = DateTime.Now.AddMinutes(-1);
-                            local.LastSyncedUtc = DateTime.UtcNow;
-                            result.ConflictsResolved++;
-                            result.UpdatedLocally++;
-                        }
-                        else if (remoteModified)
-                        {
-                            local.Title = ev.Title;
-                            local.Notes = ev.Notes;
-                            local.Start = ev.Start;
-                            local.End = ev.End;
-                            local.Location = ev.Location;
-                            local.AllDay = ev.AllDay;
-                            local.ExternalEtag = etag;
-                            _calendar.Save(local);
-                            local.Modified = DateTime.Now.AddMinutes(-1);
-                            local.LastSyncedUtc = DateTime.UtcNow;
-                            result.UpdatedLocally++;
-                        }
-                    }
-                }
+                var href = resp.Descendants().FirstOrDefault(x => x.Name.LocalName == "href")?.Value.Trim() ?? "";
+                var etag = resp.Descendants().FirstOrDefault(x => x.Name.LocalName == "getetag")?.Value.Trim() ?? "";
+                var data = resp.Descendants().FirstOrDefault(x => x.Name.LocalName == "calendar-data")?.Value.Trim() ?? "";
+                if (href.Length == 0 || data.Length == 0) continue;
+                // one resource = one event (+ its exceptions); the master is the one without RECURRENCE-ID
+                var ev = Ics.Parse(data).Events.FirstOrDefault();
+                if (ev == null) continue;
+                list.Add(new RemoteEvent(href, etag, ev.Title, ev.Notes, ev.Location, ev.Start, ev.End, ev.AllDay) { Event = ev });
             }
+            return (list, true);
         }
-        catch (Exception ex)
+
+        public bool CanWrite(CalendarEvent e) => true;
+
+        public async Task<(string?, string?)> CreateAsync(CalendarEvent e, CancellationToken ct)
         {
-            account.CalendarSyncStatus = L.T("CalDAV XML ayrıştırma hatası: ") + ex.Message;
-            return new CalendarSyncResult { Success = false, Error = ex.Message, StatusMessage = account.CalendarSyncStatus };
+            var href = $"{_url}/{Uri.EscapeDataString(e.Uid)}.ics";
+            var req = Req(HttpMethod.Put, href);
+            req.Headers.TryAddWithoutValidation("If-None-Match", "*");
+            req.Content = new StringContent(Ics.WriteCalendar(new[] { e }), Encoding.UTF8, "text/calendar");
+            using var res = await _s.SendAsync(req, ct);
+            if (!res.IsSuccessStatusCode) return (null, null);
+            return (new Uri(href).AbsolutePath, res.Headers.ETag?.Tag ?? "");
         }
 
-        // Server deletions
-        var localAccountEvents = _calendar.Events.Where(x => x.AccountId == account.Id && !string.IsNullOrEmpty(x.ExternalId)).ToList();
-        foreach (var lev in localAccountEvents)
+        public async Task<string?> UpdateAsync(CalendarEvent e, CancellationToken ct)
         {
-            if (!seenRemoteIds.Contains(lev.ExternalId!))
-            {
-                _calendar.DeleteSilently(lev.Id);
-                result.DeletedLocally++;
-            }
+            var req = Req(HttpMethod.Put, Abs(e.ExternalId!));
+            req.Content = new StringContent(Ics.WriteCalendar(new[] { e }), Encoding.UTF8, "text/calendar");
+            using var res = await _s.SendAsync(req, ct);
+            return res.IsSuccessStatusCode ? res.Headers.ETag?.Tag ?? "" : null;
         }
 
-        // 2. WRITE PHASE
-        // 2a. Tombstones
-        var tombstones = _calendar.GetTombstones(account.Id);
-        var removedTombstoneIds = new List<string>();
-        foreach (var t in tombstones)
+        public async Task<bool> DeleteAsync(string id, CancellationToken ct)
         {
-            if (!string.IsNullOrEmpty(t.ExternalId))
-            {
-                var delUrl = t.ExternalId.StartsWith("http", StringComparison.OrdinalIgnoreCase)
-                    ? t.ExternalId
-                    : $"{calDavUrl}/{t.ExternalId.TrimStart('/')}";
-                var delReq = new HttpRequestMessage(HttpMethod.Delete, delUrl);
-                delReq.Headers.Authorization = authHeader;
-                var delRes = await _http.SendAsync(delReq, ct);
-                if (delRes.IsSuccessStatusCode || delRes.StatusCode == HttpStatusCode.NotFound)
-                {
-                    removedTombstoneIds.Add(t.Id);
-                    result.DeletedRemote++;
-                }
-            }
-            else
-            {
-                removedTombstoneIds.Add(t.Id);
-            }
+            using var res = await _s.SendAsync(Req(HttpMethod.Delete, Abs(id)), ct);
+            return res.IsSuccessStatusCode || res.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone;
         }
-        if (removedTombstoneIds.Count > 0) _calendar.RemoveTombstones(account.Id, removedTombstoneIds);
-
-        // 2b. New local events
-        var newLocals = _calendar.Events.Where(x => (x.AccountId == account.Id || string.IsNullOrEmpty(x.AccountId)) && string.IsNullOrEmpty(x.ExternalId)).ToList();
-        foreach (var ev in newLocals)
-        {
-            ev.AccountId = account.Id;
-            var putUrl = $"{calDavUrl}/{ev.Uid}.ics";
-            var putReq = new HttpRequestMessage(HttpMethod.Put, putUrl);
-            putReq.Headers.Authorization = authHeader;
-            putReq.Content = new StringContent(Ics.WriteCalendar(new[] { ev }), Encoding.UTF8, "text/calendar");
-            var putRes = await _http.SendAsync(putReq, ct);
-            if (putRes.IsSuccessStatusCode)
-            {
-                ev.ExternalId = putUrl;
-                ev.ExternalEtag = putRes.Headers.ETag?.Tag ?? "";
-                _calendar.Save(ev);
-                ev.Modified = DateTime.Now.AddMinutes(-1);
-                ev.LastSyncedUtc = DateTime.UtcNow;
-                result.CreatedRemote++;
-            }
-        }
-
-        // 2c. Updated local events
-        var modifiedLocals = _calendar.Events.Where(x => x.AccountId == account.Id && !string.IsNullOrEmpty(x.ExternalId)
-                                                       && x.LastSyncedUtc != null && x.Modified.ToUniversalTime() > x.LastSyncedUtc.Value).ToList();
-        foreach (var ev in modifiedLocals)
-        {
-            var putUrl = ev.ExternalId!.StartsWith("http", StringComparison.OrdinalIgnoreCase)
-                ? ev.ExternalId!
-                : $"{calDavUrl}/{ev.ExternalId!.TrimStart('/')}";
-            var putReq = new HttpRequestMessage(HttpMethod.Put, putUrl);
-            putReq.Headers.Authorization = authHeader;
-            putReq.Content = new StringContent(Ics.WriteCalendar(new[] { ev }), Encoding.UTF8, "text/calendar");
-            var putRes = await _http.SendAsync(putReq, ct);
-            if (putRes.IsSuccessStatusCode)
-            {
-                ev.ExternalEtag = putRes.Headers.ETag?.Tag ?? ev.ExternalEtag;
-                _calendar.Save(ev);
-                ev.Modified = DateTime.Now.AddMinutes(-1);
-                ev.LastSyncedUtc = DateTime.UtcNow;
-                result.UpdatedRemote++;
-            }
-        }
-
-        account.LastCalendarSyncUtc = DateTime.UtcNow;
-        account.CalendarSyncStatus = L.T("Takvim eşitlemesi tamamlandı.");
-        result.Success = true;
-        result.StatusMessage = account.CalendarSyncStatus;
-        return result;
     }
 }

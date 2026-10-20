@@ -184,7 +184,8 @@ public static class TemplateEngine
 
     static string ReplaceVar(string input, string pattern, string replacement)
     {
-        return Regex.Replace(input, pattern, replacement);
+        // MatchEvaluator: "$" in user data (a subject like "Fiyat $0") is inserted literally, not as a group reference
+        return Regex.Replace(input, pattern, _ => replacement, RegexOptions.CultureInvariant);
     }
 
     public static string TextToHtml(string plainText)

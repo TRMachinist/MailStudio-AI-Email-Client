@@ -9,21 +9,23 @@ public class OutboxWindow : Window
 {
     readonly OutboxStore _store;
     readonly Action<ComposeRequest, string?> _openCompose;
-    readonly Func<AccountConfig, ComposeRequest, Task> _sendNow;
-    readonly Func<string, AccountConfig?> _getAccount;
+    readonly Action _runQueue;
     readonly ListBox _list = new();
 
-    public OutboxWindow(OutboxStore store, Action<ComposeRequest, string?> openCompose,
-        Func<AccountConfig, ComposeRequest, Task> sendNow, Func<string, AccountConfig?> getAccount, Window? owner = null)
+    /// <param name="runQueue">Runs the outbox now (the app's single sender: no second send path).</param>
+    public OutboxWindow(OutboxStore store, Action<ComposeRequest, string?> openCompose, Action runQueue, Window? owner = null)
     {
         _store = store;
         _openCompose = openCompose;
-        _sendNow = sendNow;
-        _getAccount = getAccount;
+        _runQueue = runQueue;
         Owner = owner;
+        UiTranslator.SetSkip(_list, true);
+        Action refresh = () => Dispatcher.BeginInvoke(Refresh);
+        store.Changed += refresh;
+        Closed += (_, _) => store.Changed -= refresh;
 
         Title = L.T("Giden Kutusu - Zamanlanmış İletiler");
-        Width = 640;
+        Width = 760;
         Height = 440;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Background = ThemeManager.Brush("BgSurfacePrimaryBrush");
@@ -71,7 +73,7 @@ public class OutboxWindow : Window
     public void Refresh()
     {
         _list.Items.Clear();
-        var items = _store.Items.Where(i => !i.IsUndoSend).OrderBy(i => i.ScheduledTime).ToList();
+        var items = _store.Items.OrderBy(i => i.ScheduledTime).ToList();
         if (items.Count == 0)
         {
             var empty = new TextBlock
@@ -103,53 +105,34 @@ public class OutboxWindow : Window
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         DockPanel.SetDock(buttons, Dock.Right);
 
-        var sendBtn = new Button
+        Button Btn(string text, RoutedEventHandler click)
         {
-            Content = L.T("Şimdi Gönder"),
-            Style = (Style)FindResource("FlatButton"),
-            Margin = new Thickness(0, 0, 6, 0),
-            Padding = new Thickness(8, 2, 8, 2)
-        };
-        sendBtn.Click += async (_, _) =>
-        {
-            _store.Remove(item.Id);
-            Refresh();
-            var acc = _getAccount(item.AccountId);
-            if (acc != null) await _sendNow(acc, item.Request);
-        };
-        buttons.Children.Add(sendBtn);
+            var b = new Button { Content = text, Style = (Style)FindResource("FlatButton"), Margin = new Thickness(0, 0, 6, 0), Padding = new Thickness(8, 2, 8, 2), IsEnabled = item.CanUserAct };
+            b.Click += click;
+            buttons.Children.Add(b);
+            return b;
+        }
 
-        var editBtn = new Button
+        Btn(item.Status == OutboxStatus.Uncertain ? L.T("Yine de gönder") : L.T("Şimdi Gönder"), (_, _) =>
         {
-            Content = L.T("Düzenle"),
-            Style = (Style)FindResource("FlatButton"),
-            Margin = new Thickness(0, 0, 6, 0),
-            Padding = new Thickness(8, 2, 8, 2)
-        };
-        editBtn.Click += (_, _) =>
+            if (item.Status == OutboxStatus.Uncertain &&
+                MessageBox.Show(this, L.T("Bu ileti daha önce gönderilirken program kapandı; gitmiş olabilir. Gönderilmiş Öğeler'i kontrol ettiniz mi? Yine de gönderilsin mi?"),
+                    "MailStudio", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+            if (item.Status == OutboxStatus.Uncertain) item.Request.SubmissionState = null;
+            if (_store.Release(item.Id)) _runQueue();
+        });
+        Btn(L.T("Düzenle"), (_, _) =>
         {
-            _store.Remove(item.Id);
+            if (!_store.Remove(item.Id)) return;
             Close();
             _openCompose(item.Request, item.AccountId);
-        };
-        buttons.Children.Add(editBtn);
-
-        var deleteBtn = new Button
+        });
+        Btn(L.T("Sil"), (_, _) =>
         {
-            Content = L.T("Sil"),
-            Style = (Style)FindResource("FlatButton"),
-            Padding = new Thickness(8, 2, 8, 2)
-        };
-        deleteBtn.Click += (_, _) =>
-        {
-            if (MessageBox.Show(this, L.F("\"{0}\" zamanlanmış iletisi silinsin mi?", item.Request.Subject), "MailStudio",
+            if (MessageBox.Show(this, L.F("\"{0}\" iletisi Giden Kutusu'ndan silinsin mi? (Gönderilmez.)", item.Request.Subject), "MailStudio",
                 MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
-            {
                 _store.Remove(item.Id);
-                Refresh();
-            }
-        };
-        buttons.Children.Add(deleteBtn);
+        });
 
         dock.Children.Add(buttons);
 
@@ -166,9 +149,18 @@ public class OutboxWindow : Window
         };
         sp.Children.Add(titleBlock);
 
+        var state = item.Status switch
+        {
+            OutboxStatus.Held => L.T("Bekletiliyor – zamanı program kapalıyken geçti"),
+            OutboxStatus.Sending => L.T("Gönderiliyor…"),
+            OutboxStatus.Failed => L.T("Gönderilemedi: ") + item.Error,
+            OutboxStatus.Uncertain => L.T("Sonuç belirsiz: ") + item.Error,
+            _ => item.IsUndoSend ? L.T("Geri alma süresi") : L.T("Zamanlandı")
+        };
         var info = new TextBlock
         {
-            Text = L.F("Kime: {0}  ·  Zamanlandı: {1:g}", to, item.ScheduledTime.LocalDateTime),
+            TextWrapping = TextWrapping.Wrap,
+            Text = L.F("Kime: {0}  ·  {1:g}  ·  {2}", to, item.ScheduledTime.LocalDateTime, state),
             FontSize = 11.5,
             Foreground = ThemeManager.Brush("TextSecondaryBrush"),
             Margin = new Thickness(0, 2, 0, 0)

@@ -46,31 +46,31 @@ public static class AttachmentReminder
     static readonly Regex[] TriggerPatterns =
     [
         // Turkish triggers
-        new(@"\bekte\b", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-        new(@"\bekli\b", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-        new(@"\bekteki\b", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-        new(@"\bektedir\b", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-        new(@"\bektedirler\b", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-        new(@"\bekledim\b", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-        new(@"\bekliyorum\b", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-        new(@"\bekliyoruz\b", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-        new(@"\bilişikte\b", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-        new(@"\bilişikteki\b", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-        new(@"\bilişiktedir\b", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-        new(@"\bek\s+dosya(da|lar|ları)?\b", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-        new(@"\bdosya(lar)?\s+ekte\b", RegexOptions.Compiled | RegexOptions.IgnoreCase),
+        new(@"\bekte\b", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+        new(@"\bekli\b", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+        new(@"\bekteki\b", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+        new(@"\bektedir\b", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+        new(@"\bektedirler\b", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+        new(@"\bekledim\b", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+        new(@"\bekliyorum\b", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+        new(@"\bekliyoruz\b", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+        new(@"\bilişikte\b", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+        new(@"\bilişikteki\b", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+        new(@"\bilişiktedir\b", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+        new(@"\bek\s+dosya(da|lar|ları|lari)?\b", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+        new(@"\bdosya(lar)?\s+ekte\b", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
 
         // English triggers
-        new(@"\battached\b", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-        new(@"\battachment(s)?\b", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-        new(@"\benclosed\b", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-        new(@"\benclosing\b", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-        new(@"\bsee\s+attach(ed)?\b", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-        new(@"\bfind\s+(the\s+)?attach(ed)?\b", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-        new(@"\bherewith\s+attached\b", RegexOptions.Compiled | RegexOptions.IgnoreCase),
+        new(@"\battached\b", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+        new(@"\battachment(s)?\b", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+        new(@"\benclosed\b", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+        new(@"\benclosing\b", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+        new(@"\bsee\s+attach(ed)?\b", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+        new(@"\bfind\s+(the\s+)?attach(ed)?\b", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+        new(@"\bherewith\s+attached\b", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
     ];
 
-    static readonly Regex UrlRegex = new(@"https?://\S+|www\.\S+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    static readonly Regex UrlRegex = new(@"https?://\S+|www\.\S+", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     static readonly Regex EmailRegex = new(@"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b", RegexOptions.Compiled);
 
     /// <summary>
@@ -87,12 +87,12 @@ public static class AttachmentReminder
         {
             var cleanHtml = html;
             // Remove ms-quote and ms-signature containers
-            cleanHtml = Regex.Replace(cleanHtml, @"<div\s+id=""ms-quote""[^>]*>[\s\S]*?</div>(\s*</div>)?", "", RegexOptions.IgnoreCase);
-            cleanHtml = Regex.Replace(cleanHtml, @"<div\s+id=""ms-signature""[^>]*>[\s\S]*?</div>(\s*</div>)?", "", RegexOptions.IgnoreCase);
-            cleanHtml = Regex.Replace(cleanHtml, @"<div\s+class=""ms-quote-section""[^>]*>[\s\S]*?</div>", "", RegexOptions.IgnoreCase);
-            cleanHtml = Regex.Replace(cleanHtml, @"<div\s+class=""ms-signature-section""[^>]*>[\s\S]*?</div>", "", RegexOptions.IgnoreCase);
-            cleanHtml = Regex.Replace(cleanHtml, @"<div\s+class=""gmail_quote""[^>]*>[\s\S]*?</div>", "", RegexOptions.IgnoreCase);
-            cleanHtml = Regex.Replace(cleanHtml, @"<blockquote[^>]*>[\s\S]*?</blockquote>", "", RegexOptions.IgnoreCase);
+            cleanHtml = Regex.Replace(cleanHtml, @"<div\s+id=""ms-quote""[^>]*>[\s\S]*?</div>(\s*</div>)?", "", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            cleanHtml = Regex.Replace(cleanHtml, @"<div\s+id=""ms-signature""[^>]*>[\s\S]*?</div>(\s*</div>)?", "", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            cleanHtml = Regex.Replace(cleanHtml, @"<div\s+class=""ms-quote-section""[^>]*>[\s\S]*?</div>", "", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            cleanHtml = Regex.Replace(cleanHtml, @"<div\s+class=""ms-signature-section""[^>]*>[\s\S]*?</div>", "", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            cleanHtml = Regex.Replace(cleanHtml, @"<div\s+class=""gmail_quote""[^>]*>[\s\S]*?</div>", "", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            cleanHtml = Regex.Replace(cleanHtml, @"<blockquote[^>]*>[\s\S]*?</blockquote>", "", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
             var plain = HtmlToPlainText(cleanHtml);
             if (!string.IsNullOrWhiteSpace(plain))
@@ -125,18 +125,18 @@ public static class AttachmentReminder
                 trimmed.StartsWith("________________________________", StringComparison.OrdinalIgnoreCase))
                 break;
 
-            if (Regex.IsMatch(trimmed, @"^On\s+.+?\s+wrote:\s*$", RegexOptions.IgnoreCase) ||
-                Regex.IsMatch(trimmed, @"^.+?\s+tarihinde\s+.+?\s+yazdı:\s*$", RegexOptions.IgnoreCase))
+            if (Regex.IsMatch(trimmed, @"^On\s+.+?\s+wrote:\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant) ||
+                Regex.IsMatch(trimmed, @"^.+?\s+tarihinde\s+.+?\s+yazdı:\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
                 break;
 
-            if (Regex.IsMatch(trimmed, @"^(From|Kimden):\s*.+", RegexOptions.IgnoreCase))
+            if (Regex.IsMatch(trimmed, @"^(From|Kimden):\s*.+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
             {
                 // Verify if subsequent lines look like header lines
                 var isHeaderBlock = false;
                 for (var j = i + 1; j < Math.Min(i + 5, lines.Length); j++)
                 {
                     var next = lines[j].Trim();
-                    if (Regex.IsMatch(next, @"^(Sent|Date|To|Subject|Gönderildi|Tarih|Kime|Konu):", RegexOptions.IgnoreCase))
+                    if (Regex.IsMatch(next, @"^(Sent|Date|To|Subject|Gönderildi|Tarih|Kime|Konu):", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
                     {
                         isHeaderBlock = true;
                         break;
@@ -159,8 +159,8 @@ public static class AttachmentReminder
 
     static string HtmlToPlainText(string html)
     {
-        var text = Regex.Replace(html, @"<br\s*/?>", "\n", RegexOptions.IgnoreCase);
-        text = Regex.Replace(text, @"</(p|div|tr|li|h[1-6])>", "\n", RegexOptions.IgnoreCase);
+        var text = Regex.Replace(html, @"<br\s*/?>", "\n", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        text = Regex.Replace(text, @"</(p|div|tr|li|h[1-6])>", "\n", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         text = Regex.Replace(text, @"<[^>]+>", " ");
         text = System.Net.WebUtility.HtmlDecode(text);
         return text;
@@ -180,13 +180,13 @@ public static class AttachmentReminder
         cleaned = EmailRegex.Replace(cleaned, " ");
 
         // Normalize text for Turkish-aware comparison
-        // Replace Turkish capital 'İ' and 'I' before ToLowerInvariant
-        var normalized = cleaned.Replace('İ', 'i').Replace('I', 'ı').ToLowerInvariant();
+        // 'İ' → 'i' first; then the invariant lower-casing maps 'I' → 'i' (so "EKLI", "EKLİ" and "ATTACHED" all match)
+        var normalized = cleaned.Replace('İ', 'i').ToLowerInvariant();
 
         // Mask out false alarm phrases
         foreach (var phrase in FalseAlarmPhrases)
         {
-            var pNorm = phrase.Replace('İ', 'i').Replace('I', 'ı').ToLowerInvariant();
+            var pNorm = phrase.Replace('İ', 'i').ToLowerInvariant();
             normalized = normalized.Replace(pNorm, " ");
         }
 

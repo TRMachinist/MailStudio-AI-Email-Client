@@ -44,8 +44,6 @@ public partial class MainWindow : Window
     public SearchFolderStore SearchFolderStore => _searchFolderStore;
     readonly DispatcherTimer _snoozeTimer = new() { Interval = TimeSpan.FromSeconds(15) };
     readonly DispatcherTimer _queueTimer = new() { Interval = TimeSpan.FromSeconds(1) };
-    OutboxItem? _activeUndoItem;
-    AccountConfig? _activeUndoAccount;
     readonly Dictionary<string, InboxWatcher> _watchers = new();
     readonly HashSet<string> _alertReady = new();
     readonly AppSettings _settings = AppSettings.Shared;
@@ -119,7 +117,6 @@ public partial class MainWindow : Window
         SearchBox.TextChanged += (_, _) => SearchPlaceholder.Visibility = SearchBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         AiInput.TextChanged += (_, _) => AiPlaceholder.Visibility = AiInput.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         _queueTimer.Tick += (_, _) => QueueTick();
-        _queueTimer.Start();
         _snoozeTimer.Tick += (_, _) => CheckSnoozeDue();
         _snoozeTimer.Start();
         TellMeBox.TextChanged += (_, _) => TellMePlaceholder.Visibility = TellMeBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -201,11 +198,37 @@ public partial class MainWindow : Window
         {
             args.Cancel = true; HideToTray(); return;
         }
+        // A mail still in its undo-send window is never dropped silently
+        if (!_outboxConfirmedAtExit && !_exitRequested && HasPendingUndo)
+        {
+            args.Cancel = true;
+            Dispatcher.BeginInvoke(async () => { if (await ConfirmPendingOutboxAsync()) Close(); });
+            return;
+        }
         // Test hosts and session shutdown still protect a composer unless an explicit exit already closed it.
         var composers = OwnedWindows.OfType<ComposeWindow>().ToList();
         foreach (var composer in composers) composer.Close();
         if (composers.Any(w => !IsWindowClosed(w))) args.Cancel = true;
         else ClosePim();
+    }
+
+    bool _outboxConfirmedAtExit;
+    bool HasPendingUndo => !App.SelfTesting && _outbox.Items.Any(i => i.IsUndoSend && i.Status == OutboxStatus.Scheduled);
+
+    /// <summary>On exit with a mail in its undo window: send it now, keep it in the outbox (asked at next start) or cancel the exit.</summary>
+    async Task<bool> ConfirmPendingOutboxAsync()
+    {
+        if (_outboxConfirmedAtExit || !HasPendingUndo) return true;
+        var answer = MessageBox.Show(this, L.T("Gönderilmeyi bekleyen ileti var (geri alma süresi dolmadı).\n\nEvet: şimdi gönder ve kapat\nHayır: Giden Kutusu'nda kalsın, bir sonraki açılışta sorulsun\nİptal: kapatma"),
+            "MailStudio", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+        if (answer == MessageBoxResult.Cancel) return false;
+        if (answer == MessageBoxResult.Yes)
+        {
+            foreach (var i in _outbox.Items.Where(i => i.IsUndoSend && i.Status == OutboxStatus.Scheduled)) _outbox.Release(i.Id);
+            for (var n = 0; n < 400 && (_outbox.GetPendingDue().Count > 0 || _queueBusy); n++) { QueueTick(); await Task.Delay(250); }
+        }
+        _outboxConfirmedAtExit = true;
+        return true;
     }
 
     static bool IsWindowClosed(Window window) => !Application.Current.Windows.Cast<Window>().Contains(window);
@@ -217,6 +240,7 @@ public partial class MainWindow : Window
         _exiting = true;
         try
         {
+            if (HasPendingUndo) { ShowFromTray(); if (!await ConfirmPendingOutboxAsync()) return false; }
             var composers = OwnedWindows.OfType<ComposeWindow>().ToList();
             if (composers.Count > 0) ShowFromTray();
             foreach (var composer in composers)
@@ -247,6 +271,12 @@ public partial class MainWindow : Window
         InitPim();
         _cache.Corrupted += () => Dispatcher.BeginInvoke(() => AddSystemChat(L.T("Yerel posta önbelleğinde bozuk bir bölüm bulundu. İletiler şimdilik sunucudan açılıyor; MailStudio'yu kapatıp açtığınızda önbellek kendiliğinden onarılır (hesaplar, taslaklar ve ekler etkilenmez).")));
         _store.Load();
+        _queueTimer.Start();   // after the accounts are loaded
+        RevisionLookup.Resolver = PickOlderRevisionAsync;
+        RevisionLookup.ShowDiff = (oldPath, newPath) =>
+            ShowRevisionDiffAsync(oldPath, newPath, _attachmentOrigins.TryGetValue(Path.GetFullPath(newPath), out var o) ? o.Header : null);
+        _outbox.Changed += () => Dispatcher.BeginInvoke(UpdateUndoBar);
+        Dispatcher.BeginInvoke(AskHeldOutbox, DispatcherPriority.ApplicationIdle);
         if (_cache.RepairedBackup != null)
             AddSystemChat(L.T("Yerel posta önbelleği bozuk bulundu (SQLite bütünlük hatası). Eski dosya silinmedi, şuraya taşındı:\n") + _cache.RepairedBackup +
                           L.T("\nİletiler sunucudan yeniden indiriliyor; hesaplar, taslaklar ve ekler etkilenmez."));
@@ -607,15 +637,17 @@ public partial class MainWindow : Window
             }));
             if (before != null)
             {
-                if (_alertReady.Contains(acc.Id) && _settings.DesktopAlerts && added > 0)
+                if (_alertReady.Contains(acc.Id) && added > 0)
                 {
-                    var fresh = _cache.GetHeaders(acc.Id, node.FullName, 50).Where(m => !m.IsRead && !before.Contains(m.Uid)).ToList();
-                    if (fresh.Count > 0)
+                    var newMail = _cache.GetHeaders(acc.Id, node.FullName, 50).Where(m => !before.Contains(m.Uid)).ToList();
+                    var fresh = newMail.Where(m => !m.IsRead).ToList();
+                    if (_settings.DesktopAlerts && fresh.Count > 0)
                     {
                         ShowDesktopAlert(node, fresh);
                         _ = AutoRunSkillsAsync(fresh);
-                        _ = RunRulesOnFreshAsync(acc, fresh);
                     }
+                    // Mail rules run on every new Inbox message (independent of desktop alerts)
+                    if (newMail.Count > 0) _ = RunRulesOnFreshAsync(acc, newMail);
                 }
                 if (added > 0)
                 {
@@ -1175,12 +1207,13 @@ public partial class MainWindow : Window
         if (h == null || Acc(h.AccountId) is not { } acc) return null;
         var dir = AttachmentDir(h);
         var local = AttachmentPath(h, att);
-        if (File.Exists(local)) return local;
+        if (File.Exists(local)) { _attachmentOrigins[Path.GetFullPath(local)] = (h, att); return local; }
         try
         {
             Status(L.F("{0} indiriliyor ({1})...", att.FileName, att.SizeDisplay));
             var path = await _mail.DownloadAttachmentAsync(acc, h, att, dir);
             Status(L.F("{0} indirildi.", att.FileName));
+            _attachmentOrigins[Path.GetFullPath(path)] = (h, att);
             return path;
         }
         catch (Exception ex) { Status(L.T("Ek indirilemedi: ") + ex.Message); return null; }
@@ -1232,60 +1265,58 @@ public partial class MainWindow : Window
         await CompareAttachmentRevisionAsync(att);
     }
 
+    /// <summary>Which mail a downloaded attachment file belongs to (for "compare with previous revision" in the viewers).</summary>
+    readonly Dictionary<string, (MailHeader Header, AttachmentInfo Attachment)> _attachmentOrigins = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Earlier revisions of the same part in this correspondent's mails; the folder / a file dialog otherwise.</summary>
+    async Task<string?> PickOlderRevisionAsync(Window owner, string path)
+    {
+        if (!_attachmentOrigins.TryGetValue(Path.GetFullPath(path), out var origin)) return RevisionLookup.PickFromDisk(owner, path);
+        var candidates = RevisionService.FindCandidates(_cache, origin.Header, origin.Attachment.FileName);
+        if (candidates.Count == 0)
+        {
+            Status(L.T("Bu parçanın başka bir revizyonu maillerde bulunamadı; dosyayı kendiniz seçin."));
+            return RevisionLookup.Browse(owner, path);
+        }
+        var (choice, browse) = RevisionLookup.Choose(owner, candidates, origin.Attachment.FileName);
+        if (browse) return RevisionLookup.Browse(owner, path);
+        if (choice?.Header == null || choice.Attachment == null) return choice?.FilePath;
+        return await DownloadAttachmentAsync(choice.Header, choice.Attachment);
+    }
+
     async Task CompareAttachmentRevisionAsync(AttachmentInfo att)
     {
         var h = _current;
         var path = await DownloadAttachmentAsync(h, att);
-        if (path == null) return;
-
-        var ext = Path.GetExtension(path).ToLowerInvariant();
-        var candidates = RevisionService.FindCandidates(_cache, h?.AccountId ?? "", path, h?.Subject);
-
-        string? oldPath = null;
-        if (candidates.Count > 0)
-        {
-            oldPath = candidates[0].FilePath;
-        }
-        else
-        {
-            var filter = ext switch
-            {
-                ".step" or ".stp" => "STEP (*.step;*.stp)|*.step;*.stp|All files (*.*)|*.*",
-                ".dxf" or ".dwg" => "CAD (*.dxf;*.dwg)|*.dxf;*.dwg|All files (*.*)|*.*",
-                ".xlsx" or ".xlsm" => "Excel (*.xlsx;*.xlsm)|*.xlsx;*.xlsm|All files (*.*)|*.*",
-                ".pdf" => "PDF (*.pdf)|*.pdf|All files (*.*)|*.*",
-                _ => "All files (*.*)|*.*"
-            };
-            var dlg = new Microsoft.Win32.OpenFileDialog
-            {
-                Title = L.T("Önceki revizyon dosyasını seçin"),
-                Filter = filter,
-                InitialDirectory = Path.GetDirectoryName(path)
-            };
-            if (dlg.ShowDialog(this) == true) oldPath = dlg.FileName;
-        }
-
+        if (path == null || h == null) return;
+        var oldPath = await PickOlderRevisionAsync(this, path);
         if (string.IsNullOrEmpty(oldPath) || !File.Exists(oldPath)) return;
+        await ShowRevisionDiffAsync(oldPath, path, h);
+    }
 
+    /// <summary>Runs the comparison and opens the result; "add to reply" answers the mail the file came from.</summary>
+    async Task ShowRevisionDiffAsync(string oldPath, string newPath, MailHeader? mail)
+    {
         Status(L.T("Revizyonlar karşılaştırılıyor..."));
         try
         {
-            var report = await RevisionService.CompareAsync(oldPath, path, () => new TechnicalWorker(), _lifetime.Token);
+            var report = await RevisionService.CompareAsync(oldPath, newPath, SkillWorker, _lifetime.Token);
             var win = new RevisionDiffWindow(report,
                 onAddToReply: text =>
                 {
-                    if (_current != null && _currentContent != null)
-                        Reply(false, text);
+                    if (mail != null && _current == mail && _currentContent != null) Reply(false, text);
                     else
-                        Clipboard.SetText(text);
+                    {
+                        try { Clipboard.SetText(text); Status(L.T("Fark özeti panoya kopyalandı (yanıtlanacak ileti açık değil).")); }
+                        catch (System.Runtime.InteropServices.COMException) { }
+                    }
                 },
                 aiRunner: async (prompt, ct) => await AiCompleteAsync(prompt, ct))
-            {
-                Owner = this
-            };
+            { Owner = this };
             win.Show();
             Status(L.F("Revizyon karşılaştırma tamamlandı: {0} fark bulundu.", report.TotalChanges));
         }
+        catch (OperationCanceledException) { }
         catch (Exception ex)
         {
             Status(L.T("Revizyon karşılaştırılamadı: ") + ex.Message);
@@ -1340,12 +1371,9 @@ public partial class MainWindow : Window
             var dir = Path.Combine(AppPaths.Root, "submissions"); Directory.CreateDirectory(dir);
             Process.Start(new ProcessStartInfo(dir) { UseShellExecute = true });
         });
-        var outboxCount = _outbox.Items.Count(i => !i.IsUndoSend && i.Status == "Scheduled");
-        Add(outboxCount > 0 ? L.F("Giden Kutusu ({0} zamanlanmış)…", outboxCount) : L.T("Giden Kutusu (Zamanlanmış)…"), (_, _) =>
-        {
-            var w = new OutboxWindow(_outbox, (r, a) => OpenCompose(r, a, popOut: true), (a, r) => DoSendAsync(a, r), Acc, this);
-            w.ShowDialog();
-        });
+        var outboxCount = _outbox.Items.Count(i => !i.IsUndoSend);
+        Add(outboxCount > 0 ? L.F("Giden Kutusu ({0} ileti)…", outboxCount) : L.T("Giden Kutusu (Zamanlanmış)…"), (_, _) =>
+ ShowOutboxWindow());
         var undoSendMenu = new MenuItem { Header = L.T("Göndermeyi geri alma süresi") };
         foreach (var (sec, label) in new[] { (0, L.T("Kapalı")), (5, "5 " + L.T("sn")), (10, "10 " + L.T("sn")), (20, "20 " + L.T("sn")), (30, "30 " + L.T("sn")) })
         {
@@ -1521,134 +1549,136 @@ public partial class MainWindow : Window
         else w.Show();
     }
 
+    /// <summary>Sends now (outbox "send now", agent-free paths). Errors are shown, never thrown.</summary>
     public async Task DoSendAsync(AccountConfig acc, ComposeRequest req)
     {
+        try { await SendAndRecordAsync(acc, req); }
+        catch (Exception ex) { Status(L.T("Gönderilemedi: ") + ex.Message); }
+    }
+
+    /// <summary>SMTP send + the work after a send (follow-up, quote desk, Sent folder). Throws only when the send itself failed.</summary>
+    async Task SendAndRecordAsync(AccountConfig acc, ComposeRequest req)
+    {
+        Status(L.T("Gönderiliyor..."));
+        var res = await _mail.SendAsync(acc, req, _lifetime.Token);
+        Status(res.Warning ?? L.T("İleti sunucu tarafından kabul edildi."));
         try
         {
-            Status(L.T("Gönderiliyor..."));
-            var res = await _mail.SendAsync(acc, req, _lifetime.Token);
-            Status(res.Warning ?? L.T("İleti sunucu tarafından kabul edildi."));
             if (req.FollowUpDays > 0)
-            {
-                var due = DateTimeOffset.Now.AddDays(req.FollowUpDays);
                 _followUpStore.Add(new FollowUpItem
                 {
-                    AccountId = acc.Id,
-                    MessageId = res.MessageId ?? "",
-                    Subject = req.Subject,
-                    Recipients = req.To,
-                    SentDate = DateTimeOffset.Now,
-                    DueDays = req.FollowUpDays,
-                    DueDate = due
+                    AccountId = acc.Id, MessageId = res.MessageId ?? "", Subject = req.Subject, Recipients = req.To,
+                    SentDate = DateTimeOffset.Now, DueDays = req.FollowUpDays, DueDate = DateTimeOffset.Now.AddDays(req.FollowUpDays)
                 });
-            }
             var attCount = req.AttachmentPaths?.Count ?? 0;
-            if (attCount > 0)
-            {
-                if (_quoteStore.CheckSentMail(req.To, req.InReplyTo, req.Subject, attCount))
-                    _quoteDeskView?.Refresh();
-            }
+            if (attCount > 0 && _quoteStore.CheckSentMail(req.To, req.InReplyTo, req.Subject, attCount)) _quoteDeskView?.Refresh();
             var sent = _roots.SelectMany(r => r.Children).FirstOrDefault(f => f.AccountId == acc.Id && f.SortOrder == 2);
             if (sent != null) await SyncFolderAsync(sent, silent: true);
         }
-        catch (Exception ex)
-        {
-            Status(L.T("Gönderilemedi: ") + ex.Message);
-        }
+        catch (Exception ex) { Status(L.T("İleti gönderildi; sonrasındaki kayıt işlemi tamamlanamadı: ") + ex.Message); }
     }
 
+    /// <summary>"Undo send": the mail waits N seconds in the outbox (on disk); SMTP is not contacted until then.</summary>
     public void QueueSend(AccountConfig acc, ComposeRequest req, int undoSeconds)
     {
-        if (undoSeconds <= 0)
-        {
-            _ = DoSendAsync(acc, req);
-            return;
-        }
-
-        var item = new OutboxItem
-        {
-            AccountId = acc.Id,
-            Request = req,
-            ScheduledTime = DateTimeOffset.Now.AddSeconds(undoSeconds),
-            IsUndoSend = true,
-            Status = "Scheduled"
-        };
-        _activeUndoItem = item;
-        _activeUndoAccount = acc;
-        _outbox.Add(item);
-
-        UndoSendText.Text = L.F("İleti {0} sn içinde gönderilecek...", undoSeconds);
-        UndoSendBar.Visibility = Visibility.Visible;
+        if (undoSeconds <= 0) { _ = DoSendAsync(acc, req); return; }
+        _outbox.Add(new OutboxItem { AccountId = acc.Id, Request = req, ScheduledTime = DateTimeOffset.Now.AddSeconds(undoSeconds), IsUndoSend = true });
+        UpdateUndoBar();
     }
 
     public void ScheduleSend(AccountConfig acc, ComposeRequest req, DateTimeOffset scheduledTime)
     {
-        var item = new OutboxItem
-        {
-            AccountId = acc.Id,
-            Request = req,
-            ScheduledTime = scheduledTime,
-            IsUndoSend = false,
-            Status = "Scheduled"
-        };
-        _outbox.Add(item);
+        _outbox.Add(new OutboxItem { AccountId = acc.Id, Request = req, ScheduledTime = scheduledTime });
+        // The outbox now holds the mail; a local recovery copy would let it be sent twice by hand.
+        try { new LocalDraftStore().Delete(req.DraftId); } catch (IOException) { }
         Status(L.F("İleti zamanlandı: {0:g}", scheduledTime.LocalDateTime));
+    }
+
+    void ShowOutboxWindow()
+    {
+        var w = new OutboxWindow(_outbox, (r, a) => OpenCompose(r, a, popOut: true), () => QueueTick(), this);
+        w.ShowDialog();
+    }
+
+    OutboxItem? NewestUndo => _outbox.Items.Where(i => i.IsUndoSend && i.Status == OutboxStatus.Scheduled).OrderByDescending(i => i.ScheduledTime).FirstOrDefault();
+
+    void UpdateUndoBar()
+    {
+        var undo = _outbox.Items.Where(i => i.IsUndoSend && i.Status == OutboxStatus.Scheduled).OrderByDescending(i => i.ScheduledTime).ToList();
+        if (undo.Count == 0) { UndoSendBar.Visibility = Visibility.Collapsed; return; }
+        var secs = Math.Max(0, (int)Math.Ceiling((undo[0].ScheduledTime - DateTimeOffset.Now).TotalSeconds));
+        UndoSendText.Text = undo.Count == 1
+            ? L.F("İleti {0} sn içinde gönderilecek...", secs)
+            : L.F("{0} ileti gönderilmeyi bekliyor; sonuncusu {1} sn içinde gidecek...", undo.Count, secs);
+        UndoSendBar.Visibility = Visibility.Visible;
     }
 
     void OnUndoSendClick(object sender, RoutedEventArgs e)
     {
-        if (_activeUndoItem == null) return;
-        var item = _activeUndoItem;
-        var acc = _activeUndoAccount;
-        _activeUndoItem = null;
-        _activeUndoAccount = null;
-        _outbox.Remove(item.Id);
-        UndoSendBar.Visibility = Visibility.Collapsed;
+        if (NewestUndo is not { } item) return;
+        if (!_outbox.Remove(item.Id)) { Status(L.T("İleti gönderilmeye başladı; geri alınamadı.")); return; }
+        UpdateUndoBar();
         Status(L.T("Gönderim geri alındı."));
-        OpenCompose(item.Request, acc?.Id, popOut: true);
+        OpenCompose(item.Request, item.AccountId, popOut: true);
     }
 
-    async void OnSendNowClick(object sender, RoutedEventArgs e)
+    void OnSendNowClick(object sender, RoutedEventArgs e)
     {
-        if (_activeUndoItem == null || _activeUndoAccount == null) return;
-        var item = _activeUndoItem;
-        var acc = _activeUndoAccount;
-        _activeUndoItem = null;
-        _activeUndoAccount = null;
-        _outbox.Remove(item.Id);
-        UndoSendBar.Visibility = Visibility.Collapsed;
-        await DoSendAsync(acc, item.Request);
+        foreach (var i in _outbox.Items.Where(i => i.IsUndoSend && i.Status == OutboxStatus.Scheduled)) _outbox.Release(i.Id);
+        QueueTick();
     }
 
+    bool _queueBusy;
     async void QueueTick()
     {
-        var now = DateTimeOffset.Now;
-        if (_activeUndoItem != null && _activeUndoAccount != null)
+        if (_queueBusy) return;
+        _queueBusy = true;
+        try
         {
-            var remaining = (_activeUndoItem.ScheduledTime - now).TotalSeconds;
-            if (remaining > 0)
+            UpdateUndoBar();
+            if (_outbox.GetPendingDue().Count == 0) return;
+            await _outbox.ProcessDueSendsAsync(Acc, async (acc, item) =>
             {
-                UndoSendText.Text = L.F("İleti {0} sn içinde gönderilecek...", (int)Math.Ceiling(remaining));
-            }
-            else
-            {
-                var item = _activeUndoItem;
-                var acc = _activeUndoAccount;
-                _activeUndoItem = null;
-                _activeUndoAccount = null;
-                UndoSendBar.Visibility = Visibility.Collapsed;
-                _outbox.Remove(item.Id);
-                await DoSendAsync(acc, item.Request);
-            }
+                await SendAndRecordAsync(acc, item.Request);
+                if (!item.IsUndoSend) Status(L.F("Zamanlanmış ileti gönderildi: {0}", item.Request.Subject));
+            }, onFailed: OnOutboxFailed, ct: _lifetime.Token);
+            UpdateUndoBar();
         }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { Status(L.T("Giden Kutusu: ") + ex.Message); }
+        finally { _queueBusy = false; }
+    }
 
-        if (_outbox.GetPendingDue(now).Count > 0)
+    void OnOutboxFailed(OutboxItem item, Exception ex)
+    {
+        Status(L.F("Gönderilemedi: {0} – {1}", item.Request.Subject, ex.Message));
+        if (item.Status == OutboxStatus.Failed && item.IsUndoSend && _outbox.Remove(item.Id))
         {
-            await _outbox.ProcessDueSendsAsync(Acc, _mail, now, onSent: (item, res) =>
-            {
-                Status(L.F("Zamanlanmış ileti gönderildi: {0}", item.Request.Subject));
-            }, ct: _lifetime.Token);
+            // The composer is already closed: give the mail back instead of losing it
+            OpenCompose(item.Request, item.AccountId, popOut: true);
+            return;
         }
+        _tray?.ShowReminder(L.T("Giden Kutusu"), L.F("\"{0}\" gönderilemedi. Giden Kutusu'nu açıp kontrol edin.", item.Request.Subject), ShowOutboxWindow);
+    }
+
+    /// <summary>Mails whose send time passed while MailStudio was closed are never sent without asking.</summary>
+    void AskHeldOutbox()
+    {
+        var held = _outbox.Held;
+        var uncertain = _outbox.Items.Where(i => i.Status == OutboxStatus.Uncertain).ToList();
+        if (held.Count == 0 && uncertain.Count == 0) return;
+        if (App.SelfTesting) return;
+        var lines = string.Join("\n", held.Take(8).Select(i => $"• {i.Request.Subject} → {i.Request.To} ({i.ScheduledTime.LocalDateTime:g})"));
+        if (held.Count > 0)
+        {
+            var answer = MessageBox.Show(this,
+                L.F("Program kapalıyken gönderim zamanı gelen {0} ileti var:\n\n{1}\n\nŞimdi gönderilsinler mi?\n(Hayır: Giden Kutusu'nda bekler, oradan gönderebilir, düzenleyebilir ya da silebilirsiniz.)", held.Count, lines),
+                L.T("Giden Kutusu"), MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (answer == MessageBoxResult.Yes) { foreach (var i in held) _outbox.Release(i.Id); QueueTick(); }
+        }
+        if (uncertain.Count > 0)
+            MessageBox.Show(this, L.F("{0} ileti gönderilirken program kapandı; gitmiş olabilir. Tekrar göndermeden önce Gönderilmiş Öğeler'i kontrol edin (Dosya → Giden Kutusu).", uncertain.Count),
+                L.T("Gönderim sonucu belirsiz"), MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
     async Task StartInlineSafeAsync(ComposeWindow composer){try{await composer.StartInlineAsync();}catch(Exception ex){Status(L.T("Yanıt editörü açılamadı: ")+ex.Message);}}
@@ -1879,6 +1909,7 @@ public partial class MainWindow : Window
 
     void OnRules(object sender, RoutedEventArgs e)
     {
+        _ruleStore.ReloadIfChanged();
         var sample = _messages.Take(200).ToList();
         var w = new RulesWindow(_ruleStore, sample, (prompt, ct) =>
         {
@@ -1903,7 +1934,7 @@ public partial class MainWindow : Window
                 new RuleCondition { Field = "from", Value = !string.IsNullOrEmpty(h.FromAddress) ? h.FromAddress : h.FromName }
             },
             Actions = {
-                new RuleAction { Type = "move_to_folder", Value = "Teklifler" }
+                new RuleAction { Type = "move_to_folder", Value = "" }   // the user picks the folder
             }
         };
         var sample = _messages.Take(200).ToList();
@@ -2350,30 +2381,53 @@ public partial class MainWindow : Window
 
     async Task RunRuleOnFolderAsync(MailRule rule)
     {
-        if (_currentFolder == null) return;
+        if (_currentFolder == null || _currentFolder.IsUnifiedInbox || _currentFolder.IsSearchFolder || _currentFolder.IsSearchFolderRoot)
+        { MessageBox.Show(this, L.T("Kuralı çalıştırmak için önce bir hesap klasörü seçin."), L.T("Kurallar")); return; }
+        if (RuleEngine.Validate(rule) is { } problem) { MessageBox.Show(this, problem, L.T("Kurallar")); return; }
         var acc = Acc(_currentFolder.AccountId);
         if (acc == null) return;
-        var list = _messages.ToList();
-        int affected = 0;
+        var list = _messages.Where(m => m.AccountId == acc.Id).ToList();
+        var preview = list.Count(m => RuleEngine.Matches(new MailRule { Enabled = true, MatchAll = rule.MatchAll, Conditions = rule.Conditions }, m, null, _cache.GetAttachments(m.AccountId, m.Folder, m.Uid)));
+        if (MessageBox.Show(this, L.F("\"{0}\" kuralı \"{1}\" klasöründeki {2} iletiye uygulanacak (önizlemede {3} ileti uyuyor).\n\nEylemler: {4}\n\nDevam edilsin mi?",
+                rule.Name, _currentFolder.Name, list.Count, preview, string.Join(", ", rule.Actions.Select(RuleEngine.DescribeAction))),
+                L.T("Klasörde şimdi çalıştır"), MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        var runnable = rule.Clone(); runnable.Enabled = true;
+        int affected = 0, failed = 0;
         foreach (var m in list)
         {
-            var results = await RuleEngine.ApplyRulesAsync(new[] { rule }, m, acc, _mail, _cache, _tasks, null, _lifetime.Token);
-            if (results.Count > 0) affected++;
+            try
+            {
+                var results = await RuleEngine.ApplyRulesAsync(new[] { runnable }, m, acc, _mail, _cache, _tasks, null, _lifetime.Token);
+                if (results.Count > 0) affected++;
+            }
+            catch (OperationCanceledException) { break; }
+            catch (Exception) { failed++; }
         }
         LoadMessagesFromCache();
-        Status(L.F("Kural çalıştırıldı: {0} ileti etkilendi.", affected));
+        Status(failed == 0 ? L.F("Kural çalıştırıldı: {0} ileti etkilendi.", affected) : L.F("Kural çalıştırıldı: {0} ileti etkilendi, {1} iletide hata oluştu.", affected, failed));
     }
 
     async Task RunRulesOnFreshAsync(AccountConfig acc, List<MailHeader> fresh)
     {
-        if (_ruleStore.Rules.Count == 0) return;
-        bool anyMoved = false;
-        foreach (var h in fresh)
+        try
         {
-            var res = await RuleEngine.ApplyRulesAsync(_ruleStore.Rules, h, acc, _mail, _cache, _tasks, null, _lifetime.Token);
-            if (res.Any(r => r.AppliedActions.Any(a => a.Contains("taşındı") || a.Contains("moved")))) anyMoved = true;
+            _ruleStore.ReloadIfChanged();
+            var rules = _ruleStore.Rules.Where(r => r.Enabled && RuleEngine.Validate(r) == null).ToList();
+            if (rules.Count == 0) return;
+            bool anyMoved = false;
+            foreach (var h in fresh)
+            {
+                try
+                {
+                    var res = await RuleEngine.ApplyRulesAsync(rules, h, acc, _mail, _cache, _tasks, null, _lifetime.Token);
+                    if (res.Any(r => r.Moved)) anyMoved = true;
+                }
+                catch (OperationCanceledException) { return; }
+                catch (Exception ex) { Status(L.F("Kural uygulanamadı ({0}): {1}", h.Subject, ex.Message)); }
+            }
+            if (anyMoved) LoadMessagesFromCache();
         }
-        if (anyMoved) await Dispatcher.InvokeAsync(LoadMessagesFromCache);
+        catch (Exception ex) { Status(L.T("Kurallar: ") + ex.Message); }
     }
 
     void OnFormatRules(object sender, RoutedEventArgs e)

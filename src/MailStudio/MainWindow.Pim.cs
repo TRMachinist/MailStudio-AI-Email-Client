@@ -39,6 +39,18 @@ public partial class MainWindow : ITaskHost, IQuoteHost
     CalendarSyncService? _calendarSync;
     public CalendarSyncService CalendarSync => _calendarSync ??= new CalendarSyncService(_calendar, _oauth);
 
+    /// <summary>"Sync now" in the calendar: only accounts the user turned calendar sync on for; nothing else touches the network.</summary>
+    async Task SyncCalendarsAsync()
+    {
+        var accounts = _store.Accounts.Where(a => a.EnableCalendarSync).ToList();
+        if (accounts.Count == 0)
+            throw new InvalidOperationException(L.T("Takvim eşitlemesi açık bir hesap yok. Hesap ayarlarında 'Takvim etkinliklerini eşitle' seçeneğini aç."));
+        var r = await CalendarSync.SyncAllAccountsAsync(accounts);
+        try { _store.Save(); } catch (IOException) { }
+        _calendarView?.Refresh();
+        if (!r.Success) throw new InvalidOperationException(r.Error ?? r.StatusMessage ?? "");
+    }
+
     void InitPim()
     {
         _reminderTimer.Tick += (_, _) => PimTick();
@@ -78,7 +90,8 @@ public partial class MainWindow : ITaskHost, IQuoteHost
             case PimModule.Calendar:
                 _calendarView ??= new CalendarView(_calendar, this)
                 {
-                    SyncHandler = async () => { await CalendarSync.SyncAllAccountsAsync(_store.Accounts); }
+                    SyncHandler = SyncCalendarsAsync,
+                    SyncCalendars = () => _store.Accounts.Where(a => a.EnableCalendarSync).Select(a => (a.Id, a.Email)).ToList()
                 };
                 PimHost.Content = _calendarView; PimSide.Content = _calendarView.SidePanel;
                 Title = L.T("Takvim") + " - " + L.ProductName;

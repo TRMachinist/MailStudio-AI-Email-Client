@@ -44,6 +44,10 @@ public class RevisionCandidate
     public uint? Uid { get; set; }
     public string AccountId { get; set; } = "";
     public string Folder { get; set; } = "";
+    /// <summary>The mail that carries this revision (null for a file found on disk).</summary>
+    public MailHeader? Header { get; set; }
+    public AttachmentInfo? Attachment { get; set; }
+    public string Display => string.Join("  ·  ", new[] { FileName, Revision.Length > 0 ? "Rev " + Revision : "", MailSubject ?? "", Date?.ToString("g") ?? "" }.Where(x => x.Length > 0));
 }
 
 public class RevisionDiffReport
@@ -57,6 +61,8 @@ public class RevisionDiffReport
     public string OldFilePath { get; set; } = "";
     public string NewFilePath { get; set; } = "";
     public List<RevisionDiffItem> Items { get; set; } = new();
+    /// <summary>How the files were read (e.g. "OCR: verify numbers on the drawing"); shown above the list.</summary>
+    public List<string> Notes { get; set; } = new();
 
     public int AddedCount => Items.Count(i => i.Kind == RevisionDiffKind.Added);
     public int RemovedCount => Items.Count(i => i.Kind == RevisionDiffKind.Removed);
@@ -87,7 +93,7 @@ public class RevisionDiffReport
             foreach (var item in modified)
             {
                 var desc = !string.IsNullOrWhiteSpace(item.Description) ? item.Description : $"{item.OldValue} → {item.NewValue}";
-                sb.AppendLine($"• [{item.Category}] {item.Property}: {desc}");
+                sb.AppendLine($"• [{item.CategoryDisplay}] {item.PropertyDisplay}: {desc}");
             }
             sb.AppendLine();
         }
@@ -98,7 +104,7 @@ public class RevisionDiffReport
             foreach (var item in added)
             {
                 var val = !string.IsNullOrWhiteSpace(item.NewValue) ? item.NewValue : item.Description;
-                sb.AppendLine($"• [{item.Category}] {item.Property}: {val}");
+                sb.AppendLine($"• [{item.CategoryDisplay}] {item.PropertyDisplay}: {val}");
             }
             sb.AppendLine();
         }
@@ -109,7 +115,7 @@ public class RevisionDiffReport
             foreach (var item in removed)
             {
                 var val = !string.IsNullOrWhiteSpace(item.OldValue) ? item.OldValue : item.Description;
-                sb.AppendLine($"• [{item.Category}] {item.Property}: {val}");
+                sb.AppendLine($"• [{item.CategoryDisplay}] {item.PropertyDisplay}: {val}");
             }
             sb.AppendLine();
         }
@@ -123,6 +129,19 @@ public class RevisionDiffReport
     public string ToAiPrompt()
     {
         var sb = new StringBuilder();
+        if (L.IsEnglish)
+        {
+            sb.AppendLine("Analyse the following drawing / model revision changes as a manufacturing engineer:");
+            sb.AppendLine(ToReplyText());
+            sb.AppendLine();
+            sb.AppendLine("Give a short, clear, professional assessment under these headings:");
+            sb.AppendLine("1. Process and cycle time: which machining operations and times are affected?");
+            sb.AppendLine("2. Tooling and fixturing: is a new tool, fixture or special clamping needed?");
+            sb.AppendLine("3. Cost and risk: does cost or manufacturing risk increase? Are tolerance or hole changes critical?");
+            sb.AppendLine("4. Recommendation: advice for the shop floor and for quality control.");
+            sb.AppendLine("Only use the changes listed above; say so when something cannot be judged from them.");
+            return sb.ToString();
+        }
         sb.AppendLine("Aşağıdaki teknik resim / model revizyon değişikliklerini bir imalat mühendisi gözüyle analiz et:");
         sb.AppendLine(ToReplyText());
         sb.AppendLine();
@@ -131,6 +150,7 @@ public class RevisionDiffReport
         sb.AppendLine("2. Takımlama ve Bağlama: Yeni takım, aparat veya özel fikstür gerekir mi?");
         sb.AppendLine("3. Maliyet ve Risk: Maliyet artışı ve imalat riski var mı? Tolerans/delik değişiklikleri kritik mi?");
         sb.AppendLine("4. Öneri: İmalat atölyesine ve kalite kontrol ekibine özel tavsiyeler.");
+        sb.AppendLine("Yalnızca yukarıdaki değişikliklere dayan; onlardan anlaşılamayan bir şey varsa bunu açıkça söyle.");
         return sb.ToString();
     }
 }

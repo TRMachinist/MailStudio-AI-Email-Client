@@ -97,6 +97,21 @@ public sealed class CalendarStore
         Write();
     }
 
+    /// <summary>Saves an event written by calendar sync: not marked as a local change.</summary>
+    public void SaveSynced(CalendarEvent e)
+    {
+        Sync();
+        lock (_lock)
+        {
+            if (e.End < e.Start) e.End = e.Start;
+            e.SyncDirty = false;
+            e.LastSyncedUtc = DateTime.UtcNow;
+            var i = _data.Events.FindIndex(x => x.Id == e.Id);
+            if (i >= 0) _data.Events[i] = e; else _data.Events.Add(e);
+        }
+        Write();
+    }
+
     public void DeleteSilently(string id) { Sync(); lock (_lock) _data.Events.RemoveAll(x => x.Id == id); Write(); }
 
     public void Save(CalendarEvent e)
@@ -105,6 +120,7 @@ public sealed class CalendarStore
         {
             if (e.End < e.Start) e.End = e.Start;
             e.Modified = DateTime.Now;
+            if (!string.IsNullOrEmpty(e.AccountId)) e.SyncDirty = true;
             var i = _data.Events.FindIndex(x => x.Id == e.Id);
             if (i >= 0) _data.Events[i] = e; else _data.Events.Add(e);
             // A moved event reminds again

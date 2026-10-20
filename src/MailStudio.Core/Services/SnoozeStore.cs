@@ -215,7 +215,7 @@ public sealed class SnoozeStore
             {
                 if (File.Exists(_path))
                 {
-                    var json = File.ReadAllText(_path);
+                    var json = JsonFile.ReadOrBackup(_path);
                     var items = JsonSerializer.Deserialize<List<SnoozeItem>>(json, JsonOptions);
                     if (items != null)
                     {
@@ -241,7 +241,7 @@ public sealed class SnoozeStore
             }
 
             var json = JsonSerializer.Serialize(_items, JsonOptions);
-            File.WriteAllText(_path, json);
+            JsonFile.WriteAtomic(_path, json);
         }
         catch { }
     }

@@ -38,7 +38,6 @@ public class AccountConfig
     public bool EnableCalendarSync { get; set; } = false;
     public string CalDavUrl { get; set; } = "";
     public string CalDavUser { get; set; } = "";
-    public string CalDavPassword { get; set; } = "";
     public DateTime? LastCalendarSyncUtc { get; set; }
     public string? CalendarSyncStatus { get; set; }
 }

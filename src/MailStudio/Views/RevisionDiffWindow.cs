@@ -27,6 +27,7 @@ public sealed class RevisionDiffWindow : Window
     readonly Button _addReplyBtn = new();
     readonly ComboBox _categoryFilter = new();
     readonly TextBlock _statusText = new();
+    readonly CancellationTokenSource _life = new();
 
     public RevisionDiffWindow(
         RevisionDiffReport report,
@@ -83,6 +84,7 @@ public sealed class RevisionDiffWindow : Window
         mainGrid.Children.Add(actionBar);
 
         Content = mainGrid;
+        Closed += (_, _) => _life.Cancel();
         UiTranslator.Apply(this);
         ApplyFilter();
     }
@@ -139,6 +141,19 @@ public sealed class RevisionDiffWindow : Window
             Margin = new Thickness(28, 4, 0, 0)
         };
         titleStack.Children.Add(subRow);
+        UiTranslator.SetSkip(title, true); UiTranslator.SetSkip(subRow, true);
+        foreach (var note in _report.Notes)
+        {
+            var n = new TextBlock { Text = "ⓘ " + note, FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(28, 6, 0, 0) };
+            n.SetResourceReference(TextBlock.ForegroundProperty, "StatusWarningBrush");
+            titleStack.Children.Add(n);
+        }
+        if (_report.Items.Count == 0 && _report.Notes.Count == 0)
+        {
+            var none = new TextBlock { Text = L.T("İki revizyon arasında fark bulunamadı."), FontSize = 12.5, FontWeight = FontWeights.SemiBold, Margin = new Thickness(28, 8, 0, 0) };
+            none.SetResourceReference(TextBlock.ForegroundProperty, "TextPrimaryBrush");
+            titleStack.Children.Add(none);
+        }
 
         panel.Children.Add(titleStack);
         return panel;
@@ -225,6 +240,7 @@ public sealed class RevisionDiffWindow : Window
         });
 
         _diffList.View = grid;
+        UiTranslator.SetSkip(_diffList, true);   // drawing values are user content
         _diffList.Background = ThemeManager.Brush("BgSurfaceSecondaryBrush");
         _diffList.BorderBrush = ThemeManager.Brush("BorderSubtleBrush");
         _diffList.BorderThickness = new Thickness(1);
@@ -272,11 +288,12 @@ public sealed class RevisionDiffWindow : Window
         };
         stack.Children.Add(hdr);
 
+        UiTranslator.SetSkip(_aiResponse, true);
         _aiResponse.TextWrapping = TextWrapping.Wrap;
         _aiResponse.FontSize = 12;
         _aiResponse.LineHeight = 18;
         _aiResponse.Foreground = ThemeManager.Brush("TextPrimaryBrush");
-        stack.Children.Add(_aiResponse);
+        stack.Children.Add(new ScrollViewer { Content = _aiResponse, MaxHeight = 220, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
 
         _aiPanel.Child = stack;
         return _aiPanel;
@@ -338,7 +355,7 @@ public sealed class RevisionDiffWindow : Window
     void OnAddToReplyClick(object sender, RoutedEventArgs e)
     {
         var text = _report.ToReplyText();
-        Clipboard.SetText(text);
+        try { Clipboard.SetText(text); } catch (System.Runtime.InteropServices.COMException) { }
 
         if (_onAddToReply != null)
         {
@@ -368,10 +385,11 @@ public sealed class RevisionDiffWindow : Window
         try
         {
             var prompt = _report.ToAiPrompt();
-            var response = await _aiRunner(prompt, CancellationToken.None);
+            var response = await _aiRunner(prompt, _life.Token);
             _aiResponse.Text = !string.IsNullOrWhiteSpace(response) ? response.Trim() : L.T("Analiz sonucu alınamadı.");
             _statusText.Text = L.T("Yapay zekâ analizi tamamlandı.");
         }
+        catch (OperationCanceledException) { return; }
         catch (Exception ex)
         {
             _aiResponse.Text = L.T("Hata oluştu: ") + ex.Message;

@@ -91,7 +91,7 @@ public sealed class QuickStepStore
             {
                 try
                 {
-                    var text = File.ReadAllText(_path);
+                    var text = JsonFile.ReadOrBackup(_path);
                     var list = JsonSerializer.Deserialize<List<QuickStepItem>>(text, JsonOptions);
                     if (list != null && list.Count > 0)
                     {
@@ -117,7 +117,7 @@ public sealed class QuickStepStore
             var dir = Path.GetDirectoryName(_path);
             if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
                 Directory.CreateDirectory(dir);
-            File.WriteAllText(_path, JsonSerializer.Serialize(_steps, JsonOptions));
+            JsonFile.WriteAtomic(_path, JsonSerializer.Serialize(_steps, JsonOptions));
         }
         catch { }
     }

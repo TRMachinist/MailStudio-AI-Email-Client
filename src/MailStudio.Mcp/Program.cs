@@ -216,8 +216,8 @@ public sealed class MailTools
     [McpServerTool(Name = "compare_revisions", ReadOnly = true),
      Description("Compares two revisions of an engineering drawing or schedule (PDF, STEP, DXF, Excel) and returns a detailed diff report.")]
     public static async Task<string> CompareRevisions(MailContext ctx,
-        [Description("First file path or attachment name.")] string file1,
-        [Description("Second file path or attachment name.")] string file2,
+        [Description("Attachment file name of the first revision (as listed by read_message).")] string file1,
+        [Description("Attachment file name of the second revision.")] string file2,
         [Description("Account id or email (if resolving attachments from mail).")] string? account = null,
         [Description("Folder of mail containing file1 (default INBOX).")] string folder1 = "INBOX",
         [Description("UID of mail containing file1.")] uint? uid1 = null,
@@ -227,7 +227,9 @@ public sealed class MailTools
     {
         async Task<string> ResolvePathAsync(string file, string folder, uint? uid)
         {
-            if (File.Exists(file)) return Path.GetFullPath(file);
+            // Only mail attachments: never an arbitrary path on the computer
+            if (file.Length == 0 || Path.GetFileName(file) != file || file.IndexOfAny(new[] { '*', '?' }) >= 0)
+                throw new ModelContextProtocol.McpException("Give an attachment file name (no folder path).");
             if (uid.HasValue)
             {
                 var acc = ctx.Account(account);
@@ -247,9 +249,6 @@ public sealed class MailTools
             }
             var demoFile = Path.Combine(AppContext.BaseDirectory, "Demo", file);
             if (File.Exists(demoFile)) return demoFile;
-            var demoDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "src", "MailStudio", "Demo"));
-            var demoPath = Path.Combine(demoDir, file);
-            if (File.Exists(demoPath)) return demoPath;
 
             throw new ModelContextProtocol.McpException($"File or attachment not found: {file}");
         }
@@ -377,36 +376,29 @@ public sealed class DraftTools
      Description("Adds a new email filtering rule to MailStudio. The rule is created DISABLED by default; the user reviews and enables it in MailStudio.")]
     public static string AddRule(
         [Description("Rule name (e.g. 'Move invoices to Accounting').")] string name,
-        [Description("Condition field: from, subject, body, to, has_attachment.")] string conditionField,
-        [Description("Condition matching value (e.g. sender email, subject keyword).")] string conditionValue,
-        [Description("Action type: move_to_folder, mark_read, flag, set_category.")] string actionType,
-        [Description("Action value (e.g. target folder name or category).")] string? actionValue = null,
+        [Description("Condition field: from, to, subject, body, has_attachment, attachment_type, folder, importance, size_larger_kb, size_smaller_kb.")] string conditionField,
+        [Description("Condition value (e.g. sender address, subject keyword; several alternatives separated by ';'). Required except for has_attachment.")] string conditionValue,
+        [Description("Action type: move_to_folder, mark_as_read, mark_as_flagged, set_category, create_task, move_to_trash.")] string actionType,
+        [Description("Action value (target folder name or category). Required for move_to_folder and set_category.")] string? actionValue = null,
         [Description("Whether to stop processing further rules on match. Default true.")] bool stopProcessing = true)
     {
         if (string.IsNullOrWhiteSpace(name)) throw new ModelContextProtocol.McpException("Rule name cannot be empty.");
-        if (string.IsNullOrWhiteSpace(conditionField)) throw new ModelContextProtocol.McpException("Condition field cannot be empty.");
-        if (string.IsNullOrWhiteSpace(actionType)) throw new ModelContextProtocol.McpException("Action type cannot be empty.");
-
-        var store = new RuleStore();
         var rule = new MailRule
         {
             Id = Guid.NewGuid().ToString("N"),
             Name = name.Trim(),
-            Enabled = false, // ALWAYS disabled by default per safety requirement!
+            Enabled = false, // always added disabled: the user reviews and enables it in MailStudio
             StopProcessing = stopProcessing,
             MatchAll = true,
-            Conditions = new List<RuleCondition>
-            {
-                new() { Field = conditionField.Trim().ToLowerInvariant(), Value = conditionValue ?? "" }
-            },
-            Actions = new List<RuleAction>
-            {
-                new() { Type = actionType.Trim().ToLowerInvariant(), Value = actionValue }
-            }
+            Conditions = new List<RuleCondition> { new() { Field = conditionField ?? "", Value = (conditionValue ?? "").Trim() } },
+            Actions = new List<RuleAction> { new() { Type = actionType ?? "", Value = actionValue?.Trim() } }
         };
+        RuleEngine.Normalize(rule);
+        if (rule.Actions.Any(a => a.Type is "run_skill" or "stop_processing"))
+            throw new ModelContextProtocol.McpException("Agents cannot add rules that run skills.");
+        if (RuleEngine.Validate(rule) is { } problem) throw new ModelContextProtocol.McpException(problem);
 
-        store.Rules.Add(rule);
-        store.Save();
+        new RuleStore().Append(rule);
         return $"Rule added (disabled by default): '{rule.Name}' (ID: {rule.Id}). The user must enable it in MailStudio Rules window.";
     }
 }

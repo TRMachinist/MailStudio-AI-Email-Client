@@ -105,6 +105,8 @@ public sealed class CalendarView : UserControl
     public CalendarViewMode Mode => _mode;
     public DateTime Date => _date;
     public Func<Task>? SyncHandler { get; set; }
+    /// <summary>Account calendars with sync on, offered in the event form.</summary>
+    public Func<IReadOnlyList<(string Id, string Name)>>? SyncCalendars { get; set; }
 
     async void SyncNow()
     {
@@ -724,7 +726,7 @@ public sealed class CalendarView : UserControl
     }
 
     EventWindow Form(CalendarEvent e, bool isNew, bool meeting) =>
-        new(e, _store, isNew, meeting) { Owner = _host.HostWindow, PickAttendees = _host.PickAttendees, IsOwnAddress = _host.IsOwnAddress };
+        new(e, _store, isNew, meeting) { Owner = _host.HostWindow, PickAttendees = _host.PickAttendees, IsOwnAddress = _host.IsOwnAddress, SyncCalendars = SyncCalendars?.Invoke() };
 
     void Edit(CalendarEvent e, bool isNew, bool meeting, CalendarEvent? original = null)
     {

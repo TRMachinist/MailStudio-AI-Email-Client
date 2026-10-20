@@ -818,6 +818,7 @@ await Test("follow-up: reply clears follow-up; expired deadline creates task", (
 }));
 await Test("undo send and scheduled send: undo aborts before SMTP; scheduled send waits until due time", async () =>
 {
+    Func<AccountConfig, OutboxItem, Task> SendWith(MailService m) => (a, i) => m.SendAsync(a, i.Request);
     await using var imap = new FakeImap();
     await using var smtp = new FakeSmtp();
     var acc = Account(imap, smtp);
@@ -840,7 +841,7 @@ await Test("undo send and scheduled send: undo aborts before SMTP; scheduled sen
     outbox.Add(undoItem);
 
     // Attempt processing at current time: should not send because scheduled time is in future
-    var sentUndo0 = await outbox.ProcessDueSendsAsync(_ => acc, service, DateTimeOffset.Now);
+    var sentUndo0 = await outbox.ProcessDueSendsAsync(_ => acc, SendWith(service), DateTimeOffset.Now);
     Check(sentUndo0 == 0, "undo item not sent immediately");
     Check(smtp.Accepted == 0, "no SMTP packets sent while in undo window");
 
@@ -848,7 +849,7 @@ await Test("undo send and scheduled send: undo aborts before SMTP; scheduled sen
     outbox.Remove(undoItem.Id);
 
     // Time advances past 10 seconds: item was removed, so nothing sends
-    var sentUndoPast = await outbox.ProcessDueSendsAsync(_ => acc, service, DateTimeOffset.Now.AddSeconds(15));
+    var sentUndoPast = await outbox.ProcessDueSendsAsync(_ => acc, SendWith(service), DateTimeOffset.Now.AddSeconds(15));
     Check(sentUndoPast == 0, "cancelled undo item is never sent");
     Check(smtp.Accepted == 0, "still zero SMTP packets sent after undo window");
 
@@ -866,7 +867,7 @@ await Test("undo send and scheduled send: undo aborts before SMTP; scheduled sen
     outbox.Add(schedItem);
 
     // Test before scheduled time: should NOT send
-    var sentBefore = await outbox.ProcessDueSendsAsync(_ => acc, service, DateTimeOffset.Now.AddHours(1));
+    var sentBefore = await outbox.ProcessDueSendsAsync(_ => acc, SendWith(service), DateTimeOffset.Now.AddHours(1));
     Check(sentBefore == 0, "scheduled item not sent before its time");
     Check(smtp.Accepted == 0, "no SMTP packets before scheduled time");
 
@@ -875,11 +876,41 @@ await Test("undo send and scheduled send: undo aborts before SMTP; scheduled sen
     Check(reloadedOutbox.Items.Count == 1 && reloadedOutbox.Items[0].Request.Subject == "Morning Report", "scheduled item survived restart in outbox.json");
 
     // Test when due time arrives: sends via SMTP and clears from outbox
-    var sentOnTime = await reloadedOutbox.ProcessDueSendsAsync(_ => acc, service, scheduledTime.AddMinutes(1));
+    var sentOnTime = await reloadedOutbox.ProcessDueSendsAsync(_ => acc, SendWith(service), scheduledTime.AddMinutes(1));
     Check(sentOnTime == 1, "scheduled item sent when due");
     Check(smtp.Accepted == 1, "exactly one SMTP message delivered");
     Check(smtp.Mime.Contains("Morning Report"), "delivered message contains correct subject");
     Check(reloadedOutbox.Items.Count == 0, "sent item cleared from outbox queue");
+
+    // 3. Two queue runs at the same time never send one item twice
+    var twice = new OutboxItem { AccountId = acc.Id, Request = new ComposeRequest { To = "carol@example.test", Subject = "Once only", Body = "x" }, ScheduledTime = DateTimeOffset.Now.AddSeconds(-1) };
+    reloadedOutbox.Add(twice);
+    var slowSends = 0;
+    Func<AccountConfig, OutboxItem, Task> slow = async (a, i) => { Interlocked.Increment(ref slowSends); await Task.Delay(300); await service.SendAsync(a, i.Request); };
+    var runs = await Task.WhenAll(reloadedOutbox.ProcessDueSendsAsync(_ => acc, slow), reloadedOutbox.ProcessDueSendsAsync(_ => acc, slow));
+    Check(runs.Sum() == 1 && slowSends == 1 && smtp.Accepted == 2, $"concurrent queue runs sent the item exactly once (sends {slowSends}, smtp {smtp.Accepted})");
+
+    // 4. Restart: a due item is HELD (asked), never sent automatically; an item that was being sent becomes Uncertain
+    var held = new OutboxItem { AccountId = acc.Id, Request = new ComposeRequest { To = "dave@example.test", Subject = "Overdue", Body = "x" }, ScheduledTime = DateTimeOffset.Now.AddHours(1) };
+    var undoLeft = new OutboxItem { AccountId = acc.Id, Request = new ComposeRequest { To = "erin@example.test", Subject = "Undo window at exit", Body = "x" }, ScheduledTime = DateTimeOffset.Now.AddHours(1), IsUndoSend = true };
+    var inFlight = new OutboxItem { AccountId = acc.Id, Request = new ComposeRequest { To = "frank@example.test", Subject = "Was sending", Body = "x" }, ScheduledTime = DateTimeOffset.Now.AddMinutes(-5), Status = OutboxStatus.Sending };
+    reloadedOutbox.Add(held); reloadedOutbox.Add(undoLeft); reloadedOutbox.Add(inFlight);
+    var afterRestart = new OutboxStore(outboxPath);
+    afterRestart.Load(DateTimeOffset.Now.AddHours(2));
+    Check(afterRestart.Find(held.Id)?.Status == OutboxStatus.Held, "overdue scheduled mail is held for the user");
+    Check(afterRestart.Find(undoLeft.Id)?.Status == OutboxStatus.Held, "mail left in the undo window at exit is held, not lost");
+    Check(afterRestart.Find(inFlight.Id)?.Status == OutboxStatus.Uncertain, "mail interrupted while sending is Uncertain");
+    var autoSent = await afterRestart.ProcessDueSendsAsync(_ => acc, SendWith(service), DateTimeOffset.Now.AddHours(3));
+    Check(autoSent == 0 && smtp.Accepted == 2, "nothing held or uncertain is sent automatically");
+    Check(afterRestart.Release(held.Id), "user releases a held mail");
+    var released = await afterRestart.ProcessDueSendsAsync(_ => acc, SendWith(service));
+    Check(released == 1 && smtp.Accepted == 3, "released mail sent once");
+    Check(!afterRestart.Remove("nope") && afterRestart.Items.Count == 2, "unknown id is not removed");
+
+    // 5. A corrupt outbox.json is kept as a backup, not silently lost
+    File.WriteAllText(outboxPath, "{ bozuk");
+    var corrupt = new OutboxStore(outboxPath);
+    Check(corrupt.Items.Count == 0 && Directory.GetFiles(root, "test-outbox.json.bozuk-*").Length == 1, "corrupt outbox backed up");
 });
 
 await Test("missing attachment warning: Turkish/English keywords, false alarms, and quote stripping", () => Sync(() =>
@@ -933,22 +964,30 @@ await Test("missing attachment warning: Turkish/English keywords, false alarms, 
     Check(!AttachmentReminder.ShouldWarn(null, "Please find attached the report.", 2, null, null, null, out _), "no warning when 2 files are attached");
 }));
 
-await Test("revision comparison: part and rev parsing across patterns", () => Sync(() =>
+await Test("revision comparison: part and rev parsing across patterns (no false revisions in sentences)", () => Sync(() =>
 {
     var (p1, r1) = RevisionService.ParsePartAndRevision("NW-1042 rev B");
     Check(p1 == "NW-1042" && r1 == "B", "NW-1042 rev B parsed correctly");
-
-    var (p2, r2) = RevisionService.ParsePartAndRevision("bracket-revC.stp", "bracket-revC.stp");
-    Check(p2.Contains("bracket") && r2 == "C", "bracket-revC.stp parsed correctly");
-
-    var (p3, r3) = RevisionService.ParsePartAndRevision("delivery-schedule-wk43.xlsx", "delivery-schedule-wk43.xlsx");
-    Check(p3.Contains("delivery-schedule") && r3 == "Wk43", "delivery-schedule-wk43 parsed correctly");
-
-    var (p4, r4) = RevisionService.ParsePartAndRevision("flange-DN100-revC.pdf", "flange-DN100-revC.pdf");
+    var (p2, r2) = RevisionService.ParsePartAndRevision("", "bracket-revC.stp");
+    Check(p2 == "bracket" && r2 == "C", $"bracket-revC.stp parsed correctly ({p2}/{r2})");
+    var (p3, r3) = RevisionService.ParsePartAndRevision("", "delivery-schedule-wk43.xlsx");
+    Check(p3 == "delivery-schedule" && r3 == "Wk43", $"delivery-schedule-wk43 parsed correctly ({p3}/{r3})");
+    var (p4, r4) = RevisionService.ParsePartAndRevision("", "flange-DN100-revC.pdf");
     Check(p4 == "flange-DN100" && r4 == "C", "flange-DN100-revC parsed correctly");
-
-    var (p5, r5) = RevisionService.ParsePartAndRevision("part_R02.dxf", "part_R02.dxf");
+    var (p5, r5) = RevisionService.ParsePartAndRevision("", "part_R02.dxf");
     Check(p5 == "part" && r5 == "02", "part_R02 parsed correctly");
+    var (p6, r6) = RevisionService.ParsePartAndRevision("", "NW-1042_Rev.D.pdf");
+    Check(p6 == "NW-1042" && r6 == "D", $"NW-1042_Rev.D parsed ({p6}/{r6})");
+    // sentences and plain names must not invent revisions or part numbers
+    Check(RevisionService.ParsePartAndRevision("NW-1042 ve rapor").Revision == "", "'ve rapor' is not a revision");
+    Check(RevisionService.ParsePartAndRevision("NW-1042 revizyon güncellemesi").Revision == "", "'revizyon güncellemesi' is not a revision");
+    Check(RevisionService.ParsePartAndRevision("Teklif talebi").PartNumber == "", "no part number in a plain subject");
+    Check(RevisionService.ParsePartAndRevision("", "logo.png") == ("logo", ""), "plain file name: no revision");
+    Check(RevisionService.ParsePartAndRevision("", "drawer.pdf").Revision == "", "'drawer' does not contain 'rev'");
+    var prev = System.Globalization.CultureInfo.CurrentCulture;
+    System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("tr-TR");
+    try { Check(RevisionService.ParsePartAndRevision("", "FLANGE_REVISION_C.DXF").Revision == "C", "REVISION with dotless-I culture"); }
+    finally { System.Globalization.CultureInfo.CurrentCulture = prev; }
 }));
 
 string FindDemoDir()
@@ -963,70 +1002,118 @@ string FindDemoDir()
     return Path.Combine(Directory.GetCurrentDirectory(), "src", "MailStudio", "Demo");
 }
 
-await Test("revision comparison: Excel schedules diff cell-by-cell", () => Sync(() =>
+await Test("revision comparison: Excel schedules diff by row key", () => Sync(() =>
 {
     var demoDir = FindDemoDir();
     var f1 = Path.Combine(demoDir, "delivery-schedule-wk43.xlsx");
     var f2 = Path.Combine(demoDir, "delivery-schedule-wk44.xlsx");
     Check(File.Exists(f1) && File.Exists(f2), "Excel demo files exist for test");
-
     var report = RevisionService.CompareExcel(f1, f2);
-    Check(report.FileType == "Excel", "Report file type is Excel");
-    Check(report.TotalChanges > 0, "Changes detected between wk43 and wk44");
-    Check(report.Items.Any(i => i.Category == "Hücre" && i.Property.Contains("D2")), "D2 (NW-1042 quantity) changed");
-    Check(report.Items.Any(i => i.Category == "Hücre" && i.Property.Contains("E2")), "E2 (NW-1042 unit price) changed");
+    Check(report.FileType == "Excel" && report.OldRevision == "Wk43" && report.NewRevision == "Wk44", "Excel report with week revisions");
+    var qty = report.Items.FirstOrDefault(i => i.Property.StartsWith("NW-1042") && i.Property.Contains("Qty"));
+    Check(qty != null && qty.OldValue == "120" && qty.NewValue == "150", $"NW-1042 quantity 120 → 150 ({qty?.OldValue}→{qty?.NewValue})");
+    Check(report.Items.Any(i => i.Property.StartsWith("NW-1042") && i.Property.Contains("Unit price") && i.NewValue == "41"), "NW-1042 unit price 38.5 → 41");
+    Check(!report.Items.Any(i => i.Property.StartsWith("NW-1043") && i.Property.Contains("Qty")), "unchanged row has no quantity change");
 
-    var replyText = report.ToReplyText();
-    Check(replyText.Contains("Revizyon") && replyText.Contains("delivery-schedule"), "ToReplyText contains part and header");
+    // an inserted row does not shift the following rows
+    var wbDir = Path.Combine(root, "xlsx-insert"); Directory.CreateDirectory(wbDir);
+    string Book(string name, params (string Part, int Qty)[] rows)
+    {
+        var path = Path.Combine(wbDir, name);
+        using var wb = new ClosedXML.Excel.XLWorkbook(); var ws = wb.AddWorksheet("Plan");
+        ws.Cell(1, 1).Value = "Part"; ws.Cell(1, 2).Value = "Qty";
+        for (int i = 0; i < rows.Length; i++) { ws.Cell(i + 2, 1).Value = rows[i].Part; ws.Cell(i + 2, 2).Value = rows[i].Qty; }
+        wb.SaveAs(path); return path;
+    }
+    var x1 = Book("plan-rev1.xlsx", ("A-100", 5), ("A-200", 7), ("A-300", 9));
+    var x2 = Book("plan-rev2.xlsx", ("A-100", 5), ("A-150", 3), ("A-200", 7), ("A-300", 10));
+    var ins = RevisionService.CompareExcel(x1, x2);
+    Check(ins.Items.Count == 2, $"inserted row + one changed cell only ({ins.Items.Count}: {string.Join(" | ", ins.Items.Select(i => i.Description))})");
+    Check(ins.Items.Any(i => i.Kind == RevisionDiffKind.Added && i.Property.Contains("A-150")), "inserted row reported as added");
+    Check(ins.Items.Any(i => i.Kind == RevisionDiffKind.Modified && i.Property.StartsWith("A-300") && i.OldValue == "9" && i.NewValue == "10"), "A-300 quantity change found");
 
-    var aiPrompt = report.ToAiPrompt();
-    Check(aiPrompt.Contains("imalat") || aiPrompt.Contains("manufacturing"), "ToAiPrompt contains manufacturing context");
+    Check(report.ToReplyText().Contains("delivery-schedule"), "ToReplyText contains part");
+    Check(report.ToAiPrompt().Contains("imalat") || report.ToAiPrompt().Contains("manufacturing"), "ToAiPrompt contains manufacturing context");
 }));
 
-await Test("revision comparison: DXF 2D CAD diff detects dimensions and notes", () => Sync(() =>
-{
-    var demoDir = FindDemoDir();
-    var f1 = Path.Combine(demoDir, "flange-DN100-revB.dxf");
-    var f2 = Path.Combine(demoDir, "flange-DN100-revC.dxf");
-    Check(File.Exists(f1) && File.Exists(f2), "DXF demo files exist for test");
+JsonElement J(string json) { using var d = JsonDocument.Parse(json); return d.RootElement.Clone(); }
 
-    var report = RevisionService.CompareDxf(f1, f2);
-    Check(report.FileType == "DXF", "Report file type is DXF");
-    Check(report.TotalChanges > 0, "Changes detected in DXF");
-    Check(report.Items.Any(i => i.Category.StartsWith("Ölçü") || i.Category.StartsWith("Yazı")), "Dimensions or text modified");
-    Check(report.Items.Any(i => i.Description.Contains("20") || i.Description.Contains("26") || i.Description.Contains("REV C")), "Rev C changes found in diff");
+await Test("revision comparison: STEP compares exact worker values and real holes (no estimates)", () => Sync(() =>
+{
+    var a = J("""{"overall_size_xyz_mm":[120,80,40],"total_volume_mm3":150000,"total_surface_mm2":42000,"body_count":1,
+               "bodies":[{"cylindrical_faces":14,"holes":[{"diameter_mm":6.8,"count":4},{"diameter_mm":20,"count":1}]}],"pmi":[]}""");
+    var b = J("""{"overall_size_xyz_mm":[120,80,42.5],"total_volume_mm3":148500,"total_surface_mm2":42000,"body_count":1,
+               "bodies":[{"cylindrical_faces":14,"holes":[{"diameter_mm":6.8,"count":4},{"diameter_mm":25,"count":1}]}],"pmi":[{"kind":"dimension","value":"Ø25 H7"}]}""");
+    var r = RevisionService.CompareStep("bracket-revB.stp", "bracket-revC.stp", a, b);
+    Check(r.OldRevision == "B" && r.NewRevision == "C", "revisions from file names");
+    Check(r.Items.Any(i => i.Property == "Yükseklik (Z)" && i.Description.Contains("+2.5")), "height +2.5 mm");
+    Check(r.Items.Any(i => i.Category == "Hacim"), "volume change reported");
+    Check(!r.Items.Any(i => i.Category == "Yüzey Alanı"), "unchanged area not reported");
+    Check(r.Items.Any(i => i.Category == "Delik" && i.Property == "Ø20" && i.Kind == RevisionDiffKind.Removed), "Ø20 hole removed");
+    Check(r.Items.Any(i => i.Category == "Delik" && i.Property == "Ø25" && i.Kind == RevisionDiffKind.Added), "Ø25 hole added");
+    Check(!r.Items.Any(i => i.Property == "Ø6.8"), "unchanged holes not reported");
+    Check(r.Items.Any(i => i.Category == "PMI" && i.Kind == RevisionDiffKind.Added), "new PMI reported");
+    // an old worker without hole data: only the honest cylindrical face count
+    var c = J("""{"overall_size_xyz_mm":[1,1,1],"total_volume_mm3":1,"total_surface_mm2":1,"body_count":1,"bodies":[{"cylindrical_faces":9}]}""");
+    var d = J("""{"overall_size_xyz_mm":[1,1,1],"total_volume_mm3":1,"total_surface_mm2":1,"body_count":1,"bodies":[{"cylindrical_faces":11}]}""");
+    var r2 = RevisionService.CompareStep("p-revA.stp", "p-revB.stp", c, d);
+    Check(r2.Items.Count == 1 && r2.Items[0].Property == "Silindirik Yüzey Sayısı", "fallback reports cylindrical faces, not 'holes'");
 }));
 
-await Test("revision comparison: STEP 3D CAD diff detects geometry and cylindrical features", () => Sync(() =>
+await Test("revision comparison: DXF dimensions and texts as multisets (insertions do not shift)", () => Sync(() =>
 {
-    var demoDir = FindDemoDir();
-    var f1 = Path.Combine(demoDir, "bracket-revB.stp");
-    var f2 = Path.Combine(demoDir, "bracket-revC.stp");
-    Check(File.Exists(f1) && File.Exists(f2), "STEP demo files exist for test");
-
-    var report = RevisionService.CompareStep(f1, f2);
-    Check(report.FileType == "STEP", "Report file type is STEP");
-    Check(report.OldRevision == "B" && report.NewRevision == "C", "Parsed revisions B and C from STEP filenames");
-    // With pure C# fallback or worker extract:
-    Check(report.OldFileName.Contains("revB") && report.NewFileName.Contains("revC"), "File names preserved");
+    var a = J("""{"layers":["0","OUTLINE","DIMS"],"dimensions":[{"measurement":220},{"measurement":110},{"measurement":24},{"measurement":60}],
+               "texts":[{"text":"8x Ø18 THRU EQ. SP. ON PCD 180"},{"text":"Ra 3.2"},{"text":"DWG NO. NW-1042 REV B"},{"text":"MAT. S235JR"},{"text":"SECTION A-A"}]}""");
+    var b = J("""{"layers":["0","OUTLINE","DIMS","NOTES"],"dimensions":[{"measurement":5},{"measurement":220},{"measurement":110},{"measurement":26},{"measurement":60}],
+               "texts":[{"text":"8x Ø20 THRU EQ. SP. ON PCD 180"},{"text":"Ra 1.6"},{"text":"DWG NO. NW-1042 REV C"},{"text":"MAT. S235JR"},{"text":"SECTION A-A"},{"text":"DEBURR ALL EDGES"}]}""");
+    var r = RevisionService.CompareDxf("flange-DN100-revB.dxf", "flange-DN100-revC.dxf", a, b);
+    Check(r.Items.Any(i => i.Category == "Katman" && i.NewValue == "NOTES"), "layer added");
+    Check(r.Items.Any(i => i.Category == "Ölçü" && i.Kind == RevisionDiffKind.Added && i.NewValue == "5"), "new dimension 5");
+    Check(r.Items.Any(i => i.Category == "Ölçü" && i.Kind == RevisionDiffKind.Removed && i.OldValue == "24"), "dimension 24 gone");
+    Check(r.Items.Any(i => i.Category == "Ölçü" && i.Kind == RevisionDiffKind.Added && i.NewValue == "26"), "dimension 26 new");
+    Check(!r.Items.Any(i => i.Category == "Ölçü" && (i.OldValue == "220" || i.NewValue == "220")), "unchanged 220 not reported despite the inserted dimension");
+    Check(r.Items.Any(i => i.Kind == RevisionDiffKind.Modified && i.OldValue == "8x Ø18 THRU EQ. SP. ON PCD 180" && i.NewValue!.Contains("Ø20")), "hole note Ø18 → Ø20");
+    Check(r.Items.Any(i => i.Kind == RevisionDiffKind.Modified && i.OldValue == "Ra 3.2" && i.NewValue == "Ra 1.6"), "Ra 3.2 → 1.6");
+    Check(r.Items.Any(i => i.Kind == RevisionDiffKind.Modified && i.NewValue == "DWG NO. NW-1042 REV C"), "title REV B → C");
+    Check(r.Items.Any(i => i.Kind == RevisionDiffKind.Added && i.NewValue == "DEBURR ALL EDGES"), "new note");
+    Check(!r.Items.Any(i => (i.OldValue ?? i.NewValue) == "SECTION A-A" || (i.OldValue ?? i.NewValue) == "MAT. S235JR"), "unchanged texts not reported");
 }));
 
-await Test("revision comparison: PDF drawing diff and candidate discovery", () => Sync(() =>
+await Test("revision comparison: PDF drawing text (dimensions, title block, notes) and OCR note", () => Sync(() =>
 {
-    var demoDir = FindDemoDir();
-    var f1 = Path.Combine(demoDir, "flange-DN100-revB.pdf");
-    var f2 = Path.Combine(demoDir, "flange-DN100-revC.pdf");
-    Check(File.Exists(f1) && File.Exists(f2), "PDF demo files exist for test");
+    var a = J("""{"content":[{"page":1,"method":"OCR (verify numbers on the drawing)","text":"FLANGE DN100 PN16\nDWG NO. NW-1042 REV B\nMAT. S235JR\n8x Ø18 THRU EQ. SP. ON PCD 180\nØ220\n24 ±0.1\nRa 3.2\nSCALE 1:2"}]}""");
+    var b = J("""{"content":[{"page":1,"method":"OCR (verify numbers on the drawing)","text":"FLANGE DN100 PN16\nDWG NO. NW-1042 REV C\nMAT. S235JR\n8x Ø20 THRU EQ. SP. ON PCD 180\nØ220\n26 ±0.1\nRa 1.6\nSCALE 1:2\nBREAK ALL SHARP EDGES"}]}""");
+    var r = RevisionService.ComparePdf("flange-DN100-revB.pdf", "flange-DN100-revC.pdf", a, b);
+    Check(r.Notes.Any(n => n.Contains("OCR")), "OCR note shown");
+    Check(r.Items.Any(i => i.Category == "Antet" && i.OldValue == "NW-1042 REV B" && i.NewValue == "NW-1042 REV C"), $"title block DWG NO changed ({string.Join(" | ", r.Items.Select(i => i.Category + ":" + i.Description))})");
+    Check(r.Items.Any(i => i.Category == "Ölçü" && i.OldValue == "Ra3.2" && i.NewValue == "Ra1.6"), "Ra changed");
+    Check(r.Items.Any(i => i.Category == "Ölçü" && i.OldValue == "24±0.1" && i.NewValue == "26±0.1" || i.OldValue == "24±0.1" && i.Kind == RevisionDiffKind.Removed), "toleranced 24 changed");
+    Check(r.Items.Any(i => i.Category == "Ölçü" && i.OldValue == "8xØ18" && i.NewValue == "8xØ20"), "hole callout 8xØ18 → 8xØ20");
+    Check(!r.Items.Any(i => i.OldValue == "Ø220" || i.NewValue == "Ø220"), "unchanged Ø220 not reported");
+    Check(r.Items.Any(i => i.Category == "Not" && i.NewValue == "BREAK ALL SHARP EDGES"), "new note reported");
+    var empty = RevisionService.ComparePdf("a-revA.pdf", "a-revB.pdf", J("""{"content":[]}"""), b);
+    Check(empty.Items.Count == 0 && empty.Notes.Any(n => n.Contains("okunamadı") || n.Contains("could not")), "unreadable PDF says so, reports nothing");
+}));
 
-    // Candidate discovery
-    var candidates = RevisionService.FindCandidates(null, "", f2);
-    Check(candidates.Count > 0, "Candidate revisions found for flange-DN100-revC");
-    Check(candidates.Any(c => c.FileName.Contains("revB")), "rev B identified as candidate for rev C");
-
-    // PDF comparison
-    var report = RevisionService.ComparePdf(f1, f2);
-    Check(report.FileType == "PDF", "Report file type is PDF");
-    Check(report.OldRevision == "B" && report.NewRevision == "C", "PDF revisions identified as B and C");
+await Test("revision comparison: earlier revisions found in the same correspondent's mails", () => Sync(() =>
+{
+    var cache = Cache("revision-candidates");
+    MailHeader H(uint uid, string from, string subject, int daysAgo) => new()
+    { AccountId = "acc", Folder = "INBOX", Uid = uid, FromAddress = from, FromName = from, Subject = subject, Date = DateTimeOffset.Now.AddDays(-daysAgo), HasAttachments = true };
+    var revC = H(10, "anna@northwind.example", "NW-1042 rev C", 0);
+    var revB = H(11, "anna@northwind.example", "NW-1042 rev B", 5);
+    var other = H(12, "tom@contoso.example", "flange-DN100 rev A", 9);
+    cache.UpsertHeaders(new[] { revC, revB, other });
+    cache.SaveAttachments("acc", "INBOX", 10, new List<AttachmentInfo> { new() { FileName = "flange-DN100-revC.pdf", Part = "2" }, new() { FileName = "flange-DN100-revC.dxf", Part = "3" } });
+    cache.SaveAttachments("acc", "INBOX", 11, new List<AttachmentInfo> { new() { FileName = "flange-DN100-revB.pdf", Part = "2" }, new() { FileName = "logo.png", Part = "3" } });
+    cache.SaveAttachments("acc", "INBOX", 12, new List<AttachmentInfo> { new() { FileName = "flange-DN100-revA.pdf", Part = "2" } });
+    var c = RevisionService.FindCandidates(cache, revC, "flange-DN100-revC.pdf");
+    Check(c.Count == 1 && c[0].FileName == "flange-DN100-revB.pdf" && c[0].Revision == "B" && c[0].Uid == 11, $"rev B from Anna's older mail ({string.Join(", ", c.Select(x => x.FileName))})");
+    Check(c[0].Header != null && c[0].Attachment != null, "candidate can be downloaded (header + attachment)");
+    Check(!c.Any(x => x.FileName.EndsWith(".dxf")), "other file types are not offered");
+    Check(!c.Any(x => x.FileName.Contains("revA")), "another sender's file is not offered");
+    var none = RevisionService.FindCandidates(cache, revB, "logo.png");
+    Check(none.Count == 0, "no candidates for a plain file");
 }));
 
 await Test("teklif masası: RFQ detection and field extraction in Turkish and English", () => Sync(() =>
@@ -1731,7 +1818,7 @@ await Test("takvim eşitlemesi: Microsoft Graph iki yönlü eşitleme, çakışm
     var mock = new MockHttpHandler(req =>
     {
         var uri = req.RequestUri?.ToString() ?? "";
-        if (req.Method == HttpMethod.Get && uri.Contains("/me/events"))
+        if (req.Method == HttpMethod.Get && uri.Contains("/me/calendarView"))
         {
             var json = JsonSerializer.Serialize(new { value = serverEvents });
             return new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
@@ -1740,6 +1827,14 @@ await Test("takvim eşitlemesi: Microsoft Graph iki yönlü eşitleme, çakışm
         {
             var body = req.Content?.ReadAsStringAsync().Result ?? "";
             serverReceivedPosts.Add(body);
+            using (var pd = JsonDocument.Parse(body))
+                serverEvents.Add(new Dictionary<string, object>
+                {
+                    ["id"] = "graph-2", ["changeKey"] = "ck-2", ["subject"] = pd.RootElement.GetProperty("subject").GetString()!,
+                    ["start"] = new Dictionary<string, string> { ["dateTime"] = pd.RootElement.GetProperty("start").GetProperty("dateTime").GetString()!, ["timeZone"] = "UTC" },
+                    ["end"] = new Dictionary<string, string> { ["dateTime"] = pd.RootElement.GetProperty("end").GetProperty("dateTime").GetString()!, ["timeZone"] = "UTC" },
+                    ["isAllDay"] = false
+                });
             var resJson = JsonSerializer.Serialize(new { id = "graph-2", changeKey = "ck-2" });
             return new HttpResponseMessage(System.Net.HttpStatusCode.Created) { Content = new StringContent(resJson, Encoding.UTF8, "application/json") };
         }
@@ -1752,10 +1847,15 @@ await Test("takvim eşitlemesi: Microsoft Graph iki yönlü eşitleme, çakışm
         {
             var id = uri.Substring(uri.LastIndexOf('/') + 1);
             serverReceivedDeletes.Add(id);
+            serverEvents.RemoveAll(x => (string)x["id"] == id);
             return new HttpResponseMessage(System.Net.HttpStatusCode.NoContent);
         }
         return new HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
     });
+
+    // A local-only event (no account calendar) must never be uploaded
+    var privateEv = new CalendarEvent { Title = "Özel – sadece bu bilgisayarda", Start = DateTime.Today.AddHours(8), End = DateTime.Today.AddHours(9) };
+    store.Save(privateEv);
 
     using var sync = new CalendarSyncService(store, mock) { CustomAccessToken = "mock-token" };
     var acc = new AccountConfig { Id = "acc-graph", EnableCalendarSync = true, AuthType = AuthType.Microsoft };
@@ -1764,9 +1864,12 @@ await Test("takvim eşitlemesi: Microsoft Graph iki yönlü eşitleme, çakışm
     var r1 = await sync.SyncAccountAsync(acc);
     Check(r1.Success, "Initial sync succeeded");
     Check(r1.CreatedLocally == 1, "1 event created locally from server");
-    Check(store.Events.Count == 1, "CalendarStore has 1 event");
+    Check(r1.CreatedRemote == 0 && serverReceivedPosts.Count == 0, "local-only event was not uploaded");
+    Check(store.Events.Count == 2, "CalendarStore has the server event + the local-only one");
     var ev1 = store.FindByExternalId("graph-1");
     Check(ev1 != null && ev1.Title == "Talaşlı İmalat Koordinasyon", "Imported event title correct");
+    Check(ev1!.Start == new DateTime(2026, 10, 21, 9, 0, 0, DateTimeKind.Utc).ToLocalTime(), $"Graph UTC time converted to local once ({ev1.Start})");
+    Check(!ev1.SyncDirty, "imported event is not a local change");
     Check(ev1?.ExternalEtag == "ck-1", "Imported event etag saved");
 
     // 2. Local addition pushed to server
@@ -1779,7 +1882,7 @@ await Test("takvim eşitlemesi: Microsoft Graph iki yönlü eşitleme, çakışm
         Location = "Ölçüm Laboratuvarı"
     };
     store.Save(newLocal);
-    Check(store.Events.Count == 2, "CalendarStore now has 2 events");
+    Check(store.Events.Count == 3, "CalendarStore now has 3 events");
 
     var r2 = await sync.SyncAccountAsync(acc);
     Check(r2.Success, "Second sync succeeded");
@@ -1806,7 +1909,7 @@ await Test("takvim eşitlemesi: Microsoft Graph iki yönlü eşitleme, çakışm
 
     // 4. Local deletion -> server receives DELETE
     store.Delete(reloadedLocal!);
-    Check(store.Events.Count == 1, "Local store has 1 event after deletion");
+    Check(store.Events.Count == 2, "Local store has 2 events after deletion");
     Check(store.GetTombstones(acc.Id).Count == 1, "Tombstone created for deleted event");
 
     var r4 = await sync.SyncAccountAsync(acc);
@@ -1820,7 +1923,41 @@ await Test("takvim eşitlemesi: Microsoft Graph iki yönlü eşitleme, çakışm
     var r5 = await sync.SyncAccountAsync(acc);
     Check(r5.Success, "Server deletion sync succeeded");
     Check(r5.DeletedLocally == 1, "Event removed locally when deleted on server");
-    Check(store.Events.Count == 0, "CalendarStore is now empty");
+    Check(store.Events.Count == 1 && store.Find(privateEv.Id) != null, "only the local-only event is left");
+    Check(serverReceivedPosts.Count == 1, "the local-only event was never uploaded");
+});
+
+await Test("takvim eşitlemesi: sayfalı okuma; liste yarım kalırsa yerelde hiçbir şey silinmez", async () =>
+{
+    var cDir = Path.Combine(root, "cal-paging-test");
+    Directory.CreateDirectory(cDir);
+    var store = new CalendarStore(Path.Combine(cDir, "calendar.json"));
+    object Ev(string id, int day) => new Dictionary<string, object>
+    {
+        ["id"] = id, ["changeKey"] = "ck-" + id, ["subject"] = "Etkinlik " + id, ["isAllDay"] = false,
+        ["start"] = new Dictionary<string, string> { ["dateTime"] = DateTime.Today.AddDays(day).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss"), ["timeZone"] = "UTC" },
+        ["end"] = new Dictionary<string, string> { ["dateTime"] = DateTime.Today.AddDays(day).AddHours(1).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss"), ["timeZone"] = "UTC" }
+    };
+    var failPage2 = false;
+    var mock = new MockHttpHandler(req =>
+    {
+        var uri = req.RequestUri!.ToString();
+        if (uri.Contains("page=2"))
+            return failPage2 ? new HttpResponseMessage(System.Net.HttpStatusCode.ServiceUnavailable)
+                : new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { value = new[] { Ev("p2", 2) } }), Encoding.UTF8, "application/json") };
+        if (uri.Contains("/me/calendarView"))
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new Dictionary<string, object>
+                { ["value"] = new[] { Ev("p1", 1) }, ["@odata.nextLink"] = "https://graph.example.test/v1.0/me/calendarView?page=2" }), Encoding.UTF8, "application/json") };
+        return new HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
+    });
+    using var sync = new CalendarSyncService(store, mock) { CustomAccessToken = "t" };
+    var acc = new AccountConfig { Id = "acc-page", EnableCalendarSync = true, AuthType = AuthType.Microsoft };
+    var r1 = await sync.SyncAccountAsync(acc);
+    Check(r1.Success && r1.CreatedLocally == 2 && store.Events.Count == 2, $"both pages read ({r1.CreatedLocally})");
+    failPage2 = true;
+    var r2 = await sync.SyncAccountAsync(acc);
+    Check(!r2.Success, "failed page reported as an error");
+    Check(store.Events.Count == 2 && r2.DeletedLocally == 0, "nothing deleted locally from an incomplete listing");
 });
 
 await Test("takvim eşitlemesi: Google Calendar API v3 iki yönlü eşitleme, silme ve çakışma", async () =>
@@ -1981,8 +2118,7 @@ END:VCALENDAR";
         EnableCalendarSync = true,
         AuthType = AuthType.Password,
         CalDavUrl = "https://caldav.example.test/caldav/events",
-        CalDavUser = "testuser",
-        CalDavPassword = "testpassword"
+        CalDavUser = "testuser"
     };
 
     // 1. Initial sync: XML REPORT parsed, local event created

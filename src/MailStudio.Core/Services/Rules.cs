@@ -39,6 +39,8 @@ namespace MailStudio.Models
         public MailRule Rule { get; set; } = null!;
         public List<string> AppliedActions { get; set; } = new();
         public bool StoppedProcessing { get; set; }
+        /// <summary>The message was moved (its old folder/UID no longer exist).</summary>
+        public bool Moved { get; set; }
     }
 }
 
@@ -47,6 +49,7 @@ namespace MailStudio.Services
     public class RuleStore
     {
         readonly string _path;
+        DateTime _stamp;
         static readonly JsonSerializerOptions JsonOpts = new()
         {
             WriteIndented = true,
@@ -68,25 +71,47 @@ namespace MailStudio.Services
             {
                 if (File.Exists(_path))
                 {
-                    var text = File.ReadAllText(_path);
-                    Rules = JsonSerializer.Deserialize<List<MailRule>>(text, JsonOpts) ?? new();
+                    Rules = JsonSerializer.Deserialize<List<MailRule>>(File.ReadAllText(_path), JsonOpts) ?? new();
+                    _stamp = File.GetLastWriteTimeUtc(_path);
                     return;
                 }
             }
-            catch { }
+            catch (JsonException)
+            {
+                // keep the damaged file instead of overwriting the user's rules on the next save
+                try { File.Copy(_path, _path + ".bozuk-" + DateTime.Now.ToString("yyyyMMdd-HHmmss"), true); } catch (IOException) { }
+            }
+            catch (IOException) { }
             Rules = new();
+        }
+
+        /// <summary>Re-reads rules.json when another process (the MCP agent server) changed it.</summary>
+        public bool ReloadIfChanged()
+        {
+            try
+            {
+                if (!File.Exists(_path) || File.GetLastWriteTimeUtc(_path) == _stamp) return false;
+                Load();
+                return true;
+            }
+            catch (IOException) { return false; }
         }
 
         public void Save()
         {
-            try
-            {
-                var dir = Path.GetDirectoryName(_path);
-                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
-                var json = JsonSerializer.Serialize(Rules, JsonOpts);
-                File.WriteAllText(_path, json);
-            }
-            catch { }
+            Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
+            var tmp = _path + ".tmp";
+            File.WriteAllText(tmp, JsonSerializer.Serialize(Rules, JsonOpts), new System.Text.UTF8Encoding(false));
+            SafeFile.Move(tmp, _path, true);
+            _stamp = File.GetLastWriteTimeUtc(_path);
+        }
+
+        /// <summary>Adds one rule written elsewhere (MCP) without losing rules saved meanwhile.</summary>
+        public void Append(MailRule rule)
+        {
+            ReloadIfChanged();
+            Rules.Add(rule);
+            Save();
         }
     }
 
@@ -133,7 +158,7 @@ namespace MailStudio.Services
 
         static bool ContainsAny(string haystack, string values)
         {
-            if (string.IsNullOrEmpty(values)) return true;
+            if (string.IsNullOrWhiteSpace(values)) return false;   // an empty condition never matches everything
             return values.Split(new[] { ';', ',' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                          .Any(v => haystack.Contains(v, StringComparison.OrdinalIgnoreCase));
         }
@@ -156,8 +181,8 @@ namespace MailStudio.Services
                     "low" or "düşük" => h.Importance?.Equals("low", StringComparison.OrdinalIgnoreCase) == true,
                     _ => h.Importance?.Equals("normal", StringComparison.OrdinalIgnoreCase) != false
                 },
-                "size_larger_kb" => double.TryParse(c.Value, out var minKb) && (h.Size / 1024.0) > minKb,
-                "size_smaller_kb" => double.TryParse(c.Value, out var maxKb) && (h.Size / 1024.0) < maxKb,
+                "size_larger_kb" => double.TryParse(c.Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var minKb) && (h.Size / 1024.0) > minKb,
+                "size_smaller_kb" => double.TryParse(c.Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var maxKb) && (h.Size / 1024.0) < maxKb,
                 _ => false
             };
         }
@@ -168,12 +193,47 @@ namespace MailStudio.Services
             var list = extensions.Split(new[] { ';', ',', ' ' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                                  .Select(e => e.TrimStart('.').ToLowerInvariant())
                                  .ToHashSet();
-            if (list.Count == 0) return true;
+            if (list.Count == 0) return false;
             return attachments.Any(a =>
             {
                 var ext = Path.GetExtension(a.FileName ?? "").TrimStart('.').ToLowerInvariant();
                 return list.Contains(ext);
             });
+        }
+
+        /// <summary>Why a rule cannot be saved (null = valid). Empty values would match every mail.</summary>
+        public static string? Validate(MailRule rule)
+        {
+            if (string.IsNullOrWhiteSpace(rule.Name)) return L.T("Kural adı boş olamaz.");
+            if (rule.Conditions.Count == 0) return L.T("En az bir koşul ekleyin.");
+            foreach (var c in rule.Conditions)
+            {
+                var f = ConditionFields.FirstOrDefault(x => x.Field == c.Field);
+                if (f.Field == null) return L.F("Bilinmeyen koşul: {0}", c.Field);
+                if (f.NeedsValue && string.IsNullOrWhiteSpace(c.Value)) return L.F("\"{0}\" koşulunun değeri boş; boş koşul her maile uyar.", f.Label);
+                if (c.Field is "size_larger_kb" or "size_smaller_kb" && !double.TryParse(c.Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _))
+                    return L.F("\"{0}\" için bir sayı yazın (KB).", f.Label);
+            }
+            if (rule.Actions.Count == 0) return L.T("En az bir eylem ekleyin.");
+            foreach (var a in rule.Actions)
+            {
+                var t = ActionTypes.FirstOrDefault(x => x.Type == a.Type);
+                if (t.Type == null) return L.F("Bilinmeyen eylem: {0}", a.Type);
+                if (t.NeedsValue && string.IsNullOrWhiteSpace(a.Value)) return L.F("\"{0}\" eyleminin değeri boş.", t.Label);
+            }
+            return null;
+        }
+
+        /// <summary>Canonical field / action names (AI and agents write "Mark_Read", "flag" ...).</summary>
+        public static void Normalize(MailRule rule)
+        {
+            foreach (var c in rule.Conditions)
+                c.Field = ConditionFields.FirstOrDefault(f => f.Field.Equals(c.Field?.Trim(), StringComparison.OrdinalIgnoreCase)).Field ?? c.Field ?? "";
+            foreach (var a in rule.Actions)
+            {
+                var t = (a.Type ?? "").Trim().ToLowerInvariant() switch { "mark_read" or "read" => "mark_as_read", "flag" or "mark_flagged" => "mark_as_flagged", "move" => "move_to_folder", "trash" or "delete" => "move_to_trash", var x => x };
+                a.Type = ActionTypes.FirstOrDefault(x => x.Type == t).Type ?? a.Type ?? "";
+            }
         }
 
         public static bool Matches(MailRule rule, MailHeader h, string? body = null, IEnumerable<AttachmentInfo>? attachments = null)
@@ -233,23 +293,14 @@ namespace MailStudio.Services
                 if (Matches(rule, h, body, atts))
                 {
                     var result = new RuleExecutionResult { Rule = rule };
-                    foreach (var action in rule.Actions)
+                    // Moves run last (at most one): after a move the message has a new UID in another folder,
+                    // so nothing else may address it with the old one.
+                    var move = rule.Actions.FirstOrDefault(a => a.Type == "move_to_trash" || a.Type == "move_to_folder" && !string.IsNullOrWhiteSpace(a.Value));
+                    foreach (var action in rule.Actions.Where(a => a.Type is not ("move_to_folder" or "move_to_trash")))
                     {
                         if (ct.IsCancellationRequested) break;
                         switch (action.Type)
                         {
-                            case "move_to_folder":
-                                if (!string.IsNullOrWhiteSpace(action.Value))
-                                {
-                                    await mailService.MoveAsync(account, h, action.Value.Trim());
-                                    h.Folder = action.Value.Trim();
-                                    result.AppliedActions.Add(L.F("Klasöre taşındı: {0}", action.Value.Trim()));
-                                }
-                                break;
-                            case "move_to_trash":
-                                await mailService.MoveAsync(account, h, null);
-                                result.AppliedActions.Add(L.T("Silinmiş Öğeler'e taşındı"));
-                                break;
                             case "mark_as_read":
                                 await mailService.SetReadAsync(account, h, true);
                                 h.IsRead = true;
@@ -272,13 +323,14 @@ namespace MailStudio.Services
                                 if (taskStore != null)
                                 {
                                     var taskTitle = string.IsNullOrWhiteSpace(action.Value) ? h.Subject : $"{action.Value}: {h.Subject}";
-                                    var task = new Calendar.TaskItem
+                                    taskStore.Save(new Calendar.TaskItem
                                     {
                                         Title = taskTitle,
                                         SourceMail = $"{account.Id}|{h.Folder}|{h.Uid}",
+                                        SourceSubject = h.Subject,
+                                        SourceFrom = h.FromName.Length > 0 ? h.FromName : h.FromAddress,
                                         DueDate = DateTime.Today.AddDays(1)
-                                    };
-                                    taskStore.Save(task);
+                                    });
                                     result.AppliedActions.Add(L.F("Görev oluşturuldu: {0}", taskTitle));
                                 }
                                 break;
@@ -294,12 +346,23 @@ namespace MailStudio.Services
                                 break;
                         }
                     }
+                    if (move != null && !ct.IsCancellationRequested)
+                    {
+                        if (move.Type == "move_to_trash")
+                        {
+                            await mailService.MoveAsync(account, h, null);
+                            result.AppliedActions.Add(L.T("Silinmiş Öğeler'e taşındı"));
+                        }
+                        else
+                        {
+                            await mailService.MoveAsync(account, h, move.Value!.Trim());
+                            result.AppliedActions.Add(L.F("Klasöre taşındı: {0}", move.Value!.Trim()));
+                        }
+                        result.Moved = true;
+                    }
 
                     results.Add(result);
-                    if (rule.StopProcessing || result.StoppedProcessing)
-                    {
-                        break;
-                    }
+                    if (rule.StopProcessing || result.StoppedProcessing || result.Moved) break;
                 }
             }
             return results;
@@ -361,6 +424,7 @@ namespace MailStudio.Services
             var json = response[start..(end + 1)];
             var rule = JsonSerializer.Deserialize<MailRule>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true, AllowTrailingCommas = true })
                        ?? throw new FormatException(L.T("Kural okunamadı."));
+            Normalize(rule);
             rule.Conditions = rule.Conditions.Where(c => ConditionFields.Any(f => f.Field.Equals(c.Field, StringComparison.OrdinalIgnoreCase))).ToList();
             if (rule.Conditions.Count == 0) throw new FormatException(L.T("Kuralda tanınan bir koşul yok."));
             rule.Actions = rule.Actions.Where(a => ActionTypes.Any(t => t.Type.Equals(a.Type, StringComparison.OrdinalIgnoreCase))).ToList();
@@ -368,6 +432,7 @@ namespace MailStudio.Services
             if (string.IsNullOrWhiteSpace(rule.Name)) rule.Name = L.T("Yeni kural");
             rule.Id = Guid.NewGuid().ToString("N");
             rule.Enabled = true;
+            if (Validate(rule) is { } problem) throw new FormatException(problem);
             return rule;
         }
     }

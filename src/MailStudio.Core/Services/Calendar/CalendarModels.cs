@@ -63,6 +63,8 @@ public sealed class CalendarEvent
     public string? ExternalEtag { get; set; }
     public string? AccountId { get; set; }
     public DateTime? LastSyncedUtc { get; set; }
+    /// <summary>Changed locally since the last sync (only events assigned to a synced account calendar).</summary>
+    public bool SyncDirty { get; set; }
 
     [JsonIgnore] public TimeSpan Duration => End > Start ? End - Start : TimeSpan.Zero;
     [JsonIgnore] public bool IsMeeting => Attendees.Count > 0 || Organizer.Length > 0;

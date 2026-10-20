@@ -203,7 +203,6 @@ public partial class AccountWindow : Window
             EnableCalendarSync = CalendarSyncCheck.IsChecked == true,
             CalDavUrl = CalDavUrlBox.Text.Trim(),
             CalDavUser = _existing?.CalDavUser ?? "",
-            CalDavPassword = _existing?.CalDavPassword ?? "",
             LastCalendarSyncUtc = _existing?.LastCalendarSyncUtc,
             CalendarSyncStatus = _existing?.CalendarSyncStatus,
         };

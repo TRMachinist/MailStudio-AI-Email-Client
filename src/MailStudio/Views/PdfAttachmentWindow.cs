@@ -526,19 +526,9 @@ public sealed partial class PdfAttachmentWindow : Window
 
     async Task CompareRevisionAsync()
     {
-        var candidates = RevisionService.FindCandidates(null, "", _path);
-        string? oldPath = candidates.Count > 0 ? candidates[0].FilePath : null;
-        if (string.IsNullOrEmpty(oldPath) || !File.Exists(oldPath))
-        {
-            var dlg = new Microsoft.Win32.OpenFileDialog
-            {
-                Title = L.T("Önceki revizyon PDF dosyasını seçin"),
-                Filter = "PDF (*.pdf)|*.pdf|All files (*.*)|*.*",
-                InitialDirectory = Path.GetDirectoryName(_path)
-            };
-            if (dlg.ShowDialog(this) == true) oldPath = dlg.FileName;
-        }
+        var oldPath = await RevisionLookup.PickOlderAsync(this, _path);
         if (string.IsNullOrEmpty(oldPath) || !File.Exists(oldPath)) return;
+        if (RevisionLookup.ShowDiff != null) { await RevisionLookup.ShowDiff(oldPath, _path); return; }
 
         _status.Text = L.T("Önceki revizyonla karşılaştırılıyor...");
         try

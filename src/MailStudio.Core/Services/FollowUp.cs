@@ -51,7 +51,7 @@ namespace MailStudio.Services
             {
                 if (File.Exists(_path))
                 {
-                    var text = File.ReadAllText(_path);
+                    var text = JsonFile.ReadOrBackup(_path);
                     FollowUps = JsonSerializer.Deserialize<List<FollowUpItem>>(text, JsonOpts) ?? new();
                     return;
                 }
@@ -67,7 +67,7 @@ namespace MailStudio.Services
                 var dir = Path.GetDirectoryName(_path);
                 if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
                 var json = JsonSerializer.Serialize(FollowUps, JsonOpts);
-                File.WriteAllText(_path, json);
+                JsonFile.WriteAtomic(_path, json);
             }
             catch { }
         }

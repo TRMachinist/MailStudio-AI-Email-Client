@@ -20,6 +20,21 @@ public sealed class QuoteStore
     public List<QuoteItem> Quotes { get; private set; } = new();
     public event Action? Changed;
 
+    DateTime _stamp;
+
+    /// <summary>Re-reads quotes.json when the MCP agent server changed it (status updates), so the app never overwrites them.</summary>
+    public bool ReloadIfChanged()
+    {
+        try
+        {
+            if (!File.Exists(_path) || File.GetLastWriteTimeUtc(_path) == _stamp) return false;
+            Load();
+            Changed?.Invoke();
+            return true;
+        }
+        catch (IOException) { return false; }
+    }
+
     public QuoteStore(string? path = null)
     {
         _path = path ?? Path.Combine(AppPaths.Root, "quotes.json");
@@ -32,8 +47,9 @@ public sealed class QuoteStore
         {
             if (File.Exists(_path))
             {
-                var json = File.ReadAllText(_path);
+                var json = JsonFile.ReadOrBackup(_path);
                 Quotes = JsonSerializer.Deserialize<List<QuoteItem>>(json, JsonOpts) ?? new();
+                _stamp = File.GetLastWriteTimeUtc(_path);
                 return;
             }
         }
@@ -49,7 +65,8 @@ public sealed class QuoteStore
             if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
                 Directory.CreateDirectory(dir);
             var json = JsonSerializer.Serialize(Quotes, JsonOpts);
-            File.WriteAllText(_path, json);
+            JsonFile.WriteAtomic(_path, json);
+            _stamp = File.GetLastWriteTimeUtc(_path);
             Changed?.Invoke();
         }
         catch { }
@@ -57,6 +74,7 @@ public sealed class QuoteStore
 
     public void AddOrUpdate(QuoteItem item)
     {
+        ReloadIfChanged();
         item.UpdatedAt = DateTimeOffset.Now;
         var idx = Quotes.FindIndex(q => q.Id == item.Id);
         if (idx >= 0)
@@ -72,6 +90,7 @@ public sealed class QuoteStore
 
     public bool Delete(string id)
     {
+        ReloadIfChanged();
         var removed = Quotes.RemoveAll(q => q.Id == id) > 0;
         if (removed) Save();
         return removed;
@@ -123,7 +142,7 @@ public sealed class QuoteStore
         }
 
         // Check if company is explicitly stated in body (e.g. "Firma: Acme Inc" or "Company: Acme Corp")
-        var compExplicit = Regex.Match(fullText, @"(?:Firma|Company|Müşteri|Customer)[\s:#]+([^\r\n]+)", RegexOptions.IgnoreCase);
+        var compExplicit = Regex.Match(fullText, @"(?:Firma|Company|Müşteri|Customer)[\s:#]+([^\r\n]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         if (compExplicit.Success && compExplicit.Groups[1].Value.Trim().Length > 1)
         {
             item.Customer = compExplicit.Groups[1].Value.Trim();
@@ -133,7 +152,7 @@ public sealed class QuoteStore
         // First check attachment filenames for CAD parts (e.g. "NW-1042-revC.stp", "bracket-revB.stp", "flange-DN100.pdf")
         foreach (var att in attList)
         {
-            var (part, rev) = RevisionService.ParsePartAndRevision(att);
+            var (part, rev) = RevisionService.ParsePartAndRevision("", att);
             if (!string.IsNullOrEmpty(part))
             {
                 item.PartNumber = part;
@@ -153,7 +172,7 @@ public sealed class QuoteStore
             }
             else
             {
-                var partMatch = Regex.Match(fullText, @"(?:Parça\s*(?:No|Numarası|Kodu)?|Part\s*(?:No|Number|Code)?|P\/N|PN)[\s:#]+([A-Za-z0-9_\-\.\/]+)", RegexOptions.IgnoreCase);
+                var partMatch = Regex.Match(fullText, @"(?:Parça\s*(?:No|Numarası|Kodu)?|Part\s*(?:No|Number|Code)?|P\/N|PN)[\s:#]+([A-Za-z0-9_\-\.\/]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
                 if (partMatch.Success)
                 {
                     item.PartNumber = partMatch.Groups[1].Value.Trim();
@@ -173,7 +192,7 @@ public sealed class QuoteStore
         // If revision is still empty, look for revision keywords
         if (string.IsNullOrEmpty(item.Revision))
         {
-            var revMatch = Regex.Match(fullText, @"(?:Rev(?:izyon)?|Revision)[\s.:#-]*([A-Za-z0-9]+)\b", RegexOptions.IgnoreCase);
+            var revMatch = Regex.Match(fullText, @"(?:Rev(?:izyon)?|Revision)[\s.:#-]*([A-Za-z0-9]+)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
             if (revMatch.Success)
             {
                 item.Revision = revMatch.Groups[1].Value.Trim();
@@ -181,7 +200,7 @@ public sealed class QuoteStore
         }
 
         // 3. Quantity (Adet)
-        var qtyMatch = Regex.Match(fullText, @"(?:Adet|Miktar|Quantity|Qty)[\s:#]+(\d[\d\s.,]*)", RegexOptions.IgnoreCase);
+        var qtyMatch = Regex.Match(fullText, @"(?:Adet|Miktar|Quantity|Qty)[\s:#]+(\d[\d\s.,]*)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         if (qtyMatch.Success)
         {
             var clean = Regex.Replace(qtyMatch.Groups[1].Value, @"[^\d]", "");
@@ -189,7 +208,7 @@ public sealed class QuoteStore
         }
         if (item.Quantity == 0)
         {
-            var suffixQty = Regex.Match(fullText, @"\b(\d+)\s*(?:adet|pcs|pieces|ea|stk|adetlik)\b", RegexOptions.IgnoreCase);
+            var suffixQty = Regex.Match(fullText, @"\b(\d+)\s*(?:adet|pcs|pieces|ea|stk|adetlik)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
             if (suffixQty.Success && int.TryParse(suffixQty.Groups[1].Value, out var q) && q > 0)
             {
                 item.Quantity = q;
@@ -197,14 +216,14 @@ public sealed class QuoteStore
         }
 
         // 4. Material (Malzeme)
-        var matMatch = Regex.Match(fullText, @"(?:Malzeme|Material)[\s:#]+([^\r\n,;]+)", RegexOptions.IgnoreCase);
+        var matMatch = Regex.Match(fullText, @"(?:Malzeme|Material)[\s:#]+([^\r\n,;]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         if (matMatch.Success)
         {
             item.Material = matMatch.Groups[1].Value.Trim();
         }
         else
         {
-            var knownMat = Regex.Match(fullText, @"\b(Alüminyum\s*\d*[-A-Za-z0-9]*|Aluminium\s*\d*[-A-Za-z0-9]*|Aluminum\s*\d*[-A-Za-z0-9]*|Paslanmaz\s*(?:Çelik)?(?:\s*1\.\d+|\s*AISI\s*\d+)?|Stainless\s*Steel(?:\s*304|\s*316|\s*1\.\d+)?|AISI\s*\d+|1\.\d{4}|St\s*52(?:-3)?|St\s*37|Çelik|Steel|Delrin|POM|Pirinç|Brass|Titanyum|Titanium)\b", RegexOptions.IgnoreCase);
+            var knownMat = Regex.Match(fullText, @"\b(Alüminyum\s*\d*[-A-Za-z0-9]*|Aluminium\s*\d*[-A-Za-z0-9]*|Aluminum\s*\d*[-A-Za-z0-9]*|Paslanmaz\s*(?:Çelik)?(?:\s*1\.\d+|\s*AISI\s*\d+)?|Stainless\s*Steel(?:\s*304|\s*316|\s*1\.\d+)?|AISI\s*\d+|1\.\d{4}|St\s*52(?:-3)?|St\s*37|Çelik|Steel|Delrin|POM|Pirinç|Brass|Titanyum|Titanium)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
             if (knownMat.Success)
             {
                 item.Material = knownMat.Groups[1].Value.Trim();
@@ -212,14 +231,14 @@ public sealed class QuoteStore
         }
 
         // 5. Quote Deadline (Son Teklif Tarihi)
-        var deadlineMatch = Regex.Match(fullText, @"(?:Son\s*Teklif(?:\s*Tarihi)?|Teklif\s*Tarihi|Son\s*Tarih|Deadline|Quote\s*Due|Due\s*Date)[\s:#]+(\d{4}[./-]\d{1,2}[./-]\d{1,2}|\d{1,2}[./-]\d{1,2}[./-]\d{2,4})", RegexOptions.IgnoreCase);
+        var deadlineMatch = Regex.Match(fullText, @"(?:Son\s*Teklif(?:\s*Tarihi)?|Teklif\s*Tarihi|Son\s*Tarih|Deadline|Quote\s*Due|Due\s*Date)[\s:#]+(\d{4}[./-]\d{1,2}[./-]\d{1,2}|\d{1,2}[./-]\d{1,2}[./-]\d{2,4})", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         if (deadlineMatch.Success && TryParseFlexibleDate(deadlineMatch.Groups[1].Value, out var dline))
         {
             item.Deadline = dline;
         }
 
         // 6. Requested Delivery (İstenen Teslim Tarihi / Termin)
-        var delivMatch = Regex.Match(fullText, @"(?:İstenen\s*Teslim(?:\s*Tarihi)?|Teslim\s*Tarihi|Termin|Delivery(?:\s*Date)?|Requested\s*Delivery|Lead\s*Time)[\s:#]+(\d{4}[./-]\d{1,2}[./-]\d{1,2}|\d{1,2}[./-]\d{1,2}[./-]\d{2,4})", RegexOptions.IgnoreCase);
+        var delivMatch = Regex.Match(fullText, @"(?:İstenen\s*Teslim(?:\s*Tarihi)?|Teslim\s*Tarihi|Termin|Delivery(?:\s*Date)?|Requested\s*Delivery|Lead\s*Time)[\s:#]+(\d{4}[./-]\d{1,2}[./-]\d{1,2}|\d{1,2}[./-]\d{1,2}[./-]\d{2,4})", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         if (delivMatch.Success && TryParseFlexibleDate(delivMatch.Groups[1].Value, out var delivDate))
         {
             item.RequestedDelivery = delivDate;
@@ -279,6 +298,7 @@ public sealed class QuoteStore
     /// </summary>
     public bool CheckSentMail(string toEmail, string? inReplyTo, string? subject, int attachmentCount)
     {
+        ReloadIfChanged();
         if (attachmentCount <= 0) return false;
 
         var modified = false;
