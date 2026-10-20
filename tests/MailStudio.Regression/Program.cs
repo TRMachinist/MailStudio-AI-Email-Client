@@ -2,10 +2,12 @@ using System.Text.RegularExpressions;
 using MailStudio;
 using MailStudio.Models;
 using MailStudio.Services;
+using MailStudio.Services.Calendar;
 using MailStudio.Regression;
 using MimeKit;
 using System.Text;
 using System.Text.Json;
+using System.Net.Http.Headers;
 
 var root = Path.Combine(Path.GetTempPath(), "MailStudio-regression-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
@@ -1687,5 +1689,340 @@ await Test("newsletters: List-Unsubscribe parsing (mailto/http/one-click), mailt
     Check(movedList.Count == 1 && movedList[0].Uid == newUid && movedList[0].Folder == "Newsletters" && movedList[0].ListUnsubscribe == "<https://example.com/unsub>", "Moved message intact in Newsletters folder with ListUnsubscribe header");
 });
 
+await Test("takvim eşitlemesi: kapalıyken hiçbir ağ isteği yapılmaması", async () =>
+{
+    var mock = new MockHttpHandler(r => throw new InvalidOperationException("Kapalıyken hiçbir ağ isteği yapılmamalıdır!"));
+    var cDir = Path.Combine(root, "cal-disabled-test");
+    Directory.CreateDirectory(cDir);
+    var store = new CalendarStore(Path.Combine(cDir, "calendar.json"));
+    using var sync = new CalendarSyncService(store, mock);
+
+    var acc = new AccountConfig { Id = "acc-disabled", EnableCalendarSync = false, AuthType = AuthType.Microsoft };
+    var res = await sync.SyncAccountAsync(acc);
+    Check(res.Success, "Sync result success when disabled");
+    Check(mock.RequestCount == 0, "Zero HTTP requests executed when calendar sync is disabled");
+});
+
+await Test("takvim eşitlemesi: Microsoft Graph iki yönlü eşitleme, çakışma (sunucu kazanır ve not düşülür) ve silme", async () =>
+{
+    var cDir = Path.Combine(root, "cal-graph-test");
+    Directory.CreateDirectory(cDir);
+    var store = new CalendarStore(Path.Combine(cDir, "calendar.json"));
+
+    // Server state
+    var serverEvents = new List<Dictionary<string, object>>
+    {
+        new()
+        {
+            ["id"] = "graph-1",
+            ["changeKey"] = "ck-1",
+            ["subject"] = "Talaşlı İmalat Koordinasyon",
+            ["start"] = new Dictionary<string, string> { ["dateTime"] = "2026-10-21T09:00:00", ["timeZone"] = "UTC" },
+            ["end"] = new Dictionary<string, string> { ["dateTime"] = "2026-10-21T10:00:00", ["timeZone"] = "UTC" },
+            ["location"] = new Dictionary<string, string> { ["displayName"] = "Toplantı Odası 1" },
+            ["isAllDay"] = false,
+            ["bodyPreview"] = "Haftalık üretim planı"
+        }
+    };
+
+    var serverReceivedDeletes = new List<string>();
+    var serverReceivedPosts = new List<string>();
+
+    var mock = new MockHttpHandler(req =>
+    {
+        var uri = req.RequestUri?.ToString() ?? "";
+        if (req.Method == HttpMethod.Get && uri.Contains("/me/events"))
+        {
+            var json = JsonSerializer.Serialize(new { value = serverEvents });
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
+        }
+        if (req.Method == HttpMethod.Post && uri.Contains("/me/events"))
+        {
+            var body = req.Content?.ReadAsStringAsync().Result ?? "";
+            serverReceivedPosts.Add(body);
+            var resJson = JsonSerializer.Serialize(new { id = "graph-2", changeKey = "ck-2" });
+            return new HttpResponseMessage(System.Net.HttpStatusCode.Created) { Content = new StringContent(resJson, Encoding.UTF8, "application/json") };
+        }
+        if (req.Method == HttpMethod.Patch && uri.Contains("/me/events/"))
+        {
+            var resJson = JsonSerializer.Serialize(new { id = "graph-1", changeKey = "ck-1-updated" });
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(resJson, Encoding.UTF8, "application/json") };
+        }
+        if (req.Method == HttpMethod.Delete && uri.Contains("/me/events/"))
+        {
+            var id = uri.Substring(uri.LastIndexOf('/') + 1);
+            serverReceivedDeletes.Add(id);
+            return new HttpResponseMessage(System.Net.HttpStatusCode.NoContent);
+        }
+        return new HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
+    });
+
+    using var sync = new CalendarSyncService(store, mock) { CustomAccessToken = "mock-token" };
+    var acc = new AccountConfig { Id = "acc-graph", EnableCalendarSync = true, AuthType = AuthType.Microsoft };
+
+    // 1. Initial read sync: server event imported locally
+    var r1 = await sync.SyncAccountAsync(acc);
+    Check(r1.Success, "Initial sync succeeded");
+    Check(r1.CreatedLocally == 1, "1 event created locally from server");
+    Check(store.Events.Count == 1, "CalendarStore has 1 event");
+    var ev1 = store.FindByExternalId("graph-1");
+    Check(ev1 != null && ev1.Title == "Talaşlı İmalat Koordinasyon", "Imported event title correct");
+    Check(ev1?.ExternalEtag == "ck-1", "Imported event etag saved");
+
+    // 2. Local addition pushed to server
+    var newLocal = new CalendarEvent
+    {
+        AccountId = acc.Id,
+        Title = "Kalite Kontrol Denetimi",
+        Start = DateTime.Today.AddHours(14),
+        End = DateTime.Today.AddHours(15),
+        Location = "Ölçüm Laboratuvarı"
+    };
+    store.Save(newLocal);
+    Check(store.Events.Count == 2, "CalendarStore now has 2 events");
+
+    var r2 = await sync.SyncAccountAsync(acc);
+    Check(r2.Success, "Second sync succeeded");
+    Check(r2.CreatedRemote == 1, "New local event pushed to server");
+    Check(serverReceivedPosts.Count == 1, "Server received 1 POST request");
+    var reloadedLocal = store.Find(newLocal.Id);
+    Check(reloadedLocal?.ExternalId == "graph-2" && reloadedLocal?.ExternalEtag == "ck-2", "New local event received remote ID and Etag");
+
+    // 3. Conflict resolution: both modified -> Server wins and note is made
+    ev1!.Title = "Yerel Olarak Değiştirildi";
+    ev1.Modified = DateTime.Now;
+    store.Save(ev1);
+
+    // Server also changed
+    serverEvents[0]["subject"] = "Sunucu Tarafında Değiştirildi";
+    serverEvents[0]["changeKey"] = "ck-1-conflict";
+
+    var r3 = await sync.SyncAccountAsync(acc);
+    Check(r3.Success, "Conflict sync succeeded");
+    Check(r3.ConflictsResolved == 1, "Conflict resolved");
+    var confEv = store.FindByExternalId("graph-1");
+    Check(confEv?.Title == "Sunucu Tarafında Değiştirildi", "Server won conflict on Title");
+    Check(confEv?.Notes.Contains("Çakışma çözüldü") == true, "Conflict resolution note recorded in Notes");
+
+    // 4. Local deletion -> server receives DELETE
+    store.Delete(reloadedLocal!);
+    Check(store.Events.Count == 1, "Local store has 1 event after deletion");
+    Check(store.GetTombstones(acc.Id).Count == 1, "Tombstone created for deleted event");
+
+    var r4 = await sync.SyncAccountAsync(acc);
+    Check(r4.Success, "Delete sync succeeded");
+    Check(r4.DeletedRemote == 1, "Event deleted on server");
+    Check(serverReceivedDeletes.Contains("graph-2"), "Server received DELETE for graph-2");
+    Check(store.GetTombstones(acc.Id).Count == 0, "Tombstone removed after successful remote delete");
+
+    // 5. Server deletion -> local event removed
+    serverEvents.Clear();
+    var r5 = await sync.SyncAccountAsync(acc);
+    Check(r5.Success, "Server deletion sync succeeded");
+    Check(r5.DeletedLocally == 1, "Event removed locally when deleted on server");
+    Check(store.Events.Count == 0, "CalendarStore is now empty");
+});
+
+await Test("takvim eşitlemesi: Google Calendar API v3 iki yönlü eşitleme, silme ve çakışma", async () =>
+{
+    var cDir = Path.Combine(root, "cal-google-test");
+    Directory.CreateDirectory(cDir);
+    var store = new CalendarStore(Path.Combine(cDir, "calendar.json"));
+
+    var googleEvents = new List<Dictionary<string, object>>
+    {
+        new()
+        {
+            ["id"] = "goo-1",
+            ["etag"] = "\"etag-g1\"",
+            ["status"] = "confirmed",
+            ["summary"] = "Siemens RFQ Toplantısı",
+            ["description"] = "Teklif detayları",
+            ["start"] = new Dictionary<string, string> { ["dateTime"] = "2026-10-22T11:00:00Z" },
+            ["end"] = new Dictionary<string, string> { ["dateTime"] = "2026-10-22T12:00:00Z" },
+            ["location"] = "Ofis"
+        }
+    };
+
+    var serverReceivedDeletes = new List<string>();
+
+    var mock = new MockHttpHandler(req =>
+    {
+        var uri = req.RequestUri?.ToString() ?? "";
+        if (req.Method == HttpMethod.Get && uri.Contains("/calendars/primary/events"))
+        {
+            var json = JsonSerializer.Serialize(new { items = googleEvents });
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
+        }
+        if (req.Method == HttpMethod.Post && uri.Contains("/calendars/primary/events"))
+        {
+            googleEvents.Add(new Dictionary<string, object>
+            {
+                ["id"] = "goo-2",
+                ["etag"] = "\"etag-g2\"",
+                ["status"] = "confirmed",
+                ["summary"] = "Fason Sevkiyatı"
+            });
+            var resJson = JsonSerializer.Serialize(new { id = "goo-2", etag = "\"etag-g2\"" });
+            return new HttpResponseMessage(System.Net.HttpStatusCode.Created) { Content = new StringContent(resJson, Encoding.UTF8, "application/json") };
+        }
+        if (req.Method == HttpMethod.Patch && uri.Contains("/calendars/primary/events/"))
+        {
+            var resJson = JsonSerializer.Serialize(new { id = "goo-1", etag = "\"etag-g1-updated\"" });
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(resJson, Encoding.UTF8, "application/json") };
+        }
+        if (req.Method == HttpMethod.Delete && uri.Contains("/calendars/primary/events/"))
+        {
+            var id = uri.Substring(uri.LastIndexOf('/') + 1);
+            serverReceivedDeletes.Add(id);
+            googleEvents.RemoveAll(x => (string)x["id"] == id);
+            return new HttpResponseMessage(System.Net.HttpStatusCode.NoContent);
+        }
+        return new HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
+    });
+
+    using var sync = new CalendarSyncService(store, mock) { CustomAccessToken = "mock-google-token" };
+    var acc = new AccountConfig { Id = "acc-google", EnableCalendarSync = true, AuthType = AuthType.Google };
+
+    // Initial sync
+    var r1 = await sync.SyncAccountAsync(acc);
+    Check(r1.Success, "Google initial sync succeeded");
+    Check(r1.CreatedLocally == 1, "Google event created locally");
+    var ev = store.FindByExternalId("goo-1");
+    Check(ev != null && ev.Title == "Siemens RFQ Toplantısı", "Google title correct");
+
+    // Local addition
+    var localEv = new CalendarEvent { AccountId = acc.Id, Title = "Fason Sevkiyatı", Start = DateTime.Today.AddHours(16), End = DateTime.Today.AddHours(17) };
+    store.Save(localEv);
+    var r2 = await sync.SyncAccountAsync(acc);
+    Check(r2.CreatedRemote == 1, "Google local addition pushed");
+    Check(store.Find(localEv.Id)?.ExternalId == "goo-2", "Google remote id assigned");
+
+    // Conflict: both modified
+    ev!.Title = "Yerel Google Başlık";
+    ev.Modified = DateTime.Now;
+    store.Save(ev);
+    googleEvents[0]["summary"] = "Sunucu Google Başlık";
+    googleEvents[0]["etag"] = "\"etag-conflict\"";
+
+    var r3 = await sync.SyncAccountAsync(acc);
+    Check(r3.ConflictsResolved == 1, "Google conflict resolved");
+    var conf = store.FindByExternalId("goo-1");
+    Check(conf?.Title == "Sunucu Google Başlık", "Google conflict server won");
+    Check(conf?.Notes.Contains("Çakışma çözüldü") == true, "Google conflict note present");
+
+    // Deletion
+    store.Delete(store.Find(localEv.Id)!);
+    var r4 = await sync.SyncAccountAsync(acc);
+    Check(r4.DeletedRemote == 1 && serverReceivedDeletes.Contains("goo-2"), "Google remote delete executed");
+});
+
+await Test("takvim eşitlemesi: CalDAV iki yönlü eşitleme, XML REPORT ayrıştırma, VEVENT PUT/DELETE ve çakışma", async () =>
+{
+    var cDir = Path.Combine(root, "cal-caldav-test");
+    Directory.CreateDirectory(cDir);
+    var store = new CalendarStore(Path.Combine(cDir, "calendar.json"));
+
+    var caldavVevent = @"BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//MailStudio//Test//EN
+BEGIN:VEVENT
+UID:caldav-uid-100@test
+SUMMARY:CalDAV Bakım Randevusu
+DTSTART:20261023T080000Z
+DTEND:20261023T090000Z
+LOCATION:Atölye 2
+DESCRIPTION:Periyodik CNC bakım
+END:VEVENT
+END:VCALENDAR";
+
+    var xmlResponse = $@"<D:multistatus xmlns:D=""DAV:"" xmlns:C=""urn:ietf:params:xml:ns:caldav"">
+  <D:response>
+    <D:href>/caldav/events/caldav-100.ics</D:href>
+    <D:propstat>
+      <D:prop>
+        <D:getetag>""etag-caldav-1""</D:getetag>
+        <C:calendar-data>{caldavVevent}</C:calendar-data>
+      </D:prop>
+      <D:status>HTTP/1.1 200 OK</D:status>
+    </D:propstat>
+  </D:response>
+</D:multistatus>";
+
+    var serverReceivedPuts = new List<string>();
+    var serverReceivedDeletes = new List<string>();
+
+    var mock = new MockHttpHandler(req =>
+    {
+        var uri = req.RequestUri?.ToString() ?? "";
+        if (req.Method.Method == "REPORT" && uri.Contains("/caldav/"))
+        {
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(xmlResponse, Encoding.UTF8, "application/xml") };
+        }
+        if (req.Method == HttpMethod.Put && uri.Contains("/caldav/"))
+        {
+            serverReceivedPuts.Add(uri);
+            var res = new HttpResponseMessage(System.Net.HttpStatusCode.Created);
+            res.Headers.ETag = new EntityTagHeaderValue("\"etag-caldav-created\"");
+            return res;
+        }
+        if (req.Method == HttpMethod.Delete && uri.Contains("/caldav/"))
+        {
+            serverReceivedDeletes.Add(uri);
+            return new HttpResponseMessage(System.Net.HttpStatusCode.NoContent);
+        }
+        return new HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
+    });
+
+    using var sync = new CalendarSyncService(store, mock) { CustomAccessToken = "mock-caldav-auth" };
+    var acc = new AccountConfig
+    {
+        Id = "acc-caldav",
+        EnableCalendarSync = true,
+        AuthType = AuthType.Password,
+        CalDavUrl = "https://caldav.example.test/caldav/events",
+        CalDavUser = "testuser",
+        CalDavPassword = "testpassword"
+    };
+
+    // 1. Initial sync: XML REPORT parsed, local event created
+    var r1 = await sync.SyncAccountAsync(acc);
+    Check(r1.Success, "CalDAV initial sync succeeded");
+    Check(r1.CreatedLocally == 1, "CalDAV event created locally from VEVENT");
+    var ev = store.FindByExternalId("/caldav/events/caldav-100.ics");
+    Check(ev != null && ev.Title == "CalDAV Bakım Randevusu", "CalDAV event summary parsed properly");
+    Check(ev?.ExternalEtag == "\"etag-caldav-1\"", "CalDAV event etag saved");
+
+    // 2. Local addition -> CalDAV PUT
+    var localEv = new CalendarEvent { AccountId = acc.Id, Title = "Takım Bileme", Start = DateTime.Today.AddHours(10), End = DateTime.Today.AddHours(11) };
+    store.Save(localEv);
+    var r2 = await sync.SyncAccountAsync(acc);
+    Check(r2.CreatedRemote == 1, "CalDAV local event pushed via PUT");
+    Check(serverReceivedPuts.Count == 1, "CalDAV server received 1 PUT");
+
+    // 3. Local deletion -> CalDAV DELETE
+    var createdEv = store.Find(localEv.Id);
+    Check(createdEv?.ExternalId != null, "Created event has CalDAV ExternalId");
+    store.Delete(createdEv!);
+    var r3 = await sync.SyncAccountAsync(acc);
+    Check(r3.DeletedRemote == 1, "CalDAV remote event deleted");
+    Check(serverReceivedDeletes.Count == 1, "CalDAV server received 1 DELETE");
+});
+
 Console.WriteLine($"RESULT {passed} passed. Synthetic evidence: {root}");
+
+sealed class MockHttpHandler : HttpMessageHandler
+{
+    public Func<HttpRequestMessage, HttpResponseMessage> Handler { get; set; }
+    public int RequestCount { get; private set; }
+
+    public MockHttpHandler(Func<HttpRequestMessage, HttpResponseMessage> handler) => Handler = handler;
+
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        RequestCount++;
+        return Task.FromResult(Handler(request));
+    }
+}
+
 

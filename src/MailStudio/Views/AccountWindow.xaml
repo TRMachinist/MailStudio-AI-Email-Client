@@ -118,6 +118,23 @@
                           VerticalAlignment="Center" Margin="12,0,0,0"/>
             </Grid>
 
+            <Expander Header="Takvim Eşitlemesi (Google / Outlook / CalDAV)" Margin="0,12,0,0" x:Name="CalendarExpander">
+                <StackPanel Margin="0,4,0,0">
+                    <CheckBox x:Name="CalendarSyncCheck" Content="Takvim etkinliklerini senkronize et"
+                              Checked="OnCalendarSyncCheckChanged" Unchecked="OnCalendarSyncCheckChanged"/>
+                    <Border x:Name="CalendarConsentNotice" Visibility="Collapsed" Background="{DynamicResource StatusWarningBgBrush}" BorderBrush="{DynamicResource StatusWarningBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="10,7" Margin="0,8,0,0">
+                        <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource StatusWarningBrush}"
+                                   Text="Takvim eşitlemesi Microsoft Graph veya Google Calendar takvim izni gerektirir. İlk eşitlemede tarayıcıda izin onay penceresi açılabilir."/>
+                    </Border>
+                    <Grid x:Name="CalDavGrid" Margin="0,8,0,0" Visibility="Collapsed">
+                        <StackPanel>
+                            <TextBlock Text="CalDAV Sunucu URL'si (boşsa varsayılan)" Style="{StaticResource Lbl}"/>
+                            <TextBox x:Name="CalDavUrlBox"/>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Expander>
+
             <Expander Header="Sunucu ayarları" Margin="0,12,0,0" x:Name="ServerExpander">
                 <StackPanel Margin="0,4,0,0">
                     <Grid>

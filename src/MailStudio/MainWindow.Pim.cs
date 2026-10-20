@@ -36,6 +36,8 @@ public partial class MainWindow : ITaskHost, IQuoteHost
     public CalendarView? CalendarViewForTests => _calendarView;
     public TasksView? TasksViewForTests => _tasksView;
     public QuoteDeskView? QuoteDeskViewForTests => _quoteDeskView;
+    CalendarSyncService? _calendarSync;
+    public CalendarSyncService CalendarSync => _calendarSync ??= new CalendarSyncService(_calendar, _oauth);
 
     void InitPim()
     {
@@ -74,7 +76,10 @@ public partial class MainWindow : ITaskHost, IQuoteHost
         switch (m)
         {
             case PimModule.Calendar:
-                _calendarView ??= new CalendarView(_calendar, this);
+                _calendarView ??= new CalendarView(_calendar, this)
+                {
+                    SyncHandler = async () => { await CalendarSync.SyncAllAccountsAsync(_store.Accounts); }
+                };
                 PimHost.Content = _calendarView; PimSide.Content = _calendarView.SidePanel;
                 Title = L.T("Takvim") + " - " + L.ProductName;
                 _calendarView.Refresh();

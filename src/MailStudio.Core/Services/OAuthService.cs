@@ -16,9 +16,14 @@ public class OAuthService
     {
         "https://outlook.office.com/IMAP.AccessAsUser.All",
         "https://outlook.office.com/SMTP.Send",
+        "Calendars.ReadWrite",
         "offline_access"
     };
-    static readonly string[] GoogleScopes = { "https://mail.google.com/" };
+    static readonly string[] GoogleScopes =
+    {
+        "https://mail.google.com/",
+        "https://www.googleapis.com/auth/calendar"
+    };
 
     readonly Func<AppSettings> _settings;
     IPublicClientApplication? _msal;
@@ -30,7 +35,7 @@ public class OAuthService
     /// <summary>Throws if interactive sign-in is not allowed (background / MCP) and there is no token.</summary>
     public bool AllowInteractive { get; set; } = true;
 
-    public async Task<string> GetAccessTokenAsync(AccountConfig a, CancellationToken ct = default)
+    public virtual async Task<string> GetAccessTokenAsync(AccountConfig a, CancellationToken ct = default)
     {
         await _lock.WaitAsync(ct);
         try
@@ -44,6 +49,9 @@ public class OAuthService
         }
         finally { _lock.Release(); }
     }
+
+    public virtual async Task<string> GetCalendarAccessTokenAsync(AccountConfig a, CancellationToken ct = default) =>
+        await GetAccessTokenAsync(a, ct);
 
     // ---------------------------------------------------------------- Microsoft
 

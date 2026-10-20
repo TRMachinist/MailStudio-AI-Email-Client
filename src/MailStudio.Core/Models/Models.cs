@@ -34,6 +34,13 @@ public class AccountConfig
     /// <summary>Attachments larger than this (MB) are not downloaded automatically; they download on click.</summary>
     public int OfflineMaxAttachmentMB { get; set; } = 30;
     public string Color { get; set; } = "";
+    /// <summary>Synchronize calendar events with Microsoft Graph, Google Calendar API v3, or CalDAV (disabled by default).</summary>
+    public bool EnableCalendarSync { get; set; } = false;
+    public string CalDavUrl { get; set; } = "";
+    public string CalDavUser { get; set; } = "";
+    public string CalDavPassword { get; set; } = "";
+    public DateTime? LastCalendarSyncUtc { get; set; }
+    public string? CalendarSyncStatus { get; set; }
 }
 
 public class MailSignature

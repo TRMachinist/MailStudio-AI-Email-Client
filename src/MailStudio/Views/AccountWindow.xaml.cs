@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -55,7 +55,11 @@ public partial class AccountWindow : Window
             OfflineBox.SelectedItem = OfflineBox.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == existing.OfflineMonths.ToString()) ?? OfflineBox.Items[3];
             OfflineAttCheck.IsChecked = existing.OfflineAttachments;
             PasswordLabel.Text = L.T("Şifre (değiştirmek için doldur)");
+            CalendarSyncCheck.IsChecked = existing.EnableCalendarSync;
+            CalDavUrlBox.Text = existing.CalDavUrl;
+            CalendarExpander.IsExpanded = existing.EnableCalendarSync;
         }
+        UpdateCalendarSyncUi();
     }
 
     AuthType SelectedAuth => (AuthType)Math.Max(0, AuthBox.SelectedIndex);
@@ -88,6 +92,18 @@ public partial class AccountWindow : Window
         OAuthExpander.IsExpanded = oauth && missingId;
         SaveButton.Content = oauth ? L.T("Oturum Aç ve Kaydet") : L.T("Kaydet");
         TestButton.Content = oauth ? L.T("Oturum Aç / Sına") : L.T("Bağlantıyı Sına");
+        UpdateCalendarSyncUi();
+    }
+
+    void OnCalendarSyncCheckChanged(object sender, RoutedEventArgs e) => UpdateCalendarSyncUi();
+
+    void UpdateCalendarSyncUi()
+    {
+        if (CalendarConsentNotice == null || CalDavGrid == null) return;
+        var enabled = CalendarSyncCheck.IsChecked == true;
+        var oauth = SelectedAuth == AuthType.Microsoft || SelectedAuth == AuthType.Google;
+        CalendarConsentNotice.Visibility = enabled && oauth ? Visibility.Visible : Visibility.Collapsed;
+        CalDavGrid.Visibility = enabled && !oauth ? Visibility.Visible : Visibility.Collapsed;
     }
 
     void OnOAuthHelp(object sender, RoutedEventArgs e)
@@ -184,6 +200,12 @@ public partial class AccountWindow : Window
             OfflineMonths = int.Parse((string)((OfflineBox.SelectedItem as ComboBoxItem)?.Tag ?? "12")),
             OfflineAttachments = OfflineAttCheck.IsChecked == true,
             OfflineMaxAttachmentMB = _existing?.OfflineMaxAttachmentMB ?? 30,
+            EnableCalendarSync = CalendarSyncCheck.IsChecked == true,
+            CalDavUrl = CalDavUrlBox.Text.Trim(),
+            CalDavUser = _existing?.CalDavUser ?? "",
+            CalDavPassword = _existing?.CalDavPassword ?? "",
+            LastCalendarSyncUtc = _existing?.LastCalendarSyncUtc,
+            CalendarSyncStatus = _existing?.CalendarSyncStatus,
         };
     }
 

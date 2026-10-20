@@ -833,12 +833,42 @@ internal static class Program
             Check(moveNewsBtn != null, "MoveToNewslettersButton exists in UnsubscribeBar");
 
             Console.WriteLine("PASS Bültenler ve Abonelikten Çıkma UI elements verified"); _passed++;
+
+            // 3.11 Google / Outlook takvim eşitlemesi UI check
+            var accSync = new AccountConfig
+            {
+                DisplayName = "Eşitleme Hesabı",
+                Email = "sync@example.com",
+                AuthType = AuthType.Microsoft,
+                EnableCalendarSync = true
+            };
+            var accSyncWin = new AccountWindow(accSync, new AppSettings(), new OAuthService(() => new AppSettings()));
+            accSyncWin.Show(); await Task.Delay(300);
+            var calSyncCheck = accSyncWin.FindName("CalendarSyncCheck") as CheckBox;
+            var calNotice = accSyncWin.FindName("CalendarConsentNotice") as Border;
+            Check(calSyncCheck != null && calSyncCheck.IsChecked == true, "CalendarSyncCheck is checked in AccountWindow");
+            Check(calNotice != null && calNotice.Visibility == Visibility.Visible, "CalendarConsentNotice is visible for OAuth account");
+            Audit(accSyncWin, "AccountWindow-CalendarSync");
+            Capture(accSyncWin, "account-window-calendar-sync.png");
+            accSyncWin.Close();
+
+            // Calendar ribbon sync command
+            main.SwitchModule(PimModule.Calendar); await Task.Delay(400);
+            var calView = main.CalendarViewForTests;
+            Check(calView != null, "CalendarView initialized in MainWindow");
+            Check(calView.Ribbon.Children.OfType<FrameworkElement>().Any(g => g.ToString()!.Contains("Eşitle") || g.ToString()!.Contains("Sync")), "Calendar ribbon contains Eşitle group");
+            main.SwitchModule(PimModule.Mail);
+
+            Console.WriteLine("PASS Google / Outlook takvim eşitlemesi UI elements verified"); _passed++;
         }
 
         if (L.IsEnglish)
         {
             foreach (var w in Application.Current.Windows.OfType<Window>().Where(w => w.IsVisible).ToList()) Audit(w, w.GetType().Name);
             var accWin = new AccountWindow(null, new AppSettings(), new OAuthService(() => new AppSettings())); accWin.Show(); await Task.Delay(300); Audit(accWin, "AccountWindow"); Capture(accWin, "account-window.png"); accWin.Close();
+            var auditAccSync = new AccountConfig { DisplayName = "Sync Account", Email = "sync@example.com", AuthType = AuthType.Microsoft, EnableCalendarSync = true };
+            var auditAccSyncWin = new AccountWindow(auditAccSync, new AppSettings(), new OAuthService(() => new AppSettings()));
+            auditAccSyncWin.Show(); await Task.Delay(300); Audit(auditAccSyncWin, "AccountWindow(CalendarSync-en)"); auditAccSyncWin.Close();
             var contactsWin = new ContactsWindow(false); contactsWin.Show(); await Task.Delay(300); Audit(contactsWin, "ContactsWindow"); contactsWin.Close();
             var pickWin = new ContactsWindow(true); pickWin.Show(); await Task.Delay(300); Audit(pickWin, "ContactsWindow(pick)"); pickWin.Close();
             var cardWin = new ContactEditWindow(new Contact()); cardWin.Show(); await Task.Delay(300); Audit(cardWin, "ContactEditWindow"); cardWin.Close();

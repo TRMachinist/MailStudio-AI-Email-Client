@@ -74,6 +74,8 @@ public sealed class CalendarView : UserControl
         Ribbon.Children.Add(PimUi.Group(L.T("Paylaş"),
             PimUi.Cmd("", L.T("İçe aktar (.ics)"), (_, _) => Import(), L.T("Outlook, Google Takvim veya bir davet dosyasından (.ics)")),
             PimUi.Cmd("", L.T("Dışa aktar"), (_, _) => Export(), L.T("Takvimi .ics dosyası olarak kaydet"))));
+        Ribbon.Children.Add(PimUi.Group(L.T("Eşitle"),
+            PimUi.Cmd("", L.T("Şimdi Eşitle"), (_, _) => SyncNow(), L.T("Google ve Outlook takvimini şimdi eşitle"))));
 
         // ---- side panel
         var side = new StackPanel();
@@ -102,6 +104,24 @@ public sealed class CalendarView : UserControl
 
     public CalendarViewMode Mode => _mode;
     public DateTime Date => _date;
+    public Func<Task>? SyncHandler { get; set; }
+
+    async void SyncNow()
+    {
+        if (SyncHandler != null)
+        {
+            _host.Status(L.T("Takvim eşitleniyor..."));
+            try
+            {
+                await SyncHandler();
+                _host.Status(L.T("Takvim eşitlemesi tamamlandı."));
+            }
+            catch (Exception ex)
+            {
+                _host.Status(L.T("Takvim eşitleme hatası: ") + ex.Message);
+            }
+        }
+    }
 
     void OnKey(object sender, KeyEventArgs e)
     {

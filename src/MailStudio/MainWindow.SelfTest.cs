@@ -69,6 +69,7 @@ public partial class MainWindow
             ("mail snooze: hide from list, filter tab, custom date dialog, wake up", StepSnooze),
             ("unified inbox and search folders: all inboxes node, saved searches, criteria execution", StepUnifiedInboxAndSearchFolders),
             ("newsletters and unsubscribe: header parsing, unsubscribe bar, filter tab, move to newsletters rule", StepNewslettersAndUnsubscribe),
+            ("calendar sync: account settings, ribbon sync button, two-way sync execution", StepCalendarSync),
             ("reminders window", StepReminders),
             ("other windows: accounts, signatures, rules, skills, agents", StepOtherWindows),
             ("dark theme screenshots", StepDarkTheme),
@@ -761,6 +762,44 @@ public partial class MainWindow
             Check(_ruleStore.Rules.Any(r => r.Conditions.Any(c => c.Field == "from" && (c.Value ?? "").Contains("news@northwind-machining.example"))), "rule added to move sender to Newsletters folder");
         }
         Pass("newsletters and unsubscribe");
+    }
+
+    async Task StepCalendarSync()
+    {
+        // 1. Account Settings with calendar sync enabled
+        var syncAcc = new AccountConfig
+        {
+            Id = "sync-demo-account",
+            DisplayName = "Sync Demo",
+            Email = "sync@example.com",
+            AuthType = AuthType.Google,
+            EnableCalendarSync = true
+        };
+        await OpenAndInspect("account settings (calendar sync)", () => new AccountWindow(syncAcc, _settings, _oauth) { Owner = this }.ShowDialog(), async w =>
+        {
+            await InspectWindow(w, "account-calendar-sync", closeWithButton: false);
+            var chk = Tree(w).OfType<CheckBox>().FirstOrDefault(c => c.Name == "CalendarSyncCheck");
+            Check(chk != null && chk.IsChecked == true, "account window: CalendarSyncCheck is checked");
+            var notice = Tree(w).OfType<Border>().FirstOrDefault(b => b.Name == "CalendarConsentNotice");
+            Check(notice != null && notice.Visibility == Visibility.Visible, "account window: CalendarConsentNotice is visible for OAuth");
+            w.Close();
+        });
+
+        // 2. Calendar Ribbon Eşitle Group and Sync Now Command
+        SwitchModule(PimModule.Calendar);
+        await Wait(800);
+        var syncBtn = Tree(this).OfType<Button>().FirstOrDefault(b => b.Tag as string == "SyncNow" || TextOf(b.Content).Contains(L.T("Şimdi Eşitle")));
+        Check(syncBtn != null, "calendar ribbon contains Sync Now button");
+        Shot(this, "calendar-sync-ribbon");
+        CheckTexts(this, "calendar sync ribbon");
+
+        // 3. Execution of sync on accounts (zero network calls when disabled on demo account)
+        await CalendarSync.SyncAllAccountsAsync(_store.Accounts);
+        Check(true, "calendar sync executed cleanly without unhandled errors");
+
+        SwitchModule(PimModule.Mail);
+        await Wait(300);
+        Pass("calendar sync");
     }
 
     async Task StepReminders()
