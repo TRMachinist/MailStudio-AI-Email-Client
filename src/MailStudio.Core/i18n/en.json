@@ -1876,6 +1876,7 @@
  "{0}DXF {1} · {2} nesne · Tekerlek: yakınlaştır · sol/orta sürükle: kaydır · M: ölç · F: sığdır": "{0}DXF {1} · {2} objects · Wheel: zoom · left/middle drag: pan · M: measure · F: fit",
  "|Tüm dosyalar|*.*": "|All files|*.*",
  "Çakışıyor: {0}": "Conflicts: {0}",
+ "Çalışma Sayfası": "Worksheet",
  "Çalışma sayfası": "Sheet",
  "Çalışma sayfası: {0} → {1}": "Worksheet: {0} → {1}",
  "Çalışır": "Runs",

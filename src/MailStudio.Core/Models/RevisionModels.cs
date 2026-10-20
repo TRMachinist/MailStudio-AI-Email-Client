@@ -21,6 +21,7 @@ public class RevisionDiffItem
     public string? NewValue { get; set; }
     public string Description { get; set; } = "";
     public string CategoryDisplay => L.T(Category);
+    public string PropertyDisplay => L.T(Property);
 
     public string BadgeText => Kind switch
     {

@@ -200,7 +200,7 @@ public sealed class RevisionDiffWindow : Window
         {
             Header = L.T("Özellik / Alan"),
             Width = 170,
-            DisplayMemberBinding = new Binding("Property")
+            DisplayMemberBinding = new Binding("PropertyDisplay")
         });
 
         grid.Columns.Add(new GridViewColumn
