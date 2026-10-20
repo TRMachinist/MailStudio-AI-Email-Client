@@ -197,6 +197,10 @@ public class MailCache
             Exec(c, "UPDATE messages SET is_draft=$dr,reply_to=$rt,in_reply_to=$ir,refs_json=$refs WHERE account=$a AND folder=$f AND uid=$u",
                 ("$dr", h.IsDraft ? 1 : 0), ("$rt", h.ReplyTo), ("$ir", h.InReplyTo), ("$refs", System.Text.Json.JsonSerializer.Serialize(h.References)),
                 ("$a", h.AccountId), ("$f", h.Folder), ("$u", (long)h.Uid));
+            if (h.Size > 0)
+                Exec(c, "UPDATE messages SET msg_size=$sz WHERE account=$a AND folder=$f AND uid=$u", ("$sz", h.Size), ("$a", h.AccountId), ("$f", h.Folder), ("$u", (long)h.Uid));
+            if (h.Importance is "high" or "low")
+                Exec(c, "UPDATE messages SET importance=$imp WHERE account=$a AND folder=$f AND uid=$u", ("$imp", h.Importance), ("$a", h.AccountId), ("$f", h.Folder), ("$u", (long)h.Uid));
             if (!string.IsNullOrEmpty(h.ListUnsubscribe))
             {
                 Exec(c, "UPDATE messages SET list_unsubscribe=$unsub, list_unsubscribe_post=$unsubpost WHERE account=$a AND folder=$f AND uid=$u",

@@ -435,7 +435,8 @@ public partial class MainWindow : ITaskHost, IQuoteHost
     void ITaskHost.ComposeReminder(TaskItem task)
     {
         if (_store.Accounts.Count == 0) { MessageBox.Show(this, L.T("Önce bir hesap ekleyin."), "MailStudio"); return; }
-        var account = (_store.Accounts.FirstOrDefault(a => task.SourceMail != null && task.SourceMail.StartsWith(a.Id + "|")))
+        var account = (_store.Accounts.FirstOrDefault(a => a.Id == task.FollowUpAccountId))
+                      ?? (_store.Accounts.FirstOrDefault(a => task.SourceMail != null && task.SourceMail.StartsWith(a.Id + "|")))
                       ?? (_current != null ? Acc(_current.AccountId) : null)
                       ?? _store.Accounts[0];
 
@@ -469,6 +470,13 @@ public partial class MainWindow : ITaskHost, IQuoteHost
             Subject = subj,
             Body = body
         };
+        if (!string.IsNullOrWhiteSpace(task.FollowUpMessageId))
+        {
+            // answer in the same thread, so the recipient sees the original mail
+            var mid = task.FollowUpMessageId.Trim().Trim('<', '>');
+            req.InReplyTo = mid;
+            req.References = new List<string> { mid };
+        }
         OpenCompose(req, account.Id);
         Status(L.T("Hatırlatma maili hazır; kontrol edip Gönder'e basın."));
     }

@@ -335,7 +335,7 @@ public sealed class RulesWindow : Window
             if (!r.Enabled) cb.Opacity = 0.55;
             sp.Children.Add(cb);
 
-            var desc = string.Join(" " + (r.MatchAll ? L.T("VE") : L.T("VEYA")) + " ", r.Conditions.Select(RuleEngine.DescribeCondition));
+            var desc = string.Join(" " + (r.MatchAll ? L.T("ve ayrıca") : L.T("ya da")) + " ", r.Conditions.Select(RuleEngine.DescribeCondition));
             if (string.IsNullOrEmpty(desc)) desc = L.T("(Koşul yok)");
             var actionsDesc = string.Join(", ", r.Actions.Select(RuleEngine.DescribeAction));
             if (string.IsNullOrEmpty(actionsDesc)) actionsDesc = L.T("(Eylem yok)");

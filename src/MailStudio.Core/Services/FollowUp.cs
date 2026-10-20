@@ -92,7 +92,8 @@ namespace MailStudio.Services
             {
                 var inReplyTo = (h.InReplyTo ?? "").Trim();
                 var refs = h.References ?? new();
-                var sender = (h.FromAddress ?? "").ToLowerInvariant();
+                var sender = (h.FromAddress ?? "").Trim().ToLowerInvariant();
+                if (sender.Length == 0) continue;   // an answer always has a sender
 
                 foreach (var item in active)
                 {
@@ -111,7 +112,7 @@ namespace MailStudio.Services
                     if (!match && !string.IsNullOrEmpty(item.Subject))
                     {
                         // Fallback thread and sender match
-                        if (h.ThreadKey == ThreadKey(item.Subject) && item.Recipients.ToLowerInvariant().Contains(sender))
+                        if (h.ThreadKey == ThreadKey(item.Subject) && item.Recipients.Contains(sender, StringComparison.OrdinalIgnoreCase))
                             match = true;
                     }
 
@@ -160,13 +161,14 @@ namespace MailStudio.Services
                 var task = new Calendar.TaskItem
                 {
                     Title = L.F("Cevap bekleniyor: {0}", item.Subject),
-                    Category = L.T("Cevap bekleniyor"),
+                    Category = "Cevap bekleniyor",   // fixed key (not translated): the task list groups by it in every language
                     DueDate = item.DueDate.LocalDateTime.Date,
                     ReminderAt = DateTime.Now,
                     Notes = L.F("Alıcılar: {0}\nGönderim tarihi: {1:dd.MM.yyyy HH:mm}\nSon tarih: {2:dd.MM.yyyy}", item.Recipients, item.SentDate, item.DueDate),
-                    SourceMail = $"{item.AccountId}|Sent|{item.MessageId}",
                     SourceSubject = item.Subject,
-                    SourceFrom = item.Recipients
+                    SourceFrom = item.Recipients,
+                    FollowUpAccountId = item.AccountId,
+                    FollowUpMessageId = item.MessageId
                 };
                 taskStore.Save(task);
                 item.TaskCreated = true;

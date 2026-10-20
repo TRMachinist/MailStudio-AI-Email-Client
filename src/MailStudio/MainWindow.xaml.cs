@@ -1086,34 +1086,41 @@ public partial class MainWindow : Window
         var senderAddr = !string.IsNullOrEmpty(h.FromAddress) ? h.FromAddress : h.FromName;
         if (string.IsNullOrWhiteSpace(senderAddr)) return;
 
-        var folderName = L.IsEnglish ? "Newsletters" : "Bültenler";
+        // an existing "Bültenler"/"Newsletters" folder is reused whatever the interface language
+        var existingFolder = _roots.SelectMany(r => r.Children).FirstOrDefault(f => f.AccountId == h.AccountId &&
+            (f.Name.Equals("Bültenler", StringComparison.OrdinalIgnoreCase) || f.Name.Equals("Newsletters", StringComparison.OrdinalIgnoreCase)));
+        var folderName = existingFolder?.FullName ?? (L.IsEnglish ? "Newsletters" : "Bültenler");
+        var acc = Acc(h.AccountId);
+        if (acc == null) return;
+        try { folderName = await _mail.EnsureFolderAsync(acc, folderName); }
+        catch (Exception ex) { Status(L.T("Bülten klasörü oluşturulamadı: ") + ex.Message); return; }
 
-        // Check if rule already exists
+        // one rule per sender (also when it was made in the other language)
+        _ruleStore.ReloadIfChanged();
         var existing = _ruleStore.Rules.FirstOrDefault(r =>
             r.Conditions.Any(c => c.Field == "from" && c.Value.Equals(senderAddr, StringComparison.OrdinalIgnoreCase)) &&
-            r.Actions.Any(a => a.Type == "move_to_folder" &&
-                               (a.Value.Equals("Newsletters", StringComparison.OrdinalIgnoreCase) ||
-                                a.Value.Equals("Bültenler", StringComparison.OrdinalIgnoreCase))));
-
+            r.Actions.Any(a => a.Type == "move_to_folder" && a.Value != null &&
+                               (a.Value.Equals(folderName, StringComparison.OrdinalIgnoreCase) ||
+                                a.Value.EndsWith("Newsletters", StringComparison.OrdinalIgnoreCase) ||
+                                a.Value.EndsWith("Bültenler", StringComparison.OrdinalIgnoreCase))));
         if (existing == null)
         {
-            var rule = NewsletterHelper.CreateMoveToNewslettersRule(h, folderName);
-            _ruleStore.Rules.Add(rule);
-            _ruleStore.Save();
+            _ruleStore.Rules.Add(NewsletterHelper.CreateMoveToNewslettersRule(h, folderName));
+            try { _ruleStore.Save(); } catch (IOException ex) { Status(L.T("Kurallar kaydedilemedi: ") + ex.Message); }
         }
 
-        var acc = Acc(h.AccountId);
-        if (acc != null)
+        var matching = _messages.Where(m => m.AccountId == h.AccountId && m.FromAddress.Equals(h.FromAddress, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (!matching.Contains(h)) matching.Add(h);
+        int moved = 0, failed = 0;
+        foreach (var m in matching)
         {
-            var matching = _messages.Where(m => m.FromAddress.Equals(h.FromAddress, StringComparison.OrdinalIgnoreCase)).ToList();
-            if (!matching.Contains(h)) matching.Add(h);
-            foreach (var m in matching)
-            {
-                try { await _mail.MoveAsync(acc, m, folderName); } catch { }
-            }
-            LoadMessagesFromCache();
-            Status(L.F("'{0}' göndereni için kural oluşturuldu ve iletiler Bültenler klasörüne taşındı.", h.FromDisplay));
+            try { await _mail.MoveAsync(acc, m, folderName); moved++; } catch (Exception) { failed++; }
         }
+        LoadMessagesFromCache();
+        Status(failed == 0
+            ? L.F("'{0}' göndereni için kural oluşturuldu; {1} ileti \"{2}\" klasörüne taşındı.", h.FromDisplay, moved, folderName)
+            : L.F("'{0}' göndereni için kural oluşturuldu; {1} ileti taşındı, {2} ileti taşınamadı.", h.FromDisplay, moved, failed));
+        if (existingFolder == null) { try { await RebuildTreeAsync(); } catch (Exception ex) { Status(ex.Message); } }
     }
 
     async void OnMessageDoubleClick(object sender, MouseButtonEventArgs e)
@@ -1153,7 +1160,7 @@ public partial class MainWindow : Window
         {
             var shortcutStr = $"Ctrl+Shift+{(int)(key - Key.D0)}";
             var step = _quickStepStore.FindByShortcut(shortcutStr);
-            if (step != null) { _ = ExecuteQuickStepAsync(step); e.Handled = true; return; }
+            if (step != null && _module == PimModule.Mail) { _ = ExecuteQuickStepAsync(step); e.Handled = true; return; }
         }
         if (_module != PimModule.Mail) { if (key == Key.F9) { OnSyncAll(this, e); e.Handled = true; } return; } // the calendar / task view handles its own keys
         if (e.OriginalSource is TextBox && !ctrl && key != Key.F9) return; // do not interfere while typing
@@ -1375,7 +1382,7 @@ public partial class MainWindow : Window
         Add(outboxCount > 0 ? L.F("Giden Kutusu ({0} ileti)…", outboxCount) : L.T("Giden Kutusu (Zamanlanmış)…"), (_, _) =>
  ShowOutboxWindow());
         var undoSendMenu = new MenuItem { Header = L.T("Göndermeyi geri alma süresi") };
-        foreach (var (sec, label) in new[] { (0, L.T("Kapalı")), (5, "5 " + L.T("sn")), (10, "10 " + L.T("sn")), (20, "20 " + L.T("sn")), (30, "30 " + L.T("sn")) })
+        foreach (var (sec, label) in new[] { (0, L.T("Kapalı")), (5, L.F("{0} saniye", 5)), (10, L.F("{0} saniye", 10)), (20, L.F("{0} saniye", 20)), (30, L.F("{0} saniye", 30)) })
         {
             var item = new MenuItem { Header = label, IsCheckable = true, IsChecked = _settings.UndoSendSeconds == sec };
             var s = sec;
@@ -1985,7 +1992,7 @@ public partial class MainWindow : Window
         {
             var mi = new MenuItem
             {
-                Header = s.Name,
+                Header = L.T(s.Name),
                 Icon = new TextBlock { Text = s.Icon, FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 13 },
                 InputGestureText = s.Shortcut
             };
@@ -2040,9 +2047,11 @@ public partial class MainWindow : Window
             return false;
         }
 
-        Status(L.F("Hızlı Adım çalıştırılıyor: {0}", step.Name));
-
-        foreach (var act in step.Actions)
+        Status(L.F("Hızlı Adım çalıştırılıyor: {0}", L.T(step.Name)));
+        try
+        {
+        // moves and delete run last: afterwards the message is no longer in this folder
+        foreach (var act in step.Actions.OrderBy(a => a.Type is QuickStepActionType.MoveToArchive or QuickStepActionType.MoveToFolder or QuickStepActionType.Delete ? 1 : 0))
         {
             switch (act.Type)
             {
@@ -2121,11 +2130,7 @@ public partial class MainWindow : Window
                         tmpl = _templateStore.FindById(act.Parameter) ??
                                _templateStore.Templates.FirstOrDefault(t => t.Title.Equals(act.Parameter, StringComparison.OrdinalIgnoreCase));
                     }
-                    if (tmpl == null && _templateStore.Templates.Count > 0)
-                    {
-                        tmpl = _templateStore.Templates[0];
-                    }
-
+                    if (tmpl == null) { Status(L.F("Şablon bulunamadı: {0}", act.Parameter ?? "")); break; }
                     if (tmpl != null)
                     {
                         var sig = _store.Accounts.FirstOrDefault(a => a.Id == mail.AccountId)?.Signature ?? "";
@@ -2153,7 +2158,14 @@ public partial class MainWindow : Window
             }
         }
 
-        Status(L.F("Hızlı Adım tamamlandı: {0}", step.Name));
+        }
+        catch (OperationCanceledException) { return false; }
+        catch (Exception ex)
+        {
+            Status(L.F("Hızlı Adım tamamlanamadı: {0} – {1}", L.T(step.Name), ex.Message));
+            return false;
+        }
+        Status(L.F("Hızlı Adım tamamlandı: {0}", L.T(step.Name)));
         return true;
     }
 
@@ -2254,34 +2266,33 @@ public partial class MainWindow : Window
         Status(L.F("Erteleme kaldırıldı ({0} ileti).", selected.Count));
     }
 
-    public void CheckSnoozeDue()
+    /// <summary>Snoozed mail whose time has come: back in the list, marked unread (on the server too) and announced.
+    /// The mail keeps its real date (the cache is never rewritten).</summary>
+    public async void CheckSnoozeDue()
     {
         var due = _snoozeStore.CheckDue(DateTimeOffset.Now);
         if (due.Count == 0) return;
-
         foreach (var item in due)
         {
-            _cache.SetFlags(item.AccountId, item.Folder, item.Uid, read: false);
-            _cache.TouchDate(item.AccountId, item.Folder, item.Uid, DateTimeOffset.UtcNow);
-
             var inMemory = _messages.FirstOrDefault(m =>
                 string.Equals(m.AccountId, item.AccountId, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(m.Folder, item.Folder, StringComparison.OrdinalIgnoreCase) &&
-                m.Uid == item.Uid);
-
-            if (inMemory != null)
+                string.Equals(m.Folder, item.Folder, StringComparison.OrdinalIgnoreCase) && m.Uid == item.Uid);
+            if (inMemory != null) { inMemory.IsSnoozed = false; inMemory.SnoozedUntil = null; }
+            if (!item.RestoreAsUnread) continue;
+            var header = inMemory ?? _cache.GetHeaders(item.AccountId, item.Folder, 5000).FirstOrDefault(m => m.Uid == item.Uid);
+            if (header == null || Acc(item.AccountId) is not { } acc) continue;
+            try
             {
-                inMemory.IsRead = false;
-                inMemory.Date = DateTimeOffset.UtcNow;
-                inMemory.IsSnoozed = false;
-                inMemory.SnoozedUntil = null;
+                await _mail.SetReadAsync(acc, header, false);
+                header.IsRead = false;
             }
+            catch (Exception ex) { Status(L.T("Ertelenen ileti okunmadı yapılamadı: ") + ex.Message); }
         }
-
-        LoadMessagesFromCache();
-        Status(due.Count == 1
-            ? L.F("Ertelenen mail geri döndü: {0}", due[0].Subject)
-            : L.F("Ertelenen {0} ileti geri döndü.", due.Count));
+        _view.Refresh();
+        UpdateCounts();
+        var text = due.Count == 1 ? L.F("Ertelenen mail geri döndü: {0}", due[0].Subject) : L.F("Ertelenen {0} ileti geri döndü.", due.Count);
+        Status(text);
+        _tray?.ShowReminder(L.T("Ertelenen ileti"), text, ShowFromTray);
     }
 
     // ---------------- Search Folders ----------------

@@ -24,6 +24,9 @@ public sealed class TaskItem
     public string? SourceMail { get; set; }
     public string SourceSubject { get; set; } = "";
     public string SourceFrom { get; set; } = "";
+    /// <summary>Follow-up task: the sent mail that is waiting for an answer (account id + Message-ID), so the reminder replies in the same thread.</summary>
+    public string? FollowUpAccountId { get; set; }
+    public string? FollowUpMessageId { get; set; }
     public DateTime Created { get; set; } = DateTime.Now;
     public DateTime Modified { get; set; } = DateTime.Now;
 

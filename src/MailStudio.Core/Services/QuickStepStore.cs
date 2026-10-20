@@ -153,7 +153,7 @@ public sealed class QuickStepStore
                 IsBuiltIn = true,
                 Actions = new List<QuickStepAction>
                 {
-                    new() { Type = QuickStepActionType.ReplyWithTemplate, Parameter = en ? "quote-attached-en" : "teklif-ektedir-tr" },
+                    new() { Type = QuickStepActionType.ReplyWithTemplate, Parameter = en ? "quotation-attached-en" : "teklif-ektedir-tr" },
                     new() { Type = QuickStepActionType.Flag }
                 }
             },

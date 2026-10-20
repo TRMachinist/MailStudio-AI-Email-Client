@@ -150,7 +150,7 @@ public sealed class QuoteStore
 
         // 2. Part number and revision
         // First check attachment filenames for CAD parts (e.g. "NW-1042-revC.stp", "bracket-revB.stp", "flange-DN100.pdf")
-        foreach (var att in attList)
+        foreach (var att in attList.Where(a => Path.GetExtension(a).ToLowerInvariant() is ".stp" or ".step" or ".dxf" or ".dwg" or ".pdf" or ".igs" or ".iges" or ".x_t" or ".sldprt"))
         {
             var (part, rev) = RevisionService.ParsePartAndRevision("", att);
             if (!string.IsNullOrEmpty(part))
@@ -200,7 +200,7 @@ public sealed class QuoteStore
         }
 
         // 3. Quantity (Adet)
-        var qtyMatch = Regex.Match(fullText, @"(?:Adet|Miktar|Quantity|Qty)[\s:#]+(\d[\d\s.,]*)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        var qtyMatch = Regex.Match(fullText, @"(?:Adet|Miktar|Quantity|Qty)[ \t:#]*(\d{1,3}(?:[.,]\d{3})+|\d{1,7})(?![\d.,]\d)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         if (qtyMatch.Success)
         {
             var clean = Regex.Replace(qtyMatch.Groups[1].Value, @"[^\d]", "");
@@ -246,16 +246,17 @@ public sealed class QuoteStore
 
         // 7. RFQ Confidence Scoring
         var score = 0;
-        var subLower = cleanSubject.ToLowerInvariant();
-        var bodyLower = (body ?? "").ToLowerInvariant();
+        // 'İ' first: invariant lower-casing would leave "TEKLİF" as "teklİf"
+        var subLower = cleanSubject.Replace('İ', 'i').ToLowerInvariant();
+        var bodyLower = (body ?? "").Replace('İ', 'i').ToLowerInvariant();
 
         // Turkish & English quote keywords in subject
-        if (Regex.IsMatch(subLower, @"\b(teklif|fiyat|fiyatlandırma|quotation|quote|rfq|pricing|price\s*inquiry|angebot)\b"))
-            score += 45;
+        var subjectKeyword = Regex.IsMatch(subLower, @"\b(teklif|fiyat|fiyatlandırma|quotation|quote|rfq|pricing|price\s*inquiry|angebot)\b", RegexOptions.CultureInvariant);
+        if (subjectKeyword) score += 45;
 
         // Keywords in body
-        if (Regex.IsMatch(bodyLower, @"\b(teklif|fiyat\s*teklifi|fiyat\s*rica|teklif\s*rica|fiyatlandırma|quotation|quote|rfq|request\s*for\s*quote|request\s*for\s*quotation|please\s*quote|price\s*request)\b"))
-            score += 30;
+        var bodyKeyword = Regex.IsMatch(bodyLower, @"\b(teklif|fiyat\s*teklifi|fiyat\s*rica|teklif\s*rica|fiyatlandırma|quotation|quote|rfq|request\s*for\s*quote|request\s*for\s*quotation|please\s*quote|price\s*request)\b", RegexOptions.CultureInvariant);
+        if (bodyKeyword) score += 30;
 
         if (item.Quantity > 0) score += 20;
         if (!string.IsNullOrEmpty(item.PartNumber)) score += 20;
@@ -270,7 +271,8 @@ public sealed class QuoteStore
         });
         if (hasCad) score += 25;
 
-        var isRfq = score >= 50;
+        // a quote word is required, plus enough evidence (quantity, part, drawing...)
+        var isRfq = (subjectKeyword || bodyKeyword) && score >= 65;
 
         // Populate brief notes from subject if notes empty
         if (string.IsNullOrEmpty(item.Notes))
@@ -346,23 +348,23 @@ public sealed class QuoteStore
     public static void ExportToExcel(IEnumerable<QuoteItem> quotes, string filePath)
     {
         using var workbook = new XLWorkbook();
-        var ws = workbook.Worksheets.Add("Teklif Masası");
+        var ws = workbook.Worksheets.Add(L.T("Teklif Masası"));
 
         // Headers
         var headers = new[]
         {
-            "Durum",
-            "Parça No",
-            "Rev",
-            "Adet",
-            "Malzeme",
-            "Müşteri",
-            "İlgili Kişi",
-            "Son Teklif Tarihi",
-            "İstenen Teslim",
-            "Notlar",
-            "Kaynak Konu",
-            "Eklenme Tarihi"
+            L.T("Durum"),
+            L.T("Parça No"),
+            L.T("Rev"),
+            L.T("Adet"),
+            L.T("Malzeme"),
+            L.T("Müşteri"),
+            L.T("İlgili Kişi"),
+            L.T("Son Teklif Tarihi"),
+            L.T("İstenen Teslim"),
+            L.T("Notlar"),
+            L.T("Kaynak Konu"),
+            L.T("Eklenme Tarihi")
         };
 
         for (var c = 0; c < headers.Length; c++)

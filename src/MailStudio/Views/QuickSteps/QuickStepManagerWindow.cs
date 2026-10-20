@@ -174,7 +174,7 @@ public sealed class QuickStepManagerWindow : Window
         {
             _iconBox.Items.Add(new ComboBoxItem
             {
-                Content = $"{ic}  {label}",
+                Content = $"{ic}  {L.T(label)}",
                 Tag = ic,
                 FontFamily = new FontFamily("Segoe MDL2 Assets, Segoe UI")
             });

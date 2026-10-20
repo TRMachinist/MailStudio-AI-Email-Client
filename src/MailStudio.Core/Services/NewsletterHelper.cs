@@ -47,8 +47,7 @@ public static class NewsletterHelper
             {
                 info.MailtoUri ??= val;
             }
-            else if (val.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
-                     val.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+            else if (val.StartsWith("https://", StringComparison.OrdinalIgnoreCase))   // plain http links are not offered
             {
                 info.HttpUri ??= val;
             }
@@ -116,8 +115,7 @@ public static class NewsletterHelper
         var from = (h.FromAddress ?? "").ToLowerInvariant();
         if (from.Contains("news@") || from.Contains("newsletter@") || from.Contains("bulten@") ||
             from.Contains("bülten@") || from.Contains("duyuru@") || from.Contains("digest@") ||
-            from.Contains("noreply@") || from.Contains("no-reply@") || from.Contains("updates@") ||
-            from.Contains("info@news."))
+            from.Contains("info@news."))   // not "noreply@": banks, portals and order mails use it too
             return true;
 
         var subj = (h.Subject ?? "").ToLowerInvariant();

@@ -1199,6 +1199,16 @@ await Test("teklif masası: RFQ detection and field extraction in Turkish and En
     var normalBody = "Toplantı yarın saat 10:00'da odada yapılacaktır. Lütfen hazır bulunun.";
     var (normIsRfq, _) = QuoteStore.DetectRfq(normalSub, normalBody, "Ali Veli <ali@example.com>");
     Check(!normIsRfq, "Normal email is NOT detected as RFQ");
+
+    // a plain mail with a logo and the word "quote" is not an RFQ; a logo is never a part number
+    var (logoRfq, logoQ) = QuoteStore.DetectRfq("Thanks", "As discussed, here is a quote from our CEO.", "x <x@example.com>", new[] { "logo.png" });
+    Check(!logoRfq && logoQ.PartNumber != "logo", "logo mail not an RFQ");
+    // quantities: no run-on across lines, thousands separators, no decimals
+    Check(QuoteStore.DetectRfq("RFQ NW-1042", "Adet: 50\n10.11.2026 teslim", "a <a@b.example>").Extracted.Quantity == 50, "quantity stops at the line end");
+    Check(QuoteStore.DetectRfq("RFQ NW-1042", "Qty: 5.000 pcs please quote", "a <a@b.example>").Extracted.Quantity == 5000, "thousands separator");
+    Check(QuoteStore.DetectRfq("RFQ NW-1042", "Miktar: 2,5 ton", "a <a@b.example>").Extracted.Quantity == 0, "decimal is not a piece count");
+    // upper-case Turkish subject
+    Check(QuoteStore.DetectRfq("FİYAT TEKLİFİ – NW-1042", "120 adet için teklif rica ederiz.", "a <a@b.example>", new[] { "NW-1042_revC.pdf" }).IsRfq, "upper-case Turkish subject detected");
 }));
 
 await Test("teklif masası: QuoteStore persistence, CRUD and status transitions", () => Sync(() =>

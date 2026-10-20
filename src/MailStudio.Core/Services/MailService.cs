@@ -165,8 +165,7 @@ public sealed class MailService : IDisposable
             int done = 0;
             if (newUids.Count > 0)
             {
-                var req = MessageSummaryItems.UniqueId | MessageSummaryItems.Envelope | MessageSummaryItems.Flags |
-                          MessageSummaryItems.BodyStructure | MessageSummaryItems.PreviewText | MessageSummaryItems.InternalDate | MessageSummaryItems.References;
+                var req = NewMailFetch();
                 foreach (var chunk in newUids.Chunk(100))
                 {
                     var headers = new List<MailHeader>();
@@ -214,8 +213,7 @@ public sealed class MailService : IDisposable
             var headers = new List<MailHeader>();
             if (pick.Count > 0)
             {
-                var req = MessageSummaryItems.UniqueId | MessageSummaryItems.Envelope | MessageSummaryItems.Flags |
-                          MessageSummaryItems.BodyStructure | MessageSummaryItems.PreviewText | MessageSummaryItems.InternalDate | MessageSummaryItems.References;
+                var req = NewMailFetch();
                 foreach (var s in await folder.FetchAsync(pick, req, ct))
                 {
                     headers.Add(ToHeader(a.Id, folder.FullName, folder.UidValidity, s));
@@ -227,6 +225,19 @@ public sealed class MailService : IDisposable
             await folder.CloseAsync(false, ct);
             return headers.Count;
         }, ct);
+
+    /// <summary>Header fetch for new mail: also the few headers rules and newsletters need (no body is downloaded).</summary>
+    static FetchRequest NewMailFetch() => new(MessageSummaryItems.UniqueId | MessageSummaryItems.Envelope | MessageSummaryItems.Flags |
+        MessageSummaryItems.BodyStructure | MessageSummaryItems.PreviewText | MessageSummaryItems.InternalDate | MessageSummaryItems.References | MessageSummaryItems.Size)
+    { Headers = new HeaderSet(new[] { "List-Unsubscribe", "List-Unsubscribe-Post", "Importance", "X-Priority" }) };
+
+    static string ImportanceOf(HeaderList? h)
+    {
+        var imp = (h?["Importance"] ?? "").Trim().ToLowerInvariant();
+        if (imp is "high" or "low") return imp;
+        var pri = (h?["X-Priority"] ?? "").Trim();
+        return pri.StartsWith('1') || pri.StartsWith('2') ? "high" : pri.StartsWith('4') || pri.StartsWith('5') ? "low" : "normal";
+    }
 
     static MailHeader ToHeader(string accountId, string folder, uint validity, IMessageSummary s)
     {
@@ -251,7 +262,11 @@ public sealed class MailService : IDisposable
             Date = env?.Date ?? s.InternalDate ?? DateTimeOffset.Now,
             IsRead = s.Flags?.HasFlag(MessageFlags.Seen) == true,
             IsFlagged = s.Flags?.HasFlag(MessageFlags.Flagged) == true,
-            HasAttachments = s.Attachments?.Any() == true
+            HasAttachments = s.Attachments?.Any() == true,
+            Size = (long)(s.Size ?? 0),
+            Importance = ImportanceOf(s.Headers),
+            ListUnsubscribe = (s.Headers?["List-Unsubscribe"] ?? "").Trim(),
+            ListUnsubscribePost = (s.Headers?["List-Unsubscribe-Post"] ?? "").Trim()
         };
     }
 
@@ -541,6 +556,20 @@ public sealed class MailService : IDisposable
             return true;
         }, retry: false);
         _cache.Delete(a.Id, h.Folder, h.Uid);
+    }
+
+    /// <summary>Returns the full name of a top-level folder with this name (case-insensitive), creating it if it does not exist.</summary>
+    public async Task<string> EnsureFolderAsync(AccountConfig a, string name, CancellationToken ct = default)
+    {
+        if (DemoData.IsDemo(a)) return name;
+        return await WithClient(a, async c =>
+        {
+            var root = c.PersonalNamespaces.Count > 0 ? c.GetFolder(c.PersonalNamespaces[0]) : c.Inbox.ParentFolder ?? c.Inbox;
+            foreach (var f in await root.GetSubfoldersAsync(false, ct))
+                if (f.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) return f.FullName;
+            var created = await root.CreateAsync(name, true, ct);
+            return created.FullName;
+        }, ct);
     }
 
     public async Task DeletePermanentlyAsync(AccountConfig a, MailHeader h)

@@ -28,22 +28,24 @@ public sealed class SearchFolderCriteria
         if (HasAttachments == true && !header.HasAttachments) return false;
         if (HasAttachments == false && header.HasAttachments) return false;
 
-        var refDate = now ?? DateTimeOffset.Now;
+        // compare in local time: the cache keeps dates in UTC (a 01:00 mail in Turkey is still "today")
+        var refDate = (now ?? DateTimeOffset.Now).ToLocalTime();
+        var mailLocal = header.Date.ToLocalTime().DateTime;
         if (!string.IsNullOrEmpty(DateRangePreset))
         {
             if (DateRangePreset == "today")
             {
-                if (header.Date.Date < refDate.Date) return false;
+                if (mailLocal.Date < refDate.Date) return false;
             }
             else if (DateRangePreset == "this_week")
             {
                 var startOfWeek = MailStudio.Services.Calendar.Recurrence.WeekStart(refDate.Date);
-                if (header.Date < startOfWeek) return false;
+                if (mailLocal < startOfWeek) return false;
             }
             else if (DateRangePreset == "this_month")
             {
                 var startOfMonth = new DateTime(refDate.Year, refDate.Month, 1);
-                if (header.Date < startOfMonth) return false;
+                if (mailLocal < startOfMonth) return false;
             }
             else if (DateRangePreset == "last_30_days")
             {
@@ -82,7 +84,8 @@ public sealed class SearchFolderCriteria
             if (cache != null)
             {
                 var atts = cache.GetAttachments(header.AccountId, header.Folder, header.Uid);
-                if (atts.Count > 0 && !atts.Any(a => a.FileName.EndsWith("." + ext, StringComparison.OrdinalIgnoreCase) || a.FileName.Contains("." + ext + ".", StringComparison.OrdinalIgnoreCase)))
+                // attachment names not known yet: do not claim a match
+                if (atts.Count == 0 || !atts.Any(a => a.FileName.EndsWith("." + ext, StringComparison.OrdinalIgnoreCase) || a.FileName.Contains("." + ext + ".", StringComparison.OrdinalIgnoreCase)))
                     return false;
             }
             else

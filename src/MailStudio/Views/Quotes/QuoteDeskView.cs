@@ -536,8 +536,8 @@ public sealed class QuoteDeskView : UserControl
     {
         var sfd = new SaveFileDialog
         {
-            Filter = "Excel Çalışma Kitabı (*.xlsx)|*.xlsx",
-            FileName = $"MailStudio_Teklif_Masasi_{DateTime.Now:yyyyMMdd_HHmm}.xlsx"
+            Filter = L.T("Excel Çalışma Kitabı") + " (*.xlsx)|*.xlsx",
+            FileName = $"MailStudio_{L.T("Teklif_Masasi")}_{DateTime.Now:yyyyMMdd_HHmm}.xlsx"
         };
         if (sfd.ShowDialog(Window.GetWindow(this)) == true)
         {

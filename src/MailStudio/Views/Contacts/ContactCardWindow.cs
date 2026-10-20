@@ -93,6 +93,7 @@ public class ContactCardWindow : Window
 
         // Contact Info
         var infoStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        UiTranslator.SetSkip(infoStack, true);   // name, address and company are user data
         var displayName = !string.IsNullOrWhiteSpace(_name) ? _name : _contact?.DisplayName is { Length: > 0 } cn ? cn : _address;
         infoStack.Children.Add(new TextBlock
         {
