@@ -199,6 +199,21 @@ public partial class MainWindow
         finally { bmp.UnlockBits(data); }
     }
 
+    /// <summary>Unread badges in the folder pane must be fully visible (no clipping at the pane edge, no sideways scrolling).</summary>
+    void CheckFolderBadges(string where)
+    {
+        FolderTree.UpdateLayout();
+        var sv = Tree(FolderTree).OfType<ScrollViewer>().FirstOrDefault();
+        Check(sv == null || sv.ScrollableWidth < 1, $"{where}: folder pane has no sideways scrolling", $"scrollable width {sv?.ScrollableWidth:0}");
+        var badges = Tree(FolderTree).OfType<Border>().Where(b => b.Name == "cnt" && b.IsVisible).ToList();
+        var clipped = badges.Where(b =>
+        {
+            var r = b.TransformToAncestor(FolderTree).TransformBounds(new Rect(0, 0, b.ActualWidth, b.ActualHeight));
+            return r.Right > FolderTree.ActualWidth + 0.5 || r.Left < 0;
+        }).ToList();
+        Check(badges.Count > 0 && clipped.Count == 0, $"{where}: {badges.Count} unread badges fully visible in the folder pane", $"{clipped.Count} badge(s) cut off at the pane edge");
+    }
+
     static IEnumerable<DependencyObject> Tree(DependencyObject root)
     {
         var stack = new Stack<DependencyObject>(); stack.Push(root);
@@ -889,6 +904,7 @@ public partial class MainWindow
             var unreadItems = MessageList.Items.OfType<MailHeader>().ToList();
             Check(unreadItems.Count >= 1 && unreadItems.All(h => !h.IsRead), $"search folder unread contains only unread mails ({unreadItems.Count})");
             Shot(this, "search-folder-unread");
+            CheckFolderBadges("search-folder-unread");
         }
 
         // 4. Search folder: Flagged

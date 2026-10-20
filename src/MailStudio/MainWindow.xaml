@@ -246,7 +246,8 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <ContentControl x:Name="PimSide" Visibility="Collapsed" Panel.ZIndex="5" Background="{DynamicResource BgSurfaceSecondaryBrush}"/>
-                <TreeView x:Name="FolderTree" BorderThickness="0" Padding="4,8,0,0" Background="Transparent" SelectedItemChanged="OnFolderSelected">
+                <TreeView x:Name="FolderTree" BorderThickness="0" Padding="4,8,0,0" Background="Transparent" SelectedItemChanged="OnFolderSelected"
+                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                     <TreeView.ItemContainerStyle>
                         <Style TargetType="TreeViewItem" BasedOn="{StaticResource {x:Type TreeViewItem}}">
                             <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
