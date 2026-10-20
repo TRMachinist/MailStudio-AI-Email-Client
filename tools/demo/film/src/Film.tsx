@@ -152,11 +152,14 @@ const Intro: React.FC<{lang: 'en' | 'tr'; dur: number}> = ({lang, dur}) => {
   const set = React.useContext(SetCtx);
   const it = useTexts(lang).intro ?? {title: 'MailStudio', sub: 'for TRMachinist', tag: lang === 'en' ? 'The open-source AI email client for engineers & machinists' : 'İmalatçılar için yapay zekâlı, açık kaynak mail programı'};
   const tag = it.tag;
+  // Shrink the title so its longest word fits the column (it must never run under the screenshot)
+  const longest = Math.max(...it.title.split(' ').map((w: string) => w.length));
+  const titleSize = V ? 110 : Math.min(set === 'v16' ? 66 : 76, Math.floor(380 / (longest * 0.62)));
   const pos: React.CSSProperties = V ? {left: 60, right: 60, top: 150} : {left: 70, width: 410, top: 250};
   return (
     <div style={{position: 'absolute', ...pos, opacity: out}}>
       <div style={{transform: `scale(${0.6 + 0.4 * p})`, transformOrigin: 'left center', opacity: p}}><Logo size={V ? 130 : 96} /></div>
-      <div style={{marginTop: 26}}><Words text={it.title} size={V ? 110 : set === 'v16' ? 66 : 76} delay={6} /></div>
+      <div style={{marginTop: 26}}><Words text={it.title} size={titleSize} delay={6} /></div>
       <div style={{marginTop: 2}}><Words text={it.sub} size={V ? 56 : 38} delay={12} color={C.cyan} weight={700} /></div>
       <div style={{marginTop: 22, color: C.dim, fontFamily: FONT, fontSize: V ? 36 : 25, fontWeight: 500, lineHeight: 1.3, opacity: interpolate(f, [22, 34], [0, 1], clamp)}}>{tag}</div>
     </div>
