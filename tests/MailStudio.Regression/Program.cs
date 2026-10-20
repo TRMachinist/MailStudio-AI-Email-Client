@@ -721,7 +721,7 @@ await Test("rules: condition and action matrix, order/stop, FakeImap move/flag, 
     var h2 = new MailHeader { AccountId = "synthetic", Folder = "INBOX", Uid = 3, UidValidity = h1.UidValidity, MessageId = "three@test", FromAddress = "anna@example.test", Subject = "order" };
     cache.UpsertHeaders(new[] { h2 });
     var moveFirst = new MailRule { Name = "move first", Conditions = { new RuleCondition { Field = "subject", Value = "order" } },
-        Actions = { new RuleAction { Type = "move_to_folder", Value = "Archive" }, new RuleAction { Type = "mark_as_read" } } };
+        Actions = { new RuleAction { Type = "move_to_folder", Value = "Trash" }, new RuleAction { Type = "mark_as_read" } } };
     var res2 = await RuleEngine.ApplyRulesAsync(new[] { moveFirst }, h2, account, mail, cache, taskStore);
     Check(h2.IsRead && res2[0].Moved && res2[0].AppliedActions[0].Contains("Okundu", StringComparison.OrdinalIgnoreCase) | res2[0].AppliedActions[0].Contains("read", StringComparison.OrdinalIgnoreCase), "mark-as-read applied before the move");
 
