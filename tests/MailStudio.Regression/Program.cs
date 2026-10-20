@@ -1335,7 +1335,7 @@ await Test("teklif masası: ClosedXML Excel export generation and structure", ()
 await Test("şablonlar: değişken doldurma ve regex çözümleme (TR & EN)", () => Sync(() =>
 {
     var ctx = TemplateContext.Create(
-        to: "\"Ahmet Yılmaz\" <ahmet.yilmaz@abcmakina.com>",
+        to: "\"Ahmet Yılmaz\" <ahmet.yilmaz@abcmakina.example>",
         subject: "RE: NW-1042 Fiyat Talebi",
         signature: "Caner Akın\nSatış Müdürü",
         date: new DateTime(2026, 10, 20)
@@ -2290,7 +2290,7 @@ await Test("@ ile bahsetme: ContactBook önerileri ve arama eşleme", () => Sync
     var store = new ContactStore(Path.Combine(cDir, "contacts.json"));
 
     store.Save(new Contact { FirstName = "Anna", LastName = "Lindqvist", Email = "anna@contoso-aero.example", Company = "Contoso Aero" });
-    store.Save(new Contact { FirstName = "Mustafa", LastName = "Yılmaz", Email = "mustafa@abcmakina.com", Company = "ABC Makina" });
+    store.Save(new Contact { FirstName = "Mustafa", LastName = "Yılmaz", Email = "mustafa@abcmakina.example", Company = "ABC Makina" });
     store.Save(new Contact { FirstName = "Hans", LastName = "Weber", Email = "hans.weber@siemens.example", Company = "Siemens Energy" });
 
     var book = new ContactBook(null, store);
@@ -2302,7 +2302,7 @@ await Test("@ ile bahsetme: ContactBook önerileri ve arama eşleme", () => Sync
 
     // Query "mustafa" (case-insensitive)
     var mustafaMatches = book.Suggest("mustafa").ToList();
-    Check(mustafaMatches.Count >= 1 && mustafaMatches[0].Address == "mustafa@abcmakina.com", "Suggest('mustafa') found match");
+    Check(mustafaMatches.Count >= 1 && mustafaMatches[0].Address == "mustafa@abcmakina.example", "Suggest('mustafa') found match");
 
     // Query "siemens" (company match)
     var siemensMatches = book.Suggest("siemens").ToList();

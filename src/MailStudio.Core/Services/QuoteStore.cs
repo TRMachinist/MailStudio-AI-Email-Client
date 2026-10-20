@@ -114,7 +114,7 @@ public sealed class QuoteStore
         var attList = attachmentNames?.ToList() ?? new List<string>();
 
         // 1. Contact and Customer from 'From' header
-        // e.g. "Anna Schmidt <anna@schmidt-gmbh.de>" or "Hans Weber <h.weber@siemens.com>"
+        // e.g. "Anna Schmidt <anna@schmidt-gmbh.example>" or "Hans Weber <h.weber@contoso-aero.example>"
         var fromMatch = Regex.Match(from ?? "", @"^(?:""?([^""<]+)""?\s*)?<?([a-zA-Z0-9._%+-]+@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,}))>?");
         if (fromMatch.Success)
         {
