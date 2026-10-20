@@ -387,31 +387,53 @@ public static class RevisionService
     static void DiffTokens(RevisionDiffReport report, string category, List<string> oldList, List<string> newList, Func<string, string> family)
     {
         var removed = Minus(oldList, newList); var added = Minus(newList, oldList);
-        foreach (var n in added.ToList())
-        {
-            var f = family(n);
-            var o = removed.FirstOrDefault(x => family(x) == f && f.Length > 0);
-            if (o == null) continue;
-            Add(report, RevisionDiffKind.Modified, category, f, o, n);
-            removed.Remove(o); added.Remove(n);
-        }
-        // second pass: same beginning ("DWG NO. NW-1042 REV B" → "... REV C")
-        foreach (var n in added.ToList())
-        {
-            var o = removed.FirstOrDefault(x => Similar(x, n));
-            if (o == null) continue;
-            Add(report, RevisionDiffKind.Modified, category, family(n) is { Length: > 0 } f2 ? f2 : category, o, n);
-            removed.Remove(o); added.Remove(n);
-        }
-        foreach (var n in added) Add(report, RevisionDiffKind.Added, category, family(n) is { Length: > 0 } f ? f : category, null, n);
-        foreach (var o in removed) Add(report, RevisionDiffKind.Removed, category, family(o) is { Length: > 0 } f ? f : category, o, null);
+        // 1st pass: same family ("8x Ø18 …" / "8x Ø20 …", "Ra 3.2" / "Ra 1.6"); 2nd pass: nearly the same text (OCR noise)
+        foreach (var pass in new[] { 1, 2 })
+            foreach (var n in added.ToList())
+            {
+                var f = family(n);
+                var o = pass == 1 ? removed.FirstOrDefault(x => f.Length > 0 && family(x) == f) : removed.FirstOrDefault(x => Similar(x, n));
+                if (o == null) continue;
+                Add(report, RevisionDiffKind.Modified, category, Label(o, n, category), o, n);
+                removed.Remove(o); added.Remove(n);
+            }
+        foreach (var n in added) Add(report, RevisionDiffKind.Added, category, category, null, n);
+        foreach (var o in removed) Add(report, RevisionDiffKind.Removed, category, category, o, null);
     }
 
+    /// <summary>A readable name for a changed text: what both versions start with ("8x Ø …", "Ra …", "DWG NO. NW-1042 REV …").</summary>
+    static string Label(string a, string b, string fallback)
+    {
+        int i = 0;
+        while (i < a.Length && i < b.Length && char.ToUpperInvariant(a[i]) == char.ToUpperInvariant(b[i])) i++;
+        var common = a[..i].TrimEnd();
+        if (common.Length >= 2 && common.Any(char.IsLetter)) return common.Length > 40 ? common[..40] + "…" : common + " …";
+        var words = a.Split(' ', StringSplitOptions.RemoveEmptyEntries).Intersect(b.Split(' ', StringSplitOptions.RemoveEmptyEntries)).Where(w => w.Any(char.IsLetter)).Take(4).ToList();
+        return words.Count > 0 ? string.Join(" ", words) + " …" : fallback;
+    }
+
+    /// <summary>Same beginning, or at most a quarter of the characters different (OCR reads Ø as 0, · as □ …).</summary>
     static bool Similar(string a, string b)
     {
         int common = 0;
         while (common < a.Length && common < b.Length && char.ToUpperInvariant(a[common]) == char.ToUpperInvariant(b[common])) common++;
-        return common >= 8 && common >= 0.6 * Math.Min(a.Length, b.Length);
+        if (common >= 8 && common >= 0.6 * Math.Min(a.Length, b.Length)) return true;
+        if (Math.Min(a.Length, b.Length) < 8) return false;
+        return Levenshtein(a.ToUpperInvariant(), b.ToUpperInvariant()) <= Math.Max(a.Length, b.Length) / 4;
+    }
+
+    static int Levenshtein(string a, string b)
+    {
+        var prev = new int[b.Length + 1]; var cur = new int[b.Length + 1];
+        for (int j = 0; j <= b.Length; j++) prev[j] = j;
+        for (int i = 1; i <= a.Length; i++)
+        {
+            cur[0] = i;
+            for (int j = 1; j <= b.Length; j++)
+                cur[j] = Math.Min(Math.Min(cur[j - 1] + 1, prev[j] + 1), prev[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1));
+            (prev, cur) = (cur, prev);
+        }
+        return prev[b.Length];
     }
 
     static List<string> Minus(List<string> a, List<string> b)
