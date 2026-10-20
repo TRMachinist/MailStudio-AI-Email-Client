@@ -71,7 +71,8 @@ public static class WindowCapture
     {
         w.UpdateLayout();
         var dpi = VisualTreeHelper.GetDpi(w);
-        var root = w.Content as FrameworkElement ?? (FrameworkElement)w;
+        // The window template's root fills the client area at (0,0); rendering w.Content would shift and crop it by its margin
+        var root = (VisualTreeHelper.GetChildrenCount(w) > 0 ? VisualTreeHelper.GetChild(w, 0) as FrameworkElement : null) ?? w.Content as FrameworkElement ?? w;
         int cw = Math.Max(1, (int)Math.Round(root.ActualWidth * dpi.DpiScaleX)), ch = Math.Max(1, (int)Math.Round(root.ActualHeight * dpi.DpiScaleY));
         int title = (int)Math.Round(31 * dpi.DpiScaleY);
 

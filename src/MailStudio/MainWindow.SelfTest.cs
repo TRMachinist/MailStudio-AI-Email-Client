@@ -138,6 +138,7 @@ public partial class MainWindow
 
     [DllImport("user32.dll")] static extern bool PrintWindow(IntPtr hwnd, IntPtr hdc, uint flags);
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hwnd, out RECT r);
+    [DllImport("user32.dll")] static extern bool GetClientRect(IntPtr hwnd, out RECT r);
     [StructLayout(LayoutKind.Sequential)] struct RECT { public int Left, Top, Right, Bottom; }
 
     /// <summary>Real pixels of the window (WebView2 and other native parts included).</summary>
@@ -153,7 +154,11 @@ public partial class MainWindow
             if (WindowCapture.OffScreen)
             {
                 // Hidden test desktop or locked screen: Windows draws nothing there, WPF renders the window itself
-                bmp = WindowCapture.Render(w, fresh: true).Bitmap;
+                var (rendered, _, top) = WindowCapture.Render(w, fresh: true);
+                bmp = rendered;
+                // the rendered picture must cover the whole client area (nothing cropped)
+                if (GetClientRect(hwnd, out var cr) && (Math.Abs(bmp.Width - cr.Right) > 2 || Math.Abs(bmp.Height - top - cr.Bottom) > 2))
+                    Fail("screenshot " + name, $"off-screen picture {bmp.Width}x{bmp.Height - top} does not match the window client area {cr.Right}x{cr.Bottom}");
                 if (!_offScreenNoted) { _offScreenNoted = true; Log("INFO", "running off-screen (hidden desktop or locked screen): pictures rendered by WPF, mail view from WebView2 capture"); }
             }
             else
