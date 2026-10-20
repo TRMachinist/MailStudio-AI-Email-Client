@@ -60,6 +60,7 @@ public partial class AccountWindow : Window
             CalendarExpander.IsExpanded = existing.EnableCalendarSync;
         }
         UpdateCalendarSyncUi();
+        OAuthInfoRun.Text = L.T(OAuthInfoRun.Text); OAuthHowRun.Text = L.T(OAuthHowRun.Text);   // runs inside a text are not translated by the window
     }
 
     AuthType SelectedAuth => (AuthType)Math.Max(0, AuthBox.SelectedIndex);

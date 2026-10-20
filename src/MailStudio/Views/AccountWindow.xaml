@@ -81,8 +81,8 @@
             <Expander x:Name="OAuthExpander" Header="OAuth ayarları (uygulama kimlikleri)" Margin="0,12,0,0" Visibility="Collapsed">
                 <StackPanel Margin="0,4,0,0">
                     <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,4,0,0">
-                        Microsoft/Google, tarayıcıyla girişe izin vermek için bir "uygulama kaydı" ister. Bir kez oluşturulur, tüm hesaplar için kullanılır.
-                        <Hyperlink Click="OnOAuthHelp">Nasıl alınır?</Hyperlink>
+                        <Run x:Name="OAuthInfoRun" Text="Microsoft/Google, tarayıcıyla girişe izin vermek için bir &quot;uygulama kaydı&quot; ister. Bir kez oluşturulur, tüm hesaplar için kullanılır."/>
+                        <Hyperlink Click="OnOAuthHelp"><Run x:Name="OAuthHowRun" Text="Nasıl alınır?"/></Hyperlink>
                     </TextBlock>
                     <TextBlock Text="Microsoft uygulama (istemci) kimliği" Style="{StaticResource Lbl}"/>
                     <TextBox x:Name="MsClientBox"/>
