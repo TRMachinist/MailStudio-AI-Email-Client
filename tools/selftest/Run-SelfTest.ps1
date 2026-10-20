@@ -1,14 +1,29 @@
 # MailStudio full test run - builds, runs every test suite and the real-app self-test, writes ONE summary.
-#   powershell -ExecutionPolicy Bypass -File tools\selftest\Run-SelfTest.ps1 [-Repo D:\MailStudio] [-Out D:\MailStudio\work\selftest]
+#   powershell -ExecutionPolicy Bypass -File tools\selftest\Run-SelfTest.ps1 [-Repo D:\MailStudio] [-Out D:\MailStudio\work\selftest] [-Hidden]
+# -Hidden: runs everything on a separate, invisible desktop - no window appears on your screen, you can keep working.
 # Only synthetic / demo data is used (isolated data folders); nothing is sent, your mailbox is never opened.
 param(
     [string]$Repo = (Resolve-Path "$PSScriptRoot\..\..").Path,
     [string]$Out = "",
     [string]$Work = "",
     [switch]$SkipUiTests,
-    [string[]]$Languages = @('tr', 'en')
+    [string[]]$Languages = @('tr', 'en'),
+    [switch]$Hidden
 )
 $ErrorActionPreference = 'Continue'
+if ($Hidden) {
+    $a = @("-Repo `"$Repo`"")
+    if ($Out) { $a += "-Out `"$Out`"" }
+    if ($Work) { $a += "-Work `"$Work`"" }
+    if ($SkipUiTests) { $a += '-SkipUiTests' }
+    $a += "-Languages $($Languages -join ',')"
+    $started = Get-Date
+    & (Join-Path $PSScriptRoot 'Start-OnHiddenDesktop.ps1') -Command "powershell.exe -ExecutionPolicy Bypass -File `"$PSCommandPath`" $($a -join ' ')" -Wait | Out-Null
+    $o = if ($Out) { $Out } elseif ($Work) { Join-Path $Work 'selftest' } elseif (Test-Path (Join-Path $Repo 'work\tech-fixtures')) { Join-Path $Repo 'work\selftest' } else { 'D:\MailStudio\work\selftest' }
+    $last = Get-ChildItem $o -Directory -ErrorAction SilentlyContinue | Where-Object { $_.CreationTime -ge $started.AddSeconds(-5) } | Sort-Object Name | Select-Object -Last 1
+    if ($last) { Get-Content (Join-Path $last.FullName 'summary.txt') } else { 'no run folder found' }
+    exit
+}
 if (-not $Work) { $Work = if (Test-Path (Join-Path $Repo 'work\tech-fixtures')) { Join-Path $Repo 'work' } else { 'D:\MailStudio\work' } }
 if (-not $Out) { $Out = Join-Path $Work 'selftest' }
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'

@@ -21,7 +21,12 @@
 - **Calendar sync** with Microsoft 365 / Outlook.com, Google Calendar and CalDAV – **off by default** per account. Calendar access is a separate consent asked on the first "Sync now". 60 days back and 400 days ahead are read completely (nothing is deleted from an incomplete listing); only events you put in that account's calendar are uploaded; on a conflict the server wins and your version is kept in the notes.
 - **Contact card** (recent mails, attachments, tasks, quotes), **@mentions** in the composer.
 - **Agent (MCP) tools**: `list_rules`, `list_followups`, `list_quotes`, `compare_revisions` (attachments only), `add_rule` (added disabled), `update_quote_status`. Still no send tool.
+- **Folder pane minimize button** (the "‹" at its top, as in classic Outlook): the pane becomes a narrow strip with the current folder name and the module buttons; "›" or a click on the name brings it back.
+- Fixed: unread counts in the folder pane were cut off at the pane edge (and a sideways scroll bar appeared); long folder names are now shortened with "…".
+- Fixed: the "Newsletters" filter tab ran under "By date ↓" above a narrow message list – the tabs now wrap.
+- Fixed: many new mails at once stacked desktop alerts beyond the top of the screen – at most three are shown.
 - Self-test: an empty (white/black) screenshot is now a failure – a locked screen can no longer produce a "passed" run without pictures.
+- Self-test and demo recordings can run on a hidden desktop (`tools\selftest\Start-OnHiddenDesktop.ps1`): no window appears on your screen, you can keep working (a locked screen works too). The pictures are then drawn by MailStudio itself.
 
 ## 1.7.1 – Fixes found by the new self-test (2026-10-19)
 
