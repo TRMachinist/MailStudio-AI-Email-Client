@@ -348,14 +348,15 @@
                                VerticalAlignment="Center" IsHitTestVisible="False"/>
                 </Grid>
                 <DockPanel Grid.Row="1" Margin="10,2,10,4">
-                    <TextBlock x:Name="ListSortText" DockPanel.Dock="Right" Text="Tarihe göre ↓" Foreground="{DynamicResource TextMutedBrush}" FontSize="12" VerticalAlignment="Center"/>
-                    <StackPanel Orientation="Horizontal">
+                    <TextBlock x:Name="ListSortText" DockPanel.Dock="Right" Text="Tarihe göre ↓" Foreground="{DynamicResource TextMutedBrush}" FontSize="12" VerticalAlignment="Top" Margin="8,3,0,0"/>
+                    <!-- Wraps to a second line when the list is narrow instead of running under the sort text -->
+                    <WrapPanel x:Name="FilterTabs" Orientation="Horizontal">
                         <RadioButton x:Name="FilterAll" Style="{StaticResource FilterTab}" IsChecked="True" Checked="OnFilterChanged">Tümü</RadioButton>
                         <RadioButton x:Name="FilterUnread" Style="{StaticResource FilterTab}" Checked="OnFilterChanged">Okunmamış</RadioButton>
                         <RadioButton x:Name="FilterFlagged" Style="{StaticResource FilterTab}" Checked="OnFilterChanged">Bayraklı</RadioButton>
                         <RadioButton x:Name="FilterSnoozed" Style="{StaticResource FilterTab}" Checked="OnFilterChanged">Ertelenen</RadioButton>
                         <RadioButton x:Name="FilterNewsletters" Style="{StaticResource FilterTab}" Checked="OnFilterChanged">Bültenler</RadioButton>
-                    </StackPanel>
+                    </WrapPanel>
                 </DockPanel>
                 <ListView Grid.Row="2" x:Name="MessageList" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource BorderSubtleBrush}" Background="Transparent"
                           ItemsSource="{Binding Source={StaticResource MailView}}" SelectionMode="Extended"

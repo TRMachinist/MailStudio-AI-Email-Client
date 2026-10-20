@@ -129,7 +129,10 @@ public static class WindowCapture
                     var p = v.TransformToAncestor(root).Transform(new Point(0, 0));
                     var dest = new D.Rectangle((int)Math.Round(p.X * dpi.DpiScaleX), title + (int)Math.Round(p.Y * dpi.DpiScaleY),
                                                (int)Math.Round(v.ActualWidth * dpi.DpiScaleX), (int)Math.Round(v.ActualHeight * dpi.DpiScaleY));
-                    g.DrawImage(s.Bitmap, dest);
+                    // 1:1, never stretched: right after a resize the last picture may still have the old size
+                    using (var white = new D.SolidBrush(D.Color.White)) g.FillRectangle(white, dest);
+                    var src = new D.Rectangle(0, 0, Math.Min(dest.Width, s.Bitmap.Width), Math.Min(dest.Height, s.Bitmap.Height));
+                    g.DrawImage(s.Bitmap, new D.Rectangle(dest.X, dest.Y, src.Width, src.Height), src, D.GraphicsUnit.Pixel);
                 }
                 catch { }
             }

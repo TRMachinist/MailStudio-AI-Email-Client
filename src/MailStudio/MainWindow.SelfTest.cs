@@ -221,6 +221,13 @@ public partial class MainWindow
             return r.Right > FolderTree.ActualWidth + 0.5 || r.Left < 0;
         }).ToList();
         Check(badges.Count > 0 && clipped.Count == 0, $"{where}: {badges.Count} unread badges fully visible in the folder pane", $"{clipped.Count} badge(s) cut off at the pane edge");
+        // The filter tabs above the message list must not run under the sort text
+        FilterTabs.UpdateLayout();
+        var sortLeft = ListSortText.TransformToAncestor(this).Transform(new Point(0, 0));
+        var sortRect = new Rect(sortLeft, new Size(ListSortText.ActualWidth, ListSortText.ActualHeight));
+        var overlap = Tree(FilterTabs).OfType<RadioButton>().Where(b => b.IsVisible)
+            .Where(b => new Rect(b.TransformToAncestor(this).Transform(new Point(0, 0)), new Size(b.ActualWidth, b.ActualHeight)).IntersectsWith(sortRect)).Select(b => TextOf(b.Content)).ToList();
+        Check(overlap.Count == 0, $"{where}: filter tabs do not overlap the sort text", string.Join(", ", overlap));
     }
 
     static IEnumerable<DependencyObject> Tree(DependencyObject root)
