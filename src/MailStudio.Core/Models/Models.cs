@@ -100,7 +100,7 @@ public partial class FolderNode : ObservableObject
 public partial class MailHeader : ObservableObject
 {
     public string AccountId { get; init; } = "";
-    public string Folder { get; set; } = "";
+    public string Folder { get; init; } = "";
     public uint Uid { get; init; }
     public uint UidValidity { get; init; }
     public bool IsDraft { get; init; }

@@ -703,8 +703,27 @@ await Test("rules: condition and action matrix, order/stop, FakeImap move/flag, 
     Check(h1.Category == "Important", "action set_category executed");
     Check(taskStore.Tasks.Any(t => t.Title == "Review: " + h1.Subject), "action create_task executed");
     Check(executedSkills.Contains("summarize"), "action run_skill executed");
-    Check(h1.Folder == "Trash", "action move_to_folder executed");
+    Check(results[1].Moved && results[1].AppliedActions.Any(a => a.Contains("Trash")), "action move_to_folder executed");
     Check(!h1.IsRead, "third rule was stopped by stop_processing");
+
+    // Empty values never match everything; such rules cannot be saved
+    Check(!RuleEngine.MatchesCondition(new RuleCondition { Field = "from", Value = "" }, h1), "empty 'from' value matches nothing");
+    Check(!RuleEngine.MatchesCondition(new RuleCondition { Field = "subject", Value = " ; " }, h1), "separator-only value matches nothing");
+    Check(RuleEngine.Validate(new MailRule { Name = "x", Conditions = { new RuleCondition { Field = "from", Value = "" } }, Actions = { new RuleAction { Type = "move_to_trash" } } }) != null, "rule with an empty condition is refused");
+    Check(RuleEngine.Validate(new MailRule { Name = "x", Conditions = { new RuleCondition { Field = "from", Value = "a@b" } }, Actions = { new RuleAction { Type = "move_to_folder", Value = "" } } }) != null, "move without folder is refused");
+    Check(RuleEngine.Validate(new MailRule { Name = "x", Conditions = { new RuleCondition { Field = "has_attachment" } }, Actions = { new RuleAction { Type = "mark_as_read" } } }) == null, "has_attachment needs no value");
+    var norm = new MailRule { Name = "n", Conditions = { new RuleCondition { Field = "FROM", Value = "a" } }, Actions = { new RuleAction { Type = "mark_read" }, new RuleAction { Type = "flag" } } };
+    RuleEngine.Normalize(norm);
+    Check(norm.Conditions[0].Field == "from" && norm.Actions[0].Type == "mark_as_read" && norm.Actions[1].Type == "mark_as_flagged", "agent/AI action names normalized");
+
+    // A move runs last: actions listed after it still apply to the right message
+    server.Messages[3] = "Message-Id: <three@test>\r\nSubject: order\r\n\r\nx";
+    var h2 = new MailHeader { AccountId = "synthetic", Folder = "INBOX", Uid = 3, UidValidity = h1.UidValidity, MessageId = "three@test", FromAddress = "anna@example.test", Subject = "order" };
+    cache.UpsertHeaders(new[] { h2 });
+    var moveFirst = new MailRule { Name = "move first", Conditions = { new RuleCondition { Field = "subject", Value = "order" } },
+        Actions = { new RuleAction { Type = "move_to_folder", Value = "Archive" }, new RuleAction { Type = "mark_as_read" } } };
+    var res2 = await RuleEngine.ApplyRulesAsync(new[] { moveFirst }, h2, account, mail, cache, taskStore);
+    Check(h2.IsRead && res2[0].Moved && res2[0].AppliedActions[0].Contains("Okundu", StringComparison.OrdinalIgnoreCase) | res2[0].AppliedActions[0].Contains("read", StringComparison.OrdinalIgnoreCase), "mark-as-read applied before the move");
 
     // Store persistence
     store.Rules.AddRange(new[] { r1, r2 });
