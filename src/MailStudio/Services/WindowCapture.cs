@@ -67,14 +67,14 @@ public static class WindowCapture
     /// for a new picture of every mail view; otherwise the last one is used and a new one is requested.
     /// Returns the bitmap and where the client area starts in it.
     /// </summary>
-    public static (D.Bitmap Bitmap, int ClientX, int ClientY) Render(Window w, bool fresh)
+    public static (D.Bitmap Bitmap, int ClientX, int ClientY) Render(Window w, bool fresh, double scale = 1.0)
     {
         w.UpdateLayout();
         var dpi = VisualTreeHelper.GetDpi(w);
         // The window template's root fills the client area at (0,0); rendering w.Content would shift and crop it by its margin
         var root = (VisualTreeHelper.GetChildrenCount(w) > 0 ? VisualTreeHelper.GetChild(w, 0) as FrameworkElement : null) ?? w.Content as FrameworkElement ?? w;
-        int cw = Math.Max(1, (int)Math.Round(root.ActualWidth * dpi.DpiScaleX)), ch = Math.Max(1, (int)Math.Round(root.ActualHeight * dpi.DpiScaleY));
-        int title = (int)Math.Round(31 * dpi.DpiScaleY);
+        int cw = Math.Max(1, (int)Math.Round(root.ActualWidth * dpi.DpiScaleX * scale)), ch = Math.Max(1, (int)Math.Round(root.ActualHeight * dpi.DpiScaleY * scale));
+        int title = (int)Math.Round(31 * dpi.DpiScaleY * scale);
 
         var webs = new List<(WebView2 View, WebShot Shot)>();
         foreach (var wv in Descendants(root).OfType<WebView2>().Where(v => v.IsVisible && v.ActualWidth > 0))
@@ -92,7 +92,7 @@ public static class WindowCapture
         }
         else foreach (var (v, s) in webs) Refresh(v, s);
 
-        var rtb = new RenderTargetBitmap(cw, ch, 96 * dpi.DpiScaleX, 96 * dpi.DpiScaleY, PixelFormats.Pbgra32);
+        var rtb = new RenderTargetBitmap(cw, ch, 96 * dpi.DpiScaleX * scale, 96 * dpi.DpiScaleY * scale, PixelFormats.Pbgra32);
         var bg = new DrawingVisual();
         using (var dc = bg.RenderOpen())
             dc.DrawRectangle(w.Background ?? Brushes.White, null, new Rect(0, 0, root.ActualWidth, root.ActualHeight));
@@ -111,13 +111,13 @@ public static class WindowCapture
             var barColor = dark ? D.Color.FromArgb(32, 32, 32) : D.Color.FromArgb(243, 243, 243);
             var textColor = dark ? D.Color.FromArgb(230, 230, 230) : D.Color.FromArgb(32, 32, 32);
             using (var bar = new D.SolidBrush(barColor)) g.FillRectangle(bar, 0, 0, cw, title);
-            using var font = new D.Font("Segoe UI", 9f * (float)dpi.DpiScaleY, D.GraphicsUnit.Point);
+            using var font = new D.Font("Segoe UI", 9f * (float)(dpi.DpiScaleY * scale), D.GraphicsUnit.Point);
             using var text = new D.SolidBrush(textColor);
             var fmt = new D.StringFormat { LineAlignment = D.StringAlignment.Center, Trimming = D.StringTrimming.EllipsisCharacter, FormatFlags = D.StringFormatFlags.NoWrap };
-            g.DrawString(w.Title ?? "", font, text, new D.RectangleF(12 * (float)dpi.DpiScaleX, 0, cw - 160 * (float)dpi.DpiScaleX, title), fmt);
-            using var glyphs = new D.Font("Segoe MDL2 Assets", 7.5f * (float)dpi.DpiScaleY, D.GraphicsUnit.Point);
+            g.DrawString(w.Title ?? "", font, text, new D.RectangleF(12 * (float)(dpi.DpiScaleX * scale), 0, cw - 160 * (float)(dpi.DpiScaleX * scale), title), fmt);
+            using var glyphs = new D.Font("Segoe MDL2 Assets", 7.5f * (float)(dpi.DpiScaleY * scale), D.GraphicsUnit.Point);
             var cap = new[] { "", w.ResizeMode is ResizeMode.CanResize or ResizeMode.CanResizeWithGrip ? "" : "", "" };
-            float bw = 46 * (float)dpi.DpiScaleX;
+            float bw = 46 * (float)(dpi.DpiScaleX * scale);
             for (int i = 0; i < 3; i++)
                 if (cap[i].Length > 0)
                     g.DrawString(cap[i], glyphs, text, new D.RectangleF(cw - (3 - i) * bw, 0, bw, title), new D.StringFormat { Alignment = D.StringAlignment.Center, LineAlignment = D.StringAlignment.Center });
@@ -128,8 +128,8 @@ public static class WindowCapture
                 try
                 {
                     var p = v.TransformToAncestor(root).Transform(new Point(0, 0));
-                    var dest = new D.Rectangle((int)Math.Round(p.X * dpi.DpiScaleX), title + (int)Math.Round(p.Y * dpi.DpiScaleY),
-                                               (int)Math.Round(v.ActualWidth * dpi.DpiScaleX), (int)Math.Round(v.ActualHeight * dpi.DpiScaleY));
+                    var dest = new D.Rectangle((int)Math.Round(p.X * dpi.DpiScaleX * scale), title + (int)Math.Round(p.Y * dpi.DpiScaleY * scale),
+                                               (int)Math.Round(v.ActualWidth * dpi.DpiScaleX * scale), (int)Math.Round(v.ActualHeight * dpi.DpiScaleY * scale));
                     // 1:1, never stretched: right after a resize the last picture may still have the old size
                     using (var white = new D.SolidBrush(D.Color.White)) g.FillRectangle(white, dest);
                     var src = new D.Rectangle(0, 0, Math.Min(dest.Width, s.Bitmap.Width), Math.Min(dest.Height, s.Bitmap.Height));

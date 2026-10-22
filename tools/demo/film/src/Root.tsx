@@ -2,14 +2,36 @@ import React from 'react';
 import {Composition} from 'remotion';
 import {Film} from './Film';
 import {LinkedInFilm} from './LinkedIn';
+import {LinkedIn2Film} from './LinkedIn2';
 import en from './timeline-en.json';
 import tr from './timeline-tr.json';
 import enNew18 from './timelinenew18-en.json';
 import trNew18 from './timelinenew18-tr.json';
 import linkedinTimeline from './timeline-linkedin.json';
+import linkedin2Timeline from './timeline-linkedin2.json';
 
 export const RemotionRoot: React.FC = () => (
   <>
+    {/* LinkedIn Product Film v2 (Show what it says) */}
+    <Composition
+      id="LinkedIn2-16x9"
+      component={LinkedIn2Film}
+      defaultProps={{aspect: '16x9'}}
+      durationInFrames={(linkedin2Timeline as any).totalFrames}
+      fps={30}
+      width={1920}
+      height={1080}
+    />
+    <Composition
+      id="LinkedIn2-4x5"
+      component={LinkedIn2Film}
+      defaultProps={{aspect: '4x5'}}
+      durationInFrames={(linkedin2Timeline as any).totalFrames}
+      fps={30}
+      width={1080}
+      height={1350}
+    />
+
     {/* LinkedIn Product Film (120s, 30fps) */}
     <Composition
       id="LinkedIn16x9"

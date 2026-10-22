@@ -1,0 +1,369 @@
+{
+  "chapters": [
+    {
+      "id": "C01",
+      "title": "Cold open – Inbox",
+      "scene": "C01-inbox",
+      "beats": [
+        {
+          "id": "C01b1",
+          "voice": "Engineering work arrives by email.",
+          "subtitle_tr": "Mühendislik işleri e-postayla gelir.",
+          "action": "glide over inbox with coloured rows, focus blue bold quotation row",
+          "target": "quotation-row",
+          "hold_ms": 1000
+        },
+        {
+          "id": "C01b2",
+          "voice": "Drawings, revisions, and RFQs.",
+          "subtitle_tr": "Teknik resimler, revizyonlar ve teklifler.",
+          "action": "select quotation request row, highlighting details",
+          "target": "quotation-row",
+          "hold_ms": 1200
+        }
+      ]
+    },
+    {
+      "id": "C02",
+      "title": "AI Summarize & Reply",
+      "scene": "C02-ai",
+      "beats": [
+        {
+          "id": "C02b1",
+          "voice": "One click summarizes the drawing request locally.",
+          "subtitle_tr": "Tek tıkla teknik resim talebini\nyerel yapay zekayla özetler.",
+          "action": "click summarize button on mail 1, stream summary text",
+          "target": "ai-summary-text",
+          "hold_ms": 1200
+        },
+        {
+          "id": "C02b2",
+          "voice": "Drafts the reply, and opens it in the composer.",
+          "subtitle_tr": "Cevap taslağını hazırlar ve\ndoğrudan editörde açar.",
+          "action": "click draft reply, then click open as reply into inline composer",
+          "target": "composer-body",
+          "hold_ms": 1400
+        }
+      ]
+    },
+    {
+      "id": "C03",
+      "title": "Skills reading attachments & OCR",
+      "scene": "C03-skills-ocr",
+      "beats": [
+        {
+          "id": "C03b1",
+          "voice": "Skills inspect the mail and drawings –",
+          "subtitle_tr": "Skill'ler gelen maili ve\neklerini inceler –",
+          "action": "click skill button 'Quotation request analysis' on mail 1",
+          "target": "skill-button-quote",
+          "hold_ms": 900
+        },
+        {
+          "id": "C03b2",
+          "voice": "running local OCR on the PDF –",
+          "subtitle_tr": "PDF teknik resim üzerinde\nyerel OCR çalıştırarak –",
+          "action": "status line shows reading attachments / running OCR",
+          "target": "skill-status-line",
+          "hold_ms": 1000
+        },
+        {
+          "id": "C03b3",
+          "voice": "and stream the breakdown into the mail.",
+          "subtitle_tr": "ve mühendislik analizini\ndoğrudan mailin içine yazar.",
+          "action": "engineering analysis note streams in with dimensions and material",
+          "target": "skill-analysis-note",
+          "hold_ms": 1500
+        }
+      ]
+    },
+    {
+      "id": "C04",
+      "title": "Revision Compare",
+      "scene": "C04-revdiff",
+      "beats": [
+        {
+          "id": "C04b1",
+          "voice": "Compare new revisions against earlier customer mails.",
+          "subtitle_tr": "Yeni revizyon geldiğinde, eski\nmaillerdeki çizimle karşılaştırın.",
+          "action": "open revision compare chooser for flange-DN100-revC.dxf on mail 10",
+          "target": "revdiff-compare-btn",
+          "hold_ms": 1000
+        },
+        {
+          "id": "C04b2",
+          "voice": "Every change is listed: eight holes widened from 18 to 20 millimetres,",
+          "subtitle_tr": "Tüm değişiklikler listelenir:\nsekiz delik 18'den 20 mm'ye çıkmış,",
+          "action": "diff window opens, focus diff row 8x Ø18 THRU -> 8x Ø20",
+          "target": "diff-row-hole-diam",
+          "hold_ms": 1200
+        },
+        {
+          "id": "C04b3",
+          "voice": "roughness tightened to Ra 1.6,",
+          "subtitle_tr": "yüzey pürüzlülüğü Ra 1.6'ya\nçekilmiş,",
+          "action": "focus diff row Ra 3.2 -> 1.6 and rev marker",
+          "target": "diff-row-roughness",
+          "hold_ms": 1100
+        },
+        {
+          "id": "C04b4",
+          "voice": "and added to your reply in one click.",
+          "subtitle_tr": "ve tek tıkla cevabınıza eklenir.",
+          "action": "click Add Diff to Reply button",
+          "target": "diff-add-to-reply-btn",
+          "hold_ms": 1200
+        }
+      ]
+    },
+    {
+      "id": "C05",
+      "title": "STEP B-rep, Stock & Weight",
+      "scene": "C05-step",
+      "beats": [
+        {
+          "id": "C05b1",
+          "voice": "Open STEP models from native B-rep geometry.",
+          "subtitle_tr": "STEP modellerini doğrudan\nB-rep geometrisinden açın.",
+          "action": "open bracket-revC.stp on mail 2, smooth 3D orbit",
+          "target": "step-viewport",
+          "hold_ms": 1000
+        },
+        {
+          "id": "C05b2",
+          "voice": "Click any bore for exact diameter and area.",
+          "subtitle_tr": "Çapı ve yüzey alanını görmek\niçin deliğe tıklayın.",
+          "action": "click Ø25 bore, display measurement pin tag",
+          "target": "step-bore-tag",
+          "hold_ms": 1100
+        },
+        {
+          "id": "C05b3",
+          "voice": "Calculate stock envelopes with allowances,",
+          "subtitle_tr": "İşleme paylarıyla kütük\nölçülerini hesaplayın,",
+          "action": "switch to Stock tab, bounding box wireframe visible on model",
+          "target": "step-stock-tab",
+          "hold_ms": 1100
+        },
+        {
+          "id": "C05b4",
+          "voice": "with part weight, stock mass, and chips percentage.",
+          "subtitle_tr": "parça ağırlığını, kütük kütlesini\nve talaş oranını anında görün.",
+          "action": "select material, focus part weight, stock weight and chips readout",
+          "target": "step-chips-readout",
+          "hold_ms": 1400
+        }
+      ]
+    },
+    {
+      "id": "C06",
+      "title": "DXF Layers & Measure Snapping",
+      "scene": "C06-dxf",
+      "beats": [
+        {
+          "id": "C06b1",
+          "voice": "In CAD drawings, toggle hatch and centerlines.",
+          "subtitle_tr": "CAD çizimlerinde tarama ve eksen\nkatmanlarını gizleyip açın.",
+          "action": "open flange-DN100-revB.dxf, toggle HATCH layer checkbox",
+          "target": "dxf-layer-hatch",
+          "hold_ms": 1000
+        },
+        {
+          "id": "C06b2",
+          "voice": "Measure with vertex snapping across the flange.",
+          "subtitle_tr": "Dış çapı yakalama noktalarıyla\nhassas biçimde ölçün.",
+          "action": "activate Measure (M), snap point A to point B across outer diameter",
+          "target": "dxf-snap-point",
+          "hold_ms": 1200
+        },
+        {
+          "id": "C06b3",
+          "voice": "Exact 220 millimetre readout.",
+          "subtitle_tr": "Net 220 milimetre ölçüm sonucu.",
+          "action": "focus measurement badge Ø220 mm readout",
+          "target": "dxf-measure-readout",
+          "hold_ms": 1100
+        }
+      ]
+    },
+    {
+      "id": "C07",
+      "title": "PDF Studio OCR & Markup",
+      "scene": "C07-pdf",
+      "beats": [
+        {
+          "id": "C07b1",
+          "voice": "PDF drawings include built-in OCR and markup.",
+          "subtitle_tr": "PDF teknik resimlerde dahili OCR\nve çizim araçları bulunur.",
+          "action": "open flange-DN100.pdf in PDF Studio, run OCR",
+          "target": "pdf-ocr-btn",
+          "hold_ms": 1000
+        },
+        {
+          "id": "C07b2",
+          "voice": "Highlight dimensions or add sticky notes.",
+          "subtitle_tr": "Kritik ölçüleri vurgulayın veya\nyapışkan not ekleyin.",
+          "action": "highlight dimension and place sticky note annotation",
+          "target": "pdf-highlight-box",
+          "hold_ms": 1200
+        },
+        {
+          "id": "C07b3",
+          "voice": "Ask the document, and get cited answers.",
+          "subtitle_tr": "Belgeye soru sorun, sayfa\nreferanslı yanıt alın.",
+          "action": "query Ask the document, answer streams citing page number",
+          "target": "pdf-ask-answer",
+          "hold_ms": 1400
+        }
+      ]
+    },
+    {
+      "id": "C08",
+      "title": "Excel Update & Difference Preview",
+      "scene": "C08-excel-diff",
+      "beats": [
+        {
+          "id": "C08b1",
+          "voice": "When planning sends Excel schedule changes,",
+          "subtitle_tr": "Planlamadan gelen Excel\nteslimat güncellemelerinde,",
+          "action": "select mail 3, click Skill Update delivery schedule",
+          "target": "skill-button-excel",
+          "hold_ms": 1000
+        },
+        {
+          "id": "C08b2",
+          "voice": "preview changed cells side by side.",
+          "subtitle_tr": "hiçbir dosyayı bozmadan tüm\nhücre farklarını yan yana görün.",
+          "action": "preview grid shows Sheet/Cell/Before/After differences",
+          "target": "excel-preview-grid",
+          "hold_ms": 1300
+        },
+        {
+          "id": "C08b3",
+          "voice": "Save as new and open in the built-in editor.",
+          "subtitle_tr": "Temiz yeni bir dosya olarak\nkaydedip dahili editörde açın.",
+          "action": "click Save as new file, Excel editor opens with recalculated formulas",
+          "target": "excel-editor-grid",
+          "hold_ms": 1300
+        }
+      ]
+    },
+    {
+      "id": "C09",
+      "title": "Office, CNC & Archives",
+      "scene": "C09-office-cnc-rar",
+      "beats": [
+        {
+          "id": "C09b1",
+          "voice": "Inspect Word inspection reports,",
+          "subtitle_tr": "Word kalite kontrol raporlarını,",
+          "action": "open mail 4 FAI-report-NW-1042.docx",
+          "target": "word-viewer-doc",
+          "hold_ms": 900
+        },
+        {
+          "id": "C09b2",
+          "voice": "kickoff presentations,",
+          "subtitle_tr": "proje sunumlarını,",
+          "action": "open mail 2 kickoff-bracket-revC.pptx",
+          "target": "pptx-viewer-slide",
+          "hold_ms": 900
+        },
+        {
+          "id": "C09b3",
+          "voice": "and CNC G-code with tool detection.",
+          "subtitle_tr": "ve takım listesi algılamalı\nCNC G-kodlarını görüntüleyin.",
+          "action": "open mail 5 OP20.nc, highlight tools T1, T2 in header",
+          "target": "cnc-tools-header",
+          "hold_ms": 1000
+        },
+        {
+          "id": "C09b4",
+          "voice": "Open ZIP or RAR packages and view drawings inside.",
+          "subtitle_tr": "ZIP veya RAR paketlerini açıp\niçindeki çizimi doğrudan inceleyin.",
+          "action": "open mail 11 NW-1042-drawings.rar, select and open inner PDF",
+          "target": "archive-item-pdf",
+          "hold_ms": 1200
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "title": "Safety & Calendar Integration",
+      "scene": "C10-safety-cal",
+      "beats": [
+        {
+          "id": "C10b1",
+          "voice": "Smart compose warns of missing attachments.",
+          "subtitle_tr": "Akıllı editör, göndermeden önce\nunutulan ekleri uyarır.",
+          "action": "compose message with attached mentioned, click Send without file -> dialog appears",
+          "target": "missing-attachment-dialog",
+          "hold_ms": 1300
+        },
+        {
+          "id": "C10b2",
+          "voice": "Send safely with an instant undo bar,",
+          "subtitle_tr": "Geri alma çubuğuyla hatalı\ngönderimleri anında durdurun,",
+          "action": "send message, undo bar appears, click Undo",
+          "target": "undo-bar-btn",
+          "hold_ms": 1100
+        },
+        {
+          "id": "C10b3",
+          "voice": "or queue replies in the Outbox.",
+          "subtitle_tr": "ya da gönderimleri giden kutusunda\nzamanlayın.",
+          "action": "view Outbox window with queued items",
+          "target": "outbox-list",
+          "hold_ms": 1000
+        },
+        {
+          "id": "C10b4",
+          "voice": "Accept invitations straight into the calendar.",
+          "subtitle_tr": "Toplantı davetlerini doğrudan\nentegre takviminize işleyin.",
+          "action": "open mail 9 meeting invitation, click Accept, show calendar week",
+          "target": "calendar-week-grid",
+          "hold_ms": 1400
+        }
+      ]
+    },
+    {
+      "id": "C11",
+      "title": "Quote Desk, Contact Card & Dark Theme",
+      "scene": "C11-desk-dark-end",
+      "beats": [
+        {
+          "id": "C11b1",
+          "voice": "Track RFQs and mark quotes Won in the Quote Desk.",
+          "subtitle_tr": "Teklif Masası'nda durumları izleyin\nve kazanılan teklifleri onaylayın.",
+          "action": "open Quote Desk (Ctrl+5), filter overdue, select quote, mark Won",
+          "target": "quote-status-won",
+          "hold_ms": 1200
+        },
+        {
+          "id": "C11b2",
+          "voice": "View client history in the 360-degree contact card.",
+          "subtitle_tr": "Müşteri kartında tüm geçmiş\nyazışma ve teklifleri görün.",
+          "action": "open Contact card for Anna Keller showing Messages, Attachments, Quotes tabs",
+          "target": "contact-card-tabs",
+          "hold_ms": 1300
+        },
+        {
+          "id": "C11b3",
+          "voice": "Switch to dark theme for late shop floor hours.",
+          "subtitle_tr": "Atölye vardiyaları için tek\ntıkla karanlık temaya geçin.",
+          "action": "toggle Dark theme (View -> Theme -> Dark)",
+          "target": "dark-theme-inbox",
+          "hold_ms": 1200
+        },
+        {
+          "id": "C11b4",
+          "voice": "MailStudio 1.8. Free and open source.",
+          "subtitle_tr": "MailStudio 1.8. Mühendisler için\nücretsiz ve açık kaynak.",
+          "action": "display End card with GitHub URL",
+          "target": "end-card-logo",
+          "hold_ms": 2000
+        }
+      ]
+    }
+  ]
+}
