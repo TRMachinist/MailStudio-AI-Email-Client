@@ -120,6 +120,12 @@ public partial class App : Application
             var target = System.IO.Path.GetFullPath(e.Args[showcase18At + 1]);
             window.ContentRendered += async (_, _) => await Services.ShowcaseVideo.Run18Async(window, target);
         }
+        var showcaseLinkedInAt = Array.IndexOf(e.Args, "--showcase-linkedin");
+        if (demo && showcaseLinkedInAt >= 0 && showcaseLinkedInAt + 1 < e.Args.Length)
+        {
+            var target = System.IO.Path.GetFullPath(e.Args[showcaseLinkedInAt + 1]);
+            window.ContentRendered += async (_, _) => await Services.ShowcaseLinkedIn.RunAsync(window, target);
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)

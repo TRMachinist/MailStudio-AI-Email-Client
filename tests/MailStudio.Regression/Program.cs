@@ -2309,6 +2309,57 @@ await Test("@ ile bahsetme: ContactBook önerileri ve arama eşleme", () => Sync
     Check(siemensMatches.Count >= 1 && siemensMatches[0].Address == "hans.weber@siemens.example", "Suggest('siemens') found match by company");
 }));
 
+await Test("RAR arşiv desteği: SharpCompress demo RAR açma, en az 3 girdi listeleme, ayıklama ve zip slip koruması", () => Sync(() =>
+{
+    var rarPath = Path.Combine(RepoRoot(), "src", "MailStudio", "Demo", "NW-1042-drawings.rar");
+    Check(File.Exists(rarPath), "Demo RAR file exists on disk");
+
+    using var archive = SharpCompress.Archives.ArchiveFactory.OpenArchive(rarPath, null);
+    var validEntries = archive.Entries.Where(e => !e.IsDirectory).ToList();
+    Check(validEntries.Count >= 3, $"Demo RAR contains >= 3 entries (found {validEntries.Count})");
+
+    var tempExtract = Path.Combine(root, "rar-extract-test");
+    Directory.CreateDirectory(tempExtract);
+
+    foreach (var entry in validEntries)
+    {
+        var dest = ArchiveSecurity.GetSafeDestination(tempExtract, entry.Key ?? "");
+        var parent = Path.GetDirectoryName(dest);
+        if (parent != null) Directory.CreateDirectory(parent);
+        using (var stream = entry.OpenEntryStream())
+        using (var fs = new FileStream(dest, FileMode.Create, FileAccess.Write))
+        {
+            stream.CopyTo(fs);
+        }
+        Check(File.Exists(dest) && new FileInfo(dest).Length > 0, $"Extracted {entry.Key} successfully");
+    }
+
+    var maliciousKeys = new[]
+    {
+        "../evil.exe",
+        "..\\evil.exe",
+        "sub/../../evil.exe",
+        "/etc/shadow",
+        "C:\\Windows\\System32\\cmd.exe",
+        "..",
+        ""
+    };
+
+    foreach (var badKey in maliciousKeys)
+    {
+        bool rejected = false;
+        try
+        {
+            ArchiveSecurity.GetSafeDestination(tempExtract, badKey);
+        }
+        catch (Exception)
+        {
+            rejected = true;
+        }
+        Check(rejected, $"Zip slip attack rejected for: '{badKey}'");
+    }
+}));
+
 Console.WriteLine($"RESULT {passed} passed. Synthetic evidence: {root}");
 
 sealed class MockHttpHandler : HttpMessageHandler

@@ -1823,6 +1823,8 @@
  "Z yönü seç": "Select Z direction",
  "Z yönü üstteki Yön alanıdır. X ve Z dikleştirilerek sağ elli koordinat sistemi oluşturulur.": "The Z direction is the Direction field above. X and Z are orthogonalized to build a right-handed coordinate system.",
  "ZIP Olarak Sıkıştır": "Compress to ZIP",
+ "RAR arşivi": "RAR archive",
+ "7z arşivi": "7z archive",
  "ZIP arşivi": "ZIP archive",
  "ZIP okunamadı: ": "Could not read ZIP: ",
  "ZIP oluşturulamadı: ": "Could not create ZIP: ",

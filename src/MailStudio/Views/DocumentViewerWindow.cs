@@ -50,7 +50,7 @@ public sealed class DocumentViewerWindow : Window
     {
         var ext = Path.GetExtension(path).ToLowerInvariant();
         if (ext == ".eml") return Kind.Eml;
-        if (ext == ".zip") return Kind.Zip;
+        if (ext is ".zip" or ".rar" or ".7z") return Kind.Zip;
         if (CsvExtensions.Contains(ext)) return Kind.Csv;
         if (CodeExtensions.Contains(ext) || NcExtensions.Contains(ext)) return Kind.Code;
         if (OfficeExtensions.Contains(ext)) return Kind.Preview;
@@ -123,7 +123,7 @@ public sealed class DocumentViewerWindow : Window
             ".msg" => L.T("Outlook iletisi"), _ => L.T("Önizleme"),
         },
         Kind.Code => NcExtensions.Contains(Path.GetExtension(path).ToLowerInvariant()) ? L.T("CNC program görüntüleyici") : L.T("Kod / metin görüntüleyici"),
-        Kind.Csv => L.T("CSV tablo"), Kind.Zip => L.T("ZIP arşivi"), Kind.Eml => L.T("E-posta iletisi"), _ => L.T("Görüntüleyici"),
+        Kind.Csv => L.T("CSV tablo"), Kind.Zip => Path.GetExtension(path).ToLowerInvariant() switch { ".rar" => L.T("RAR arşivi"), ".7z" => L.T("7z arşivi"), _ => L.T("ZIP arşivi") }, Kind.Eml => L.T("E-posta iletisi"), _ => L.T("Görüntüleyici"),
     };
 
     static string KindIcon(Kind k, string path) => k switch { Kind.Code => "", Kind.Csv => "", Kind.Zip => "", Kind.Eml => "", _ => "" };
@@ -506,10 +506,19 @@ public sealed class DocumentViewerWindow : Window
         List<ZipRow> rows;
         try
         {
-            using var zip = ZipFile.OpenRead(_path);
-            rows = zip.Entries.Where(e => !e.FullName.EndsWith('/')).Select(e => new ZipRow(e.Name, Path.GetDirectoryName(e.FullName.Replace('/', Path.DirectorySeparatorChar)) ?? "", Size(e.Length), Size(e.CompressedLength), e.LastWriteTime.ToString(L.T("dd.MM.yyyy HH:mm")), e.FullName, e.Length)).ToList();
+            var ext = Path.GetExtension(_path).ToLowerInvariant();
+            if (ext == ".zip")
+            {
+                using var zip = ZipFile.OpenRead(_path);
+                rows = zip.Entries.Where(e => !e.FullName.EndsWith('/')).Select(e => new ZipRow(e.Name, Path.GetDirectoryName(e.FullName.Replace('/', Path.DirectorySeparatorChar)) ?? "", Size(e.Length), Size(e.CompressedLength), e.LastWriteTime.ToString(L.T("dd.MM.yyyy HH:mm")), e.FullName, e.Length)).ToList();
+            }
+            else
+            {
+                using var archive = SharpCompress.Archives.ArchiveFactory.OpenArchive(_path, null);
+                rows = archive.Entries.Where(e => !e.IsDirectory).Select(e => new ZipRow(Path.GetFileName(e.Key?.Replace('\\', '/') ?? ""), Path.GetDirectoryName((e.Key ?? "").Replace('/', Path.DirectorySeparatorChar)) ?? "", Size(e.Size), Size(e.CompressedSize), (e.LastModifiedTime ?? DateTime.Now).ToString(L.T("dd.MM.yyyy HH:mm")), e.Key ?? "", e.Size)).ToList();
+            }
         }
-        catch (Exception ex) { ShowFallback(L.T("ZIP okunamadı: ") + ex.Message); return; }
+        catch (Exception ex) { ShowFallback(L.T("Arşiv okunamadı: ") + ex.Message); return; }
         var view = new GridView();
         void Col(string header, string path, double w) => view.Columns.Add(new GridViewColumn { Header = header, DisplayMemberBinding = new System.Windows.Data.Binding(path), Width = w });
         Col(L.T("Ad"), nameof(ZipRow.Name), 300); Col(L.T("Klasör"), nameof(ZipRow.Folder), 260); Col(L.T("Boyut"), nameof(ZipRow.Size), 90); Col(L.T("Sıkıştırılmış"), nameof(ZipRow.Packed), 100); Col(L.T("Tarih"), nameof(ZipRow.Date), 130);
@@ -527,9 +536,24 @@ public sealed class DocumentViewerWindow : Window
     {
         try
         {
+            ArchiveSecurity.ValidateEntryKey(r.FullName);
             var dir = Path.Combine(Path.GetTempPath(), "MailStudio-zip", Guid.NewGuid().ToString("N")[..8]); Directory.CreateDirectory(dir);
-            var dest = Path.Combine(dir, Path.GetFileName(r.FullName));
-            using (var zip = ZipFile.OpenRead(_path)) zip.GetEntry(r.FullName)!.ExtractToFile(dest, true);
+            var dest = ArchiveSecurity.GetSafeDestination(dir, Path.GetFileName(r.FullName));
+            var ext = Path.GetExtension(_path).ToLowerInvariant();
+            if (ext == ".zip")
+            {
+                using var zip = ZipFile.OpenRead(_path);
+                zip.GetEntry(r.FullName)!.ExtractToFile(dest, true);
+            }
+            else
+            {
+                using var archive = SharpCompress.Archives.ArchiveFactory.OpenArchive(_path, null);
+                var entry = archive.Entries.FirstOrDefault(e => e.Key == r.FullName)
+                    ?? throw new FileNotFoundException("Entry not found: " + r.FullName);
+                using var stream = entry.OpenEntryStream();
+                using var fs = File.Create(dest);
+                stream.CopyTo(fs);
+            }
             FileViewers.Open(dest, this, FileViewers.DefaultAi());
         }
         catch (Exception ex) { _status.Text = L.T("Açılamadı: ") + ex.Message; }
