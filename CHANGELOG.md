@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.9.0 – Shop-floor tools: cost, part card, toolpaths, morning brief (2026-11-01)
+
+- **Cost estimate and quotation PDF**: from the STEP model of a request – stock (bounding box + allowance, or the stock made in the STEP viewer), material (30 materials with editable prices and removal rates), roughing / finishing / drilling / handling time, setup split over the quantity, margin. "Apply to quote" writes the unit price; **Quote PDF** prints a quotation with your company details, number (Q-yyyy-nnnn), validity and terms, and offers to attach it to the reply.
+- **Visual revision difference**: old and new revision drawn on top of each other – red only in the old one, green new, grey unchanged. PDF pages (aligned automatically) and DXF/DWG drawings pixel by pixel with a list of changed regions (thumbnails, click to zoom); STEP models face by face (changed faces green, removed faces see-through red, two views).
+- **Part card**: every mail, revision (open, compare with the previous one), file, quote, NC program and task of a part number on one page – right-click a mail or use *Part Card* on the quote desk. Revisions are ordered by their label (B before C even if C arrived first).
+- **NC toolpath preview**: backplot of G-code (ISO/Fanuc incl. G2/G3 with I/J/K or R, G17–G19, G90/G91, inch, G81–G89 drilling cycles, tool changes with preloaded tools; basic Heidenhain), top / front / side / isometric, simulation slider, click a path to see its line, cycle-time estimate per tool, warnings for what it cannot follow (subprograms, cycles, variables) instead of guessing. **Compare** two programs: changed lines and the effect on time and depth, old path red, new green.
+- **Morning brief**: today's appointments, overdue tasks, quote deadlines and quotes waiting for an answer, unanswered sent mails, and the new mail since the last working day sorted into requests for quote, revisions and orders. Built from local data only; shown once a day at start (can be switched off).
+- **Search by meaning**: find a mail by what it says ("the mail saying the delivery slips"). Built-in engine needs no download and understands Turkish word endings and typos; an embedding model in your local Ollama (e.g. `bge-m3`) can be chosen instead. Only a local Ollama (127.0.0.1) is accepted – mail text never leaves the computer.
+- **PDF table → Excel**: parts lists, schedules and price lists from PDFs (text layer or OCR) into Excel – columns from the table lines or from the gaps between them, numbers stay numbers (1,5 · 1.250 · 1.234,50), part numbers and grades like 8.8 stay text.
+- **Request-for-quote intake**: new mails that read as a request for quote go to the quote desk on arrival (can be switched off). *Acknowledge* opens a "we received your request, the quotation follows on …" reply in the language of the request as a **draft** – nothing is ever sent automatically.
+- **Outlook PST import**: an .pst / .ost file becomes a local, read-only archive account (folders, mails, attachments; the file itself is only read). Importing it again adds only what is new. An archive account never syncs or sends.
+- **RAR and 7z** archives open in the archive viewer like ZIP (path-escape and overwrite protected).
+- Fixed: quotes, tasks, calendar and rules could lose an agent (MCP) edit made in the same instant as an app edit – changes are now detected by content, not by file time.
+
 ## 1.8.0 – Revisions, quotes and a safer outbox (2026-10-20)
 
 - **Revision comparison**: "Compare with previous revision" on an attachment (and in the PDF / STEP / CAD viewers) looks for

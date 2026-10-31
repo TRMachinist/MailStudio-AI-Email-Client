@@ -136,11 +136,21 @@ never send mail on its own.
 - Old formats (doc, xls, ppt, odt, ods, odp, rtf) are converted automatically — with Microsoft Office if present,
   otherwise with the bundled LibreOffice
 
+### 🏭 Shop-floor tools (new in 1.9)
+
+- **Cost estimate → quotation PDF** from the STEP model of a request (material, stock, machining time, margin)
+- **Visual revision difference**: old/new drawings overlaid red/green (PDF, DXF/DWG), changed STEP faces coloured
+- **Part card**: every mail, revision, quote, NC program and task of a part number on one page
+- **Morning brief**: today's appointments, overdue work, quote deadlines and new mail sorted into requests / revisions / orders
+- **Search by meaning** – built-in or with a local Ollama embedding model; mail text never leaves the PC
+- **PDF table → Excel** for parts lists and schedules, **request-for-quote intake** with an acknowledgement *draft*, **Outlook PST import**
+
 ### 🛠️ CNC programs, code, CSV, ZIP, mail files
 
 <img src="docs/media/cnc-viewer.png" alt="CNC viewer" width="100%">
 
 - G-code highlighting (G/M codes, axes, tools, feeds) with tool list
+- **Toolpath preview** (new in 1.9): backplot in top / front / side / isometric view, simulation slider, cycle-time estimate per tool, compare two programs (changed lines, time and depth)
 - Code viewer with syntax highlighting, CSV as a table, ZIP browser, .eml viewer
 - Executables and scripts from attachments are never run directly
 
@@ -188,7 +198,8 @@ Tests: **[tests/README.md](tests/README.md)**
 - [x] English / Turkish UI, demo mode
 - [x] Skills and one-click agent (MCP) connection
 - [ ] **CATPart, NX PRT and SolidWorks SLDPRT viewers** (in progress)
-- [ ] Calendar and tasks
+- [x] Calendar and tasks, quote desk, rules, follow-up
+- [x] Cost estimate, part card, toolpath preview, morning brief, search by meaning, PST import
 - [ ] More UI languages — translations are a single JSON file ([how to](CONTRIBUTING.md#translations))
 
 ## Contributing
