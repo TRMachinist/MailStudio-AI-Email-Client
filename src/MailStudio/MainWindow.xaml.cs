@@ -1320,7 +1320,8 @@ public partial class MainWindow : Window
                         catch (System.Runtime.InteropServices.COMException) { }
                     }
                 },
-                aiRunner: async (prompt, ct) => await AiCompleteAsync(prompt, ct))
+                aiRunner: async (prompt, ct) => await AiCompleteAsync(prompt, ct),
+                visualRunner: (args, ct) => SkillWorker().CallAsync("visual_diff", args, ct))
             { Owner = this };
             win.Show();
             Status(L.F("Revizyon karşılaştırma tamamlandı: {0} fark bulundu.", report.TotalChanges));

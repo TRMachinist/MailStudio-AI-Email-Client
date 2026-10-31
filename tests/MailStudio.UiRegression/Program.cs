@@ -1007,7 +1007,10 @@ sealed class DummyQuoteHost : IQuoteHost
     public void ComposeMeetingMail(CalendarEvent e, string method, string? partStat = null, IEnumerable<string>? to = null) { }
     public void OpenSourceMail(string source) { }
     public void Status(string text) { }
-    public void ComposeQuoteReply(QuoteItem quote) { }
+    public void ComposeQuoteReply(QuoteItem quote, IEnumerable<string>? attachments = null) { }
+    public Task<string?> FindQuoteModelAsync(QuoteItem quote) => Task.FromResult<string?>(null);
+    public MailStudio.Services.TechnicalWorker Worker { get; } = new();
+    public Task RenderPdfAsync(string html, string pdfPath) => Task.CompletedTask;
 }
 
 

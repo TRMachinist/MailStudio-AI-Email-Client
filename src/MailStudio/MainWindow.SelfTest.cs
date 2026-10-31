@@ -592,6 +592,20 @@ public partial class MainWindow
             return win;
         }
         RevisionDiffReport? ReportOf(RevisionDiffWindow w) => typeof(RevisionDiffWindow).GetField("_report", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)?.GetValue(w) as RevisionDiffReport;
+        async Task Visual(RevisionDiffWindow w, string label, Func<System.Text.Json.JsonElement, (bool ok, string what)> check)
+        {
+            var vw = w.OpenVisual();
+            Check(vw != null, label + ": visual overlay opens");
+            if (vw == null) return;
+            await Task.WhenAny(vw.Ready, Task.Delay(90000)); await Wait(500);
+            if (vw.Result is not { } res) { Fail(label + ": visual overlay", "no result"); vw.Close(); return; }
+            var (ok, what) = check(res);
+            Check(ok, $"{label}: visual overlay {what}");
+            vw.SavePngTo(Path.Combine(_stDir, label.Replace(' ', '-') + "-overlay.png"));
+            Shot(vw, label + " overlay"); CheckTexts(vw, label + " overlay");
+            if (Tree(vw).OfType<ListBox>().FirstOrDefault() is { Items.Count: > 0 } lb) { lb.SelectedIndex = 0; await Wait(400); Shot(vw, label + " overlay zoom"); }
+            vw.Close();
+        }
 
         if (await Diff("delivery-schedule-wk43.xlsx", "delivery-schedule-wk44.xlsx", "revision Excel") is { } xw)
         {
@@ -604,12 +618,14 @@ public partial class MainWindow
             var r = ReportOf(dw)!;
             Check(r.Items.Any(i => (i.NewValue ?? "").Contains("Ø20")), $"revision DXF: hole note Ø18 → Ø20 ({r.Items.Count} changes)");
             Check(r.Items.Any(i => (i.NewValue ?? "").Contains("REV C")), "revision DXF: title block REV B → C");
+            await Visual(dw, "revision dxf", r => (r.GetProperty("regions").GetArrayLength() >= 8 && r.GetProperty("removed_px").GetInt32() > 0 && r.GetProperty("added_px").GetInt32() > 0, $"marks the changed holes and texts ({r.GetProperty("regions").GetArrayLength()} regions)"));
             await InspectWindow(dw, "revision diff dxf", closeWithButton: true);
         }
         if (await Diff("bracket-revB.stp", "bracket-revC.stp", "revision STEP") is { } sw)
         {
             var r = ReportOf(sw)!;
             Check(r.Items.Any(i => i.Category is "Delik" or "Delik / Silindir" or "Hacim" or "Kutu Ölçüleri"), $"revision STEP: measured geometry changes ({string.Join(" | ", r.Items.Select(i => i.Description).Take(4))})");
+            await Visual(sw, "revision step", r => (r.GetProperty("added_faces").GetInt32() >= 1 && r.GetProperty("removed_faces").GetInt32() >= 1, $"colours changed faces ({r.GetProperty("added_faces").GetInt32()} new, {r.GetProperty("removed_faces").GetInt32()} removed of {r.GetProperty("faces_new").GetInt32()})"));
             await InspectWindow(sw, "revision diff step", closeWithButton: true);
         }
         if (oldPath != null)
@@ -621,6 +637,7 @@ public partial class MainWindow
             {
                 var r = ReportOf(pw)!;
                 Check(r.TotalChanges > 0 || r.Notes.Count > 0, $"revision PDF: result or an honest note ({r.TotalChanges} changes, notes: {string.Join(" ", r.Notes)})");
+                await Visual(pw, "revision pdf", r => (!r.GetProperty("identical").GetBoolean() && r.GetProperty("regions").GetArrayLength() > 0, $"marks differences ({r.GetProperty("regions").GetArrayLength()} regions)"));
                 await InspectWindow(pw, "revision diff pdf", closeWithButton: true);
             }
             else Fail("revision PDF", "window did not open");

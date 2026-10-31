@@ -300,6 +300,9 @@ def dispatch(operation,args):
     if operation=='pdf_open':return pdf_open(args['path'])
     if operation=='pdf_page':return pdf_page(args)
     if operation=='pdf_ocr':return pdf_ocr(args)
+    if operation=='visual_diff':
+        import visual_diff
+        return visual_diff.dispatch(operation,args)
     if operation.startswith('cad2d_'):
         import cad2d
         result=cad2d.dispatch(operation,args)

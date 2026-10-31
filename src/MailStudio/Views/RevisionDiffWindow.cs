@@ -18,6 +18,7 @@ public sealed class RevisionDiffWindow : Window
     readonly RevisionDiffReport _report;
     readonly Action<string>? _onAddToReply;
     readonly Func<string, CancellationToken, Task<string>>? _aiRunner;
+    readonly Func<object, CancellationToken, Task<System.Text.Json.JsonElement>>? _visualRunner;
 
     readonly ListView _diffList = new();
     readonly TextBlock _statSummary = new();
@@ -32,9 +33,11 @@ public sealed class RevisionDiffWindow : Window
     public RevisionDiffWindow(
         RevisionDiffReport report,
         Action<string>? onAddToReply = null,
-        Func<string, CancellationToken, Task<string>>? aiRunner = null)
+        Func<string, CancellationToken, Task<string>>? aiRunner = null,
+        Func<object, CancellationToken, Task<System.Text.Json.JsonElement>>? visualRunner = null)
     {
         _report = report;
+        _visualRunner = visualRunner;
         _onAddToReply = onAddToReply;
         _aiRunner = aiRunner;
 
@@ -311,6 +314,14 @@ public sealed class RevisionDiffWindow : Window
 
         var btnStack = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
 
+        if (_visualRunner != null && CanShowVisual(_report))
+        {
+            var visual = new Button { Content = L.T("Görsel Fark"), Style = (Style)FindResource("FlatButton"), Padding = new Thickness(14, 6, 14, 6), Margin = new Thickness(0, 0, 8, 0),
+                ToolTip = L.T("Eski ve yeni revizyonu üst üste çiz: kırmızı kaldırılan, yeşil eklenen") };
+            visual.Click += (_, _) => OpenVisual();
+            btnStack.Children.Add(visual);
+        }
+
         _aiBtn.Content = L.T("İmalat Etkisini Sor (AI)");
         _aiBtn.Style = (Style)FindResource("FlatButton");
         _aiBtn.Padding = new Thickness(14, 6, 14, 6);
@@ -337,6 +348,26 @@ public sealed class RevisionDiffWindow : Window
 
         dock.Children.Add(btnStack);
         return dock;
+    }
+
+    static string Family(string path) => Path.GetExtension(path).ToLowerInvariant() switch
+    {
+        ".pdf" => "pdf", ".dxf" or ".dwg" => "cad2d", ".step" or ".stp" => "step", _ => ""
+    };
+
+    /// <summary>A visual overlay exists for two PDFs, two DXF/DWG drawings or two STEP models.</summary>
+    public static bool CanShowVisual(RevisionDiffReport r) =>
+        File.Exists(r.OldFilePath) && File.Exists(r.NewFilePath) && Family(r.NewFilePath) is { Length: > 0 } f && f == Family(r.OldFilePath);
+
+    /// <summary>Opens the red/green overlay window (returns it for the self-test).</summary>
+    public VisualDiffWindow? OpenVisual()
+    {
+        if (_visualRunner == null || !CanShowVisual(_report)) return null;
+        var part = !string.IsNullOrWhiteSpace(_report.PartNumber) ? _report.PartNumber : _report.NewFileName;
+        var rev = _report.OldRevision.Length > 0 && _report.NewRevision.Length > 0 ? $" ({_report.OldRevision} → {_report.NewRevision})" : "";
+        var w = new VisualDiffWindow(_report.OldFilePath, _report.NewFilePath, _visualRunner, part + rev) { Owner = this };
+        w.Show();
+        return w;
     }
 
     void ApplyFilter()
