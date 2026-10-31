@@ -247,7 +247,12 @@ public partial class MainWindow : ITaskHost, IQuoteHost, IPartCardHost
         _quoteDeskView?.SelectQuote(quote.Id);
     }
 
-    Task IPartCardHost.PreviewNcAsync(PartFile file) => OpenAttachmentAsync(file.Mail, file.Attachment);
+    async Task IPartCardHost.PreviewNcAsync(PartFile file)
+    {
+        var path = await DownloadAttachmentAsync(file.Mail, file.Attachment);
+        if (path == null) return;
+        new Views.Nc.NcPreviewWindow(path) { Owner = this }.Show();
+    }
 
     void OnMailToTask(object sender, RoutedEventArgs e)
     {

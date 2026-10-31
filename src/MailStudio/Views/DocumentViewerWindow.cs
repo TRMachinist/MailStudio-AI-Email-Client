@@ -380,6 +380,12 @@ public sealed class DocumentViewerWindow : Window
         _tools.Children.Add(Btn("", L.T("Tümünü kopyala"), () => { try { Clipboard.SetText(ed.Text); _status.Text = L.T("Metin panoya kopyalandı."); } catch { } }, L.T("Kopyala")));
         _tools.Children.Add(Toggle("", L.T("Düzenle"), L.T("Düzenlemeyi aç; değişiklikler yalnızca 'Kopyasını kaydet' ile ayrı dosyaya yazılır"), false, on => { ed.IsReadOnly = !on; _status.Text = on ? L.T("Düzenleme açık. Ek dosyasının kendisi değişmez; Kopyasını kaydet ile yazın.") : L.T("Salt okunur."); }));
         if (_kind == Kind.Csv) _tools.Children.Add(Btn("", L.T("Tablo görünümüne dön"), BuildCsv, L.T("Tablo")));
+        if (NcExtensions.Contains(ext))
+            _tools.Children.Add(Btn("\uE81E", L.T("Takım yolunu çiz, çevrim süresini tahmin et, başka programla karşılaştır"), () =>
+            {
+                try { new Nc.NcPreviewWindow(_path) { Owner = this }.Show(); }
+                catch (Exception ex) { _status.Text = L.T("Takım yolu çizilemedi: ") + ex.Message; }
+            }, L.T("Takım yolu")));
         if (highlighting == null && _status.Text.Length == 0) _status.Text = L.T("Düz metin.");
         else if (_status.Text.Length == 0) _status.Text = (NcExtensions.Contains(ext) ? L.T("CNC programı (G/M kodları, eksenler, takım ve ilerleme renklendirildi).") : L.F("Söz dizimi: {0}.", highlighting!.Name)) + L.T(" Salt okunur.");
         if (NcExtensions.Contains(ext)) _status.Text += "  " + NcSummary(text);

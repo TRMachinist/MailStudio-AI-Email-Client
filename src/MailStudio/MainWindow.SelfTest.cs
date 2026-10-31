@@ -18,6 +18,7 @@ using MailStudio.Views.Quotes;
 using MailStudio.Views.Templates;
 using MailStudio.Views.QuickSteps;
 using MailStudio.Views.Snooze;
+using MailStudio.Services.Nc;
 
 namespace MailStudio;
 
@@ -68,6 +69,7 @@ public partial class MainWindow
             ("cost estimate and quotation PDF: STEP geometry, estimate window, settings, PDF file", StepCostAndQuotePdf),
             ("ballooning and AS9102 FAI: characteristics, balloons, manual add, ballooned PDF, Form 1/3 workbook", StepBalloons),
             ("part card: mails, revisions, files, quotes and NC programs of NW-1042", StepPartCard),
+            ("NC preview: backplot, cycle time, tools, comparison with a changed program", StepNcPreview),
             ("templates and quick steps: template insertion, manager dialog, macro execution", StepTemplatesAndQuickSteps),
             ("mail snooze: hide, filter, wake up unread with the real date", StepSnooze),
             ("unified inbox and search folders: all inboxes node, saved searches, criteria execution", StepUnifiedInboxAndSearchFolders),
@@ -844,6 +846,34 @@ public partial class MainWindow
         Check(w.History?.Mails.Count == 0, "part card: unknown part shows the empty message");
         Shot(w, "part-card-empty");
         w.Close();
+    }
+
+    async Task StepNcPreview()
+    {
+        var all = _cache.GetHeaders(DemoData.AccountId, "INBOX", 200);
+        var mail = all.FirstOrDefault(h => _cache.GetAttachments(h.AccountId, h.Folder, h.Uid).Any(a => a.FileName == "OP20.nc"));
+        if (mail == null) { Fail("nc", "demo NC program missing"); return; }
+        var path = await DownloadAttachmentAsync(mail, _cache.GetAttachments(mail.AccountId, mail.Folder, mail.Uid).First(a => a.FileName == "OP20.nc"));
+        if (path == null) { Fail("nc", "download failed"); return; }
+        var w = new MailStudio.Views.Nc.NcPreviewWindow(path) { Owner = this };
+        w.Show(); await Wait(800);
+        var p = w.Program;
+        Check(p.Warnings.Count == 0 && p.Tools.Count == 2 && p.Tools[1].Holes == 4, $"nc: 2 tools, 4 drilled holes, no warnings ({p.Tools.Count}, {p.Tools.LastOrDefault()?.Holes}, {string.Join(" | ", p.Warnings)})");
+        Check(Math.Abs(p.Tools[0].FeedLength - 471) < 1e-6 && Math.Abs(p.MinZ + 14) < 1e-9 && p.TotalMinutes > 0, $"nc: contour 471 mm, deepest Z-14, time {NcProgram.FormatMinutes(p.TotalMinutes)}");
+        Shot(w, "nc-preview"); CheckTexts(w, "nc-preview"); CheckAirspace(w, "nc-preview");
+        foreach (var name in new[] { L.T("Üst (XY)"), L.T("Ön (XZ)") })
+            if (Tree(w).OfType<System.Windows.Controls.Primitives.ToggleButton>().FirstOrDefault(b => TextOf(b.Content) == name) is { } vb) { vb.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); await Wait(300); Shot(w, "nc-preview-" + (name == L.T("Üst (XY)") ? "top" : "front")); }
+        var slider = Tree(w).OfType<Slider>().First(); slider.Value = slider.Maximum / 2; await Wait(300); Shot(w, "nc-preview-simulation");
+        // a changed copy: slower contour feed, deeper holes
+        var changed = Path.Combine(_stDir, "OP20-revD.nc");
+        File.WriteAllText(changed, File.ReadAllText(path).Replace("F1500.", "F1000.").Replace("Z-14.", "Z-16."));
+        var w2 = new MailStudio.Views.Nc.NcPreviewWindow(changed) { Owner = this };
+        w2.Show(); await Wait(500);
+        w2.CompareWith(path); await Wait(500);
+        var c = w2.Comparison!;
+        Check(c.Added == 2 && c.Removed == 2 && c.New.TotalMinutes > c.Old.TotalMinutes && c.New.MinZ == -16, $"nc compare: 2 lines changed, longer and deeper ({c.Summary()})");
+        Shot(w2, "nc-compare"); CheckTexts(w2, "nc-compare");
+        w2.Close(); w.Close();
     }
 
     async Task StepTemplatesAndQuickSteps()

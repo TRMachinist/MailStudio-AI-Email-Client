@@ -5,6 +5,7 @@ using MailStudio.Services;
 using MailStudio.Services.Calendar;
 using MailStudio.Services.Costing;
 using MailStudio.Services.Inspection;
+using MailStudio.Services.Nc;
 using MailStudio.Regression;
 using MimeKit;
 using System.Text;
@@ -2503,6 +2504,69 @@ await Test("parça kartı: parça numarası mail, ek adı ve gövdeden bulunur; 
     Check(PartHistory.Pattern("NW-1042").IsMatch("nw_1042") && !PartHistory.Pattern("NW-1042").IsMatch("NW-10421") && !PartHistory.Pattern("NW-1042").IsMatch("XNW-1042"), "part number pattern");
     Check(PartHistory.PartsIn(M(9, "Revision update – NW-1042 rev C", 0), new[] { new AttachmentInfo { FileName = "flange-DN100-revC.pdf" } }).First() == "NW-1042", "part number taken from the subject first");
     Check(PartHistory.Build("ZZ-999", cache, quotes).Mails.Count == 0, "unknown part: empty card");
+}));
+
+await Test("NC önizleme: G0/G1/G2/G3 (I/J ve R), G91, delme döngüsü, takım değişimi, süre tahmini ve program karşılaştırma", () => Sync(() =>
+{
+    var program = """
+    %
+    O1042 (NW-1042 OP20)
+    N10 G21 G90 G17 G54
+    N20 T1 M6 (T1 D10 FREZE)
+    N30 S3000 M3
+    N40 G0 X0 Y0 Z5
+    N50 G1 Z-2 F100
+    N60 X10
+    N70 Y10
+    N80 X0
+    N90 Y0
+    N100 G0 Z5
+    N110 X20 Y0
+    N120 G1 Z-1 F200
+    N130 G2 X20 Y0 I5 J0
+    N140 G3 X30 Y10 R10
+    N150 G91 G1 X5
+    N160 G90 G0 Z50
+    N170 T2 M6 (DRILL D6.8)
+    N180 G0 X0 Y30 Z20
+    N190 G99 G81 X0 Y30 Z-10 R2 F80
+    N200 X10
+    N210 G80 G0 Z50
+    N220 M30
+    %
+    """;
+    var m = new NcMachine { RapidMmPerMin = 10000, ToolChangeSeconds = 6 };
+    var p = NcProgram.Parse(program, "op20.nc", m);
+    Check(p.Warnings.Count == 0, "no warnings: " + string.Join(" | ", p.Warnings));
+    Check(p.Tools.Select(t => t.Tool).SequenceEqual(new[] { 1, 2 }) && p.Tools[0].Comment.Contains("FREZE"), $"tools 1 and 2 with comment ({string.Join(",", p.Tools.Select(t => t.Tool))})");
+    // T1 feed: plunge 7 + square 40 + plunge 6 + full circle 2π·5 + quarter arc R10 (π/2·10) + 5 incremental
+    var t1 = 7 + 40 + 6 + 2 * Math.PI * 5 + Math.PI / 2 * 10 + 5;
+    Check(Math.Abs(p.Tools[0].FeedLength - t1) < 0.05, $"T1 cutting length {p.Tools[0].FeedLength:0.###} ≈ {t1:0.###}");
+    Check(p.Tools[1].Holes == 2 && Math.Abs(p.Tools[1].MinZ + 10) < 1e-9, $"G81: 2 holes to Z-10 ({p.Tools[1].Holes}, {p.Tools[1].MinZ})");
+    // drilling: each hole R2 → Z-10 (12 mm at F80)
+    Check(Math.Abs(p.Tools[1].FeedLength - 24) < 1e-6, $"drill feed length 24 ({p.Tools[1].FeedLength})");
+    var expectedFeedMin = (7 + 40) / 100.0 + (6 + 2 * Math.PI * 5 + Math.PI / 2 * 10 + 5) / 200.0 + 24 / 80.0;
+    Check(Math.Abs(p.FeedMinutes - expectedFeedMin) < 0.001 && Math.Abs(p.ToolChangeMinutes - 0.2) < 1e-9, $"feed minutes {p.FeedMinutes:0.####} ≈ {expectedFeedMin:0.####}, two tool changes");
+    Check(Math.Abs(p.MaxX - 35) < 1e-6 && Math.Abs(p.MinZ + 10) < 1e-9 && Math.Abs(p.MaxY - 30) < 1e-6, $"extents X..{p.MaxX} Y..{p.MaxY} Z{p.MinZ}");
+    // the G3 R10 arc from (20,0) to (30,10) ends exactly at the end point and stays on radius 10 around (20,10)
+    var arc = p.Segments.Where(sg => sg.Line == 15).ToList();
+    Check(arc.Count > 5 && Math.Abs(arc[^1].X2 - 30) < 1e-9 && arc.All(sg => Math.Abs(Math.Sqrt((sg.X2 - 20) * (sg.X2 - 20) + (sg.Y2 - 10) * (sg.Y2 - 10)) - 10) < 1e-6), "R arc: centre (20,10), radius 10");
+    // G2 full circle I5: centre (25,0); clockwise from the 9 o'clock point goes up first
+    var circle = p.Segments.Where(sg => sg.Line == 14).ToList();
+    Check(circle.First().Y2 > 0 && Math.Abs(circle.Max(sg => sg.X2) - 30) < 0.01, "G2 runs clockwise around (25,0)");
+
+    var preload = NcProgram.Parse("T1 M6 T2\nG0 X0 Y0 Z5\nG1 Z-1 F100\nX10\nT2 M6\nG1 X20\nM30\n", "pre.nc");
+    Check(Math.Abs(preload.Tools.Single(t => t.Tool == 1).FeedLength - 16) < 1e-9 && Math.Abs(preload.Tools.Single(t => t.Tool == 2).FeedLength - 10) < 1e-9, "T1 M6 T2: the preloaded tool does not take T1's moves");
+    var warn = NcProgram.Parse("G0 X0 Y0\nM98 P1000\nG1 X10\nCYCLE81(10,0,2,-5)\n", "w.nc");
+    Check(warn.Warnings.Count == 3, "subprogram, cycle and missing feed are warned: " + string.Join(" | ", warn.Warnings));
+
+    var heid = NcProgram.Parse("0 BEGIN PGM P1 MM\n1 TOOL CALL 3 Z S4000\n2 L X+0 Y+0 Z+2 FMAX\n3 L Z-1 F200\n4 L X+20\n5 CC X+20 Y+10\n6 C X+30 Y+10 DR+\n7 L IX+5\n8 END PGM P1 MM\n", "p1.h");
+    Check(heid.Dialect == "Heidenhain" && heid.Tools.Single().Tool == 3 && Math.Abs(heid.MaxX - 35) < 1e-6, $"Heidenhain L/CC/C/IX (X..{heid.MaxX})");
+
+    var newer = NcProgram.Parse(program.Replace("N130 G2 X20 Y0 I5 J0", "N130 G2 X20 Y0 I6 J0").Replace("Z-10 R2", "Z-12 R2"), "op20b.nc", m);
+    var cmp = new NcComparison(p, newer);
+    Check(cmp.Added == 2 && cmp.Removed == 2 && newer.MinZ == -12, $"comparison: 2 lines changed ({cmp.Added}+/{cmp.Removed}-)");
+    Check(cmp.Summary().Contains("-12"), "comparison summary has the new depth: " + cmp.Summary());
 }));
 
 Console.WriteLine($"RESULT {passed} passed. Synthetic evidence: {root}");
