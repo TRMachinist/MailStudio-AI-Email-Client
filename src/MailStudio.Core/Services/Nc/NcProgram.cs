@@ -295,7 +295,7 @@ public sealed class NcProgram
                 return mm.Groups[1].Value == "I" ? v + (axis == "X" ? _x : axis == "Y" ? _y : _z) : v;
             }
             var f = Regex.Match(line, @"\bF(MAX|\d+\.?\d*)");
-            var rapid = f.Success && f.Groups[1].Value == "FMAX";
+            var rapid = f.Success && f.Groups[1].Value == "MAX";
             if (f.Success && !rapid) _feed = double.Parse(f.Groups[1].Value, CultureInfo.InvariantCulture);
             if (line.StartsWith("CC"))
             {
