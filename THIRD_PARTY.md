@@ -54,3 +54,8 @@ Not bundled but used if installed: Microsoft Office, ODA File Converter, Ollama,
 
 Binaries of these components are **not** stored in this repository; they are added to the release package by the
 scripts in `tools/packaging`.
+
+## XstReader.Api 1.0.3
+
+Reads Outlook .pst / .ost files for the PST import. Copyright (c) 2016, Dijji; 2021, iluvadev.
+Microsoft Public License (MS-PL): https://github.com/iluvadev/XstReader/blob/master/LICENSE.md

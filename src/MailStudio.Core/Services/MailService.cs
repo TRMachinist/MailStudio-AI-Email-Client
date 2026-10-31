@@ -108,7 +108,7 @@ public sealed class MailService : IDisposable
 
     // ---------------- Folders ----------------
 
-    public Task<List<FolderInfo>> GetFoldersAsync(AccountConfig a, CancellationToken ct = default) => DemoData.IsDemo(a) ? Task.FromResult(DemoData.Folders()) :
+    public Task<List<FolderInfo>> GetFoldersAsync(AccountConfig a, CancellationToken ct = default) => DemoData.IsDemo(a) ? Task.FromResult(DemoData.Folders()) : Archive.LocalArchive.IsArchive(a) ? Task.FromResult(Archive.LocalArchive.Folders(a)) :
         WithClient(a, async c =>
         {
             var list = new List<FolderInfo> { new(c.Inbox.FullName, L.T("Gelen Kutusu"), "", 0) };
@@ -149,7 +149,7 @@ public sealed class MailService : IDisposable
     /// into the local cache (adds new ones, refreshes flags, removes the ones deleted on the server).
     /// progress: (processed, total new) — on a big first sync the list fills up piece by piece.
     /// </summary>
-    public Task<int> SyncFolderAsync(AccountConfig a, string folderName, CancellationToken ct = default, Action<int, int>? progress = null) => DemoData.IsDemo(a) ? Task.FromResult(0) :
+    public Task<int> SyncFolderAsync(AccountConfig a, string folderName, CancellationToken ct = default, Action<int, int>? progress = null) => Archive.LocalArchive.IsLocal(a) ? Task.FromResult(0) :
         WithClient(a, async c =>
         {
             var folder = await c.GetFolderAsync(folderName, ct);
@@ -308,7 +308,7 @@ public sealed class MailService : IDisposable
     /// </summary>
     public async Task<MailContent> GetContentAsync(AccountConfig a, MailHeader h, CancellationToken ct = default, bool markRead = true)
     {
-        if (DemoData.IsDemo(a))
+        if (Archive.LocalArchive.IsLocal(a))
         {
             if (markRead) _cache.SetFlags(a.Id, h.Folder, h.Uid, read: true);
             return _cache.GetBody(a.Id, h.Folder, h.Uid) ?? new MailContent { Html = "<p></p>" };
@@ -364,7 +364,7 @@ public sealed class MailService : IDisposable
     }
 
     /// <summary>Downloads a single attachment from the server and saves it to a folder.</summary>
-    public Task<string> DownloadAttachmentAsync(AccountConfig a, MailHeader h, AttachmentInfo att, string targetDir, CancellationToken ct = default) => DemoData.IsDemo(a) ? DemoData.CopyAttachmentAsync(att, targetDir) :
+    public Task<string> DownloadAttachmentAsync(AccountConfig a, MailHeader h, AttachmentInfo att, string targetDir, CancellationToken ct = default) => DemoData.IsDemo(a) ? DemoData.CopyAttachmentAsync(att, targetDir) : Archive.LocalArchive.IsArchive(a) ? Archive.LocalArchive.CopyAttachmentAsync(a, att, targetDir) :
         WithClient(a, async c =>
         {
             var folder = await c.GetFolderAsync(h.Folder, ct);
@@ -388,7 +388,7 @@ public sealed class MailService : IDisposable
 
     public async Task<(MailContent content, MimeMessage message)> GetMessageAsync(AccountConfig a, MailHeader h, CancellationToken ct = default, bool markRead = true)
     {
-        if (DemoData.IsDemo(a))
+        if (Archive.LocalArchive.IsLocal(a))
         {
             var body = _cache.GetBody(a.Id, h.Folder, h.Uid) ?? new MailContent();
             var demo = new MimeMessage { Subject = h.Subject, Body = new TextPart("html") { Text = body.Html } };
@@ -499,7 +499,7 @@ public sealed class MailService : IDisposable
 
     // ---------------- Flags / moving ----------------
 
-    public Task SetReadAsync(AccountConfig a, MailHeader h, bool read) => DemoData.IsDemo(a) ? Task.Run(() => _cache.SetFlags(a.Id, h.Folder, h.Uid, read: read)) :
+    public Task SetReadAsync(AccountConfig a, MailHeader h, bool read) => Archive.LocalArchive.IsLocal(a) ? Task.Run(() => _cache.SetFlags(a.Id, h.Folder, h.Uid, read: read)) :
         WithClient(a, async c =>
         {
             var f = await c.GetFolderAsync(h.Folder);
@@ -512,7 +512,7 @@ public sealed class MailService : IDisposable
             return true;
         }, retry: false);
 
-    public Task SetFlaggedAsync(AccountConfig a, MailHeader h, bool flagged) => DemoData.IsDemo(a) ? Task.Run(() => _cache.SetFlags(a.Id, h.Folder, h.Uid, flagged: flagged)) :
+    public Task SetFlaggedAsync(AccountConfig a, MailHeader h, bool flagged) => Archive.LocalArchive.IsLocal(a) ? Task.Run(() => _cache.SetFlags(a.Id, h.Folder, h.Uid, flagged: flagged)) :
         WithClient(a, async c =>
         {
             var f = await c.GetFolderAsync(h.Folder);
@@ -534,7 +534,7 @@ public sealed class MailService : IDisposable
     /// <summary>A normal delete only moves to the trash folder; a missing target never turns into a permanent delete.</summary>
     public async Task MoveAsync(AccountConfig a, MailHeader h, string? target)
     {
-        if (DemoData.IsDemo(a))
+        if (Archive.LocalArchive.IsLocal(a))
         {
             if (target != null) _cache.MoveMessage(a.Id, h.Folder, target, h.Uid);
             else _cache.Delete(a.Id, h.Folder, h.Uid);
@@ -561,7 +561,7 @@ public sealed class MailService : IDisposable
     /// <summary>Returns the full name of a top-level folder with this name (case-insensitive), creating it if it does not exist.</summary>
     public async Task<string> EnsureFolderAsync(AccountConfig a, string name, CancellationToken ct = default)
     {
-        if (DemoData.IsDemo(a)) return name;
+        if (Archive.LocalArchive.IsLocal(a)) return name;
         return await WithClient(a, async c =>
         {
             var root = c.PersonalNamespaces.Count > 0 ? c.GetFolder(c.PersonalNamespaces[0]) : c.Inbox.ParentFolder ?? c.Inbox;
@@ -574,7 +574,7 @@ public sealed class MailService : IDisposable
 
     public async Task DeletePermanentlyAsync(AccountConfig a, MailHeader h)
     {
-        if (DemoData.IsDemo(a)) { _cache.Delete(a.Id, h.Folder, h.Uid); return; }
+        if (Archive.LocalArchive.IsLocal(a)) { _cache.Delete(a.Id, h.Folder, h.Uid); return; }
         await WithClient(a, async c =>
         {
             if (!c.Capabilities.HasFlag(ImapCapabilities.UidPlus))
@@ -597,7 +597,7 @@ public sealed class MailService : IDisposable
     public async Task<string> SaveDraftAsync(AccountConfig a, ComposeRequest r, CancellationToken ct = default)
     {
         _drafts.Save(a.Id, r);
-        if (DemoData.IsDemo(a)) return "Drafts";
+        if (Archive.LocalArchive.IsLocal(a)) return "Drafts";
         using var msg = BuildMessage(a, r);
         msg.Headers.Add("X-MailStudio-Draft-Id", r.DraftId);
         if (r.SubmissionId != null) msg.Headers.Add("X-MailStudio-Submission-Id", r.SubmissionId);
@@ -682,6 +682,7 @@ public sealed class MailService : IDisposable
     public async Task<SendResult> SendAsync(AccountConfig a, ComposeRequest r, CancellationToken ct = default)
     {
         if (DemoData.IsDemo(a)) throw new InvalidOperationException(L.T("Demo modunda gönderim kapalıdır; hiçbir ileti gönderilmez."));
+        if (Archive.LocalArchive.IsArchive(a)) throw new InvalidOperationException(L.T("Arşiv hesabından gönderilemez; başka bir hesap seçin."));
         if (r.SubmissionState is "Sending" or "Uncertain" or "Accepted" or "Completed")
             throw new InvalidOperationException(L.T("Bu taslağın önceki gönderimi tekrar başlatılamaz. Gönderim kaydını kontrol edin: ") + r.SubmissionId);
         using var msg = BuildMessage(a, r);

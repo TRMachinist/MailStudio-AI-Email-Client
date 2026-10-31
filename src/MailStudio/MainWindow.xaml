@@ -168,6 +168,9 @@
                             <Button Style="{StaticResource RibbonCmd}" Tag="&#xE8BB;" Click="OnRemoveAccount" Content="Hesabı Kaldır"/>
                         </StackPanel>
                     </HeaderedContentControl>
+                    <HeaderedContentControl Header="İçe Aktar" Style="{StaticResource RibbonGroup}">
+                        <Button Style="{StaticResource RibbonCmd}" Tag="&#xE8B5;" Click="OnImportPst" Content="Outlook PST…" ToolTip="Outlook arşiv dosyasını (.pst / .ost) yerel arşiv hesabı olarak içe aktar; dosya değiştirilmez"/>
+                    </HeaderedContentControl>
                     <HeaderedContentControl Header="Temizle" Style="{StaticResource RibbonGroup}">
                         <Button Style="{StaticResource RibbonCmd}" Tag="&#xE8C3;" Click="OnMarkAllRead" Content="Tümünü Okundu Yap"/>
                     </HeaderedContentControl>

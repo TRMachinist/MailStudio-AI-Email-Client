@@ -287,6 +287,35 @@ public partial class MainWindow : ITaskHost, IQuoteHost, IPartCardHost
         Status(L.T("\"Talebinizi aldık\" yanıtı taslak olarak açıldı; kontrol edip Gönder'e basın."));
     }
 
+    // ------------------------------------------------------------------ Outlook PST import
+    async void OnImportPst(object sender, RoutedEventArgs e)
+    {
+        var d = new Microsoft.Win32.OpenFileDialog { Title = L.T("Outlook arşivi seçin"), Filter = L.T("Outlook veri dosyası") + " (*.pst;*.ost)|*.pst;*.ost" };
+        if (d.ShowDialog(this) != true) return;
+        await ImportArchiveAsync(new MailStudio.Services.Archive.XstArchiveSource(d.FileName), d.FileName);
+    }
+
+    /// <summary>Imports an archive into a local archive account (the file is only read); returns the result.</summary>
+    public async Task<MailStudio.Services.Archive.PstImportResult?> ImportArchiveAsync(MailStudio.Services.Archive.IMailArchiveSource source, string path)
+    {
+        try
+        {
+            var progress = new Progress<(int Done, int Total, string Folder)>(p => Status(L.F("PST içe aktarılıyor: {0} / {1}  {2}", p.Done, p.Total, p.Folder)));
+            var result = await Task.Run(() => { using (source) return MailStudio.Services.Archive.PstImporter.Import(source, path, _store, _cache, progress, _lifetime.Token); });
+            await RebuildTreeAsync();
+            Status(L.F("PST içe aktarıldı: {0} klasör, {1} mail, {2} ek{3}.", result.Folders, result.Mails, result.Attachments,
+                (result.Duplicates > 0 ? L.F(", {0} zaten vardı", result.Duplicates) : "") + (result.Skipped > 0 ? L.F(", {0} gömülü ileti atlandı", result.Skipped) : "")));
+            return result;
+        }
+        catch (OperationCanceledException) { return null; }
+        catch (Exception ex)
+        {
+            Status(L.T("PST içe aktarılamadı: ") + ex.Message);
+            if (!App.SelfTesting) MessageBox.Show(this, L.T("PST içe aktarılamadı: ") + ex.Message, L.ProductName, MessageBoxButton.OK, MessageBoxImage.Warning);
+            return null;
+        }
+    }
+
     // ------------------------------------------------------------------ meaning search
     void OnSemanticSearch(object sender, RoutedEventArgs e) => OpenSemanticSearch(SearchBox.Text.Trim());
 

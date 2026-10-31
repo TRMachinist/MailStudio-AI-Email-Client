@@ -777,7 +777,7 @@ public partial class MainWindow : Window
 
     void StartWatchers()
     {
-        foreach (var acc in _store.Accounts.Where(a => !DemoData.IsDemo(a)))
+        foreach (var acc in _store.Accounts.Where(a => !MailStudio.Services.Archive.LocalArchive.IsLocal(a)))
         {
             if (_watchers.Remove(acc.Id, out var old)) old.Dispose();
             var w = new InboxWatcher(acc, _oauth);

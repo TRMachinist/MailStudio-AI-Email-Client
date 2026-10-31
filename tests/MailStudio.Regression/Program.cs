@@ -7,6 +7,7 @@ using MailStudio.Services.Costing;
 using MailStudio.Services.Inspection;
 using MailStudio.Services.Nc;
 using MailStudio.Services.Semantic;
+using MailStudio.Services.Archive;
 using MailStudio.Regression;
 using MimeKit;
 using System.Text;
@@ -2703,6 +2704,52 @@ await Test("teklif talebi karşılama: gelen talep otomatik Teklif Masası'na, i
     Check(RfqIntake.LooksEnglish(mails[0].Subject, mails[0].Preview) && !RfqIntake.LooksEnglish(mails[2].Subject, mails[2].Preview), "language of the request");
 }));
 
+await Test("PST içe aktarma: yerel arşiv hesabı, klasörler, gövde, ekler dosyada, tekrar içe aktarmada kopya yok, arşivden gönderim yok", async () =>
+{
+    var dir = Path.Combine(root, "pst-test"); Directory.CreateDirectory(dir);
+    var cache = new MailCache(Path.Combine(dir, "mail.db")); cache.Init();
+    var store = new AccountStore();
+    var pst = Path.Combine(dir, "old-outlook.pst"); File.WriteAllText(pst, "fake");
+    ArchiveAttachment Att(string name, string content) => new(name, content.Length, s => { var b = Encoding.UTF8.GetBytes(content); s.Write(b, 0, b.Length); });
+    var source = new FakeArchive(new[]
+    {
+        new ArchiveFolder("/Gelen Kutusu", "Gelen Kutusu", 2, () => new[]
+        {
+            new ArchiveMessage("NW-1042 rev A çizim", "Anna Keller", "anna@northwind.example", "me@x", "", new DateTime(2019, 3, 1, 9, 0, 0, DateTimeKind.Utc), true,
+                "<p>Rev A <b>ektedir</b>.</p>", null, "<a1@northwind.example>", new[] { Att("flange-revA.pdf", "%PDF-1.4 demo"), Att("a/b:c.txt", "x") }),
+            new ArchiveMessage("Sipariş 4711", "Tom", "tom@y.example", "me@x", "", new DateTime(2019, 3, 2, 9, 0, 0, DateTimeKind.Utc), false,
+                null, "Plain text order\nline 2", null, Array.Empty<ArchiveAttachment>(), SkippedEmbedded: 1),
+        }),
+        new ArchiveFolder("/Gelen Kutusu/Projeler", "Projeler", 1, () => new[]
+        {
+            new ArchiveMessage("Proje toplantısı", "Lisa", "lisa@z.example", "me@x", "", new DateTime(2019, 4, 1, 9, 0, 0, DateTimeKind.Utc), true, "<p>Notlar</p>", null, "<p1@z>", Array.Empty<ArchiveAttachment>()),
+        }),
+        new ArchiveFolder("/Boş", "Boş", 0, () => Array.Empty<ArchiveMessage>()),
+    });
+    var r = PstImporter.Import(source, pst, store, cache);
+    Check(r.Folders == 2 && r.Mails == 3 && r.Attachments == 2 && r.Skipped == 1 && LocalArchive.IsArchive(r.Account) && LocalArchive.IsLocal(r.Account), $"imported ({r.Folders} folders, {r.Mails} mails, {r.Attachments} files)");
+    var folders = LocalArchive.Folders(r.Account);
+    Check(folders.Select(f => f.FullName).SequenceEqual(new[] { "Archive/Gelen Kutusu", "Archive/Gelen Kutusu/Projeler" }) && folders[0].Icon == "", "folder tree kept, empty folder left out, inbox icon");
+    var inbox = cache.GetHeaders(r.Account.Id, "Archive/Gelen Kutusu");
+    var rfq = inbox.Single(h => h.Subject.StartsWith("NW-1042"));
+    Check(rfq.IsRead && rfq.HasAttachments && rfq.Date.Year == 2019 && rfq.FromAddress == "anna@northwind.example", "header fields");
+    var body = cache.GetBody(r.Account.Id, rfq.Folder, rfq.Uid)!;
+    Check(body.Html.Contains("<b>ektedir</b>") && body.Text.Contains("ektedir"), "HTML body and its text");
+    var order = inbox.Single(h => h.Subject == "Sipariş 4711");
+    Check(cache.GetBody(r.Account.Id, order.Folder, order.Uid)!.Html.Contains("Plain text order") && !order.IsRead, "plain text body wrapped, unread kept");
+    var atts = cache.GetAttachments(r.Account.Id, rfq.Folder, rfq.Uid);
+    var copied = await LocalArchive.CopyAttachmentAsync(r.Account, atts.First(a => a.FileName == "flange-revA.pdf"), Path.Combine(dir, "out"));
+    Check(File.ReadAllText(copied) == "%PDF-1.4 demo" && atts.Any(a => a.FileName == "a/b:c.txt"), "attachment served from the archive folder (odd names stored safely)");
+    var bad = new AttachmentInfo { FileName = "x", Part = "../../accounts.json" };
+    var escaped = false; try { await LocalArchive.CopyAttachmentAsync(r.Account, bad, Path.Combine(dir, "out")); } catch (FileNotFoundException) { escaped = true; }
+    Check(escaped, "a path outside the archive folder is refused");
+    var again = PstImporter.Import(source, pst, store, cache);
+    Check(again.Mails == 0 && again.Duplicates == 3 && again.Account.Id == r.Account.Id && store.Accounts.Count(a => LocalArchive.IsArchive(a)) == 1, "re-import adds nothing and reuses the account");
+    var svc = new MailService(cache, new OAuthService(() => AppSettings.Shared));
+    var sendBlocked = false; try { await svc.SendAsync(r.Account, new ComposeRequest { To = "a@b.example", Subject = "x" }); } catch (InvalidOperationException) { sendBlocked = true; }
+    Check(sendBlocked && await svc.SyncFolderAsync(r.Account, "Archive/Gelen Kutusu") == 0 && (await svc.GetFoldersAsync(r.Account)).Count == 2, "archive: no send, no sync, folders from the archive");
+});
+
 Console.WriteLine($"RESULT {passed} passed. Synthetic evidence: {root}");
 
 sealed class MockHttpHandler : HttpMessageHandler
@@ -2719,4 +2766,10 @@ sealed class MockHttpHandler : HttpMessageHandler
     }
 }
 
-
+sealed class FakeArchive : MailStudio.Services.Archive.IMailArchiveSource
+{
+    readonly MailStudio.Services.Archive.ArchiveFolder[] _folders;
+    public FakeArchive(MailStudio.Services.Archive.ArchiveFolder[] folders) => _folders = folders;
+    public IEnumerable<MailStudio.Services.Archive.ArchiveFolder> Folders() => _folders;
+    public void Dispose() { }
+}
