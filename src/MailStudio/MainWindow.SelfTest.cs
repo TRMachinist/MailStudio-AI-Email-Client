@@ -902,8 +902,8 @@ public partial class MainWindow
     {
         var inbox = _cache.GetHeaders(DemoData.AccountId, "INBOX", 200);
         var created = RfqIntakeFor(inbox);
-        var q = created.FirstOrDefault(x => x.Quantity == 120);
-        Check(q != null && q.AutoCreated && q.PartNumber == "NW-1042", $"rfq intake: the 120 pcs request is on the quote desk ({string.Join(", ", created.Select(x => $"{x.PartNumber}×{x.Quantity}"))})");
+        var q = created.FirstOrDefault(x => x.Quantity == 80);
+        Check(q != null && q.AutoCreated && q.PartNumber == "NW-2000" && created.Count == 1, $"rfq intake: the new 80 pcs request is on the quote desk, the one already there is not added again ({string.Join(", ", created.Select(x => $"{x.PartNumber}×{x.Quantity}"))})");
         Check(RfqIntakeFor(inbox).Count == 0, "rfq intake: running again adds nothing");
         if (q == null) return;
         var before = Application.Current.Windows.OfType<ComposeWindow>().ToHashSet();
