@@ -593,7 +593,7 @@ public static class ShowcaseVideo
             // ---- c32: STEP revision: holes by diameter, volume, size
             try
             {
-                var stepMail = With("bracket-revC.stp");
+                var stepMail = With("bracket-revB.stp");
                 var o = await Download(stepMail, "bracket-revB.stp"); var n = await Download(stepMail, "bracket-revC.stp");
                 var before = Application.Current.Windows.OfType<Window>().ToHashSet();
                 _ = (Task)Call(main, "ShowRevisionDiffAsync", o, n, stepMail)!;
@@ -947,7 +947,7 @@ public static class ShowcaseVideo
                 await Click(Btn(vw, L.T("Sığdır")), 800); await Task.Delay(900);
                 Rec.Stop(); vw.Close(); await Idle(500);
 
-                var sMail = With("bracket-revC.stp");
+                var sMail = With("bracket-revB.stp");
                 var so = await Download(sMail, "bracket-revB.stp"); var sn = await Download(sMail, "bracket-revC.stp");
                 var sw = new Views.VisualDiffWindow(so, sn, (args, ct) => Worker().CallAsync("visual_diff", args, ct), "bracket (B → C)") { Owner = main };
                 sw.Show(); Place(sw); await sw.Ready; await Idle(1000);
