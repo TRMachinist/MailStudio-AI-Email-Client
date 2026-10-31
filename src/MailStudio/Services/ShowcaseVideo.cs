@@ -885,7 +885,7 @@ public static class ShowcaseVideo
                 var path = await Download(stepMail, "bracket-revC.stp");
                 var g = Costing.PartGeometry.FromExtract(await Worker().CallAsync("extract_step", new { path, ocr = false }));
                 var quotes = Field<QuoteStore>(main, "_quoteStore");
-                var q = quotes.Quotes.First().Clone(); q.Quantity = 50;
+                var q = (quotes.Quotes.FirstOrDefault(x => x.PartNumber.Contains("bracket", StringComparison.OrdinalIgnoreCase) && !x.AutoCreated) ?? quotes.Quotes.First()).Clone();
                 var w = new Views.Quotes.CostEstimateWindow("bracket rev C – bracket-revC.stp", g, q) { Owner = main };
                 w.Show(); w.Left = 20; w.Top = 20; w.Width = 900; w.Height = 760; await Idle(1200);
                 Rec.Start(w, "c52-cost");
@@ -898,11 +898,11 @@ public static class ShowcaseVideo
                     if (alu != null) { var fx = ClickFx(); combo.SelectedItem = alu; await fx; }
                     await Task.Delay(900);
                 }
-                var qty = FindEl<TextBox>(w, t => t.Text == "50");
+                var qty = FindEl<TextBox>(w, t => t.Text == q.Quantity.ToString(System.Globalization.CultureInfo.CurrentCulture));
                 if (qty != null)
                 {
                     await Move(qty, 600); qty.Text = "";
-                    foreach (var ch in "200") { qty.Text += ch; await Task.Delay(220); }
+                    foreach (var ch in "500") { qty.Text += ch; await Task.Delay(220); }
                     await Task.Delay(900);
                 }
                 var unit = FindEl<TextBlock>(w, t => t.FontSize >= 20);
@@ -1086,7 +1086,7 @@ public static class ShowcaseVideo
                            ?? Field<Views.ComposeWindow?>(main, "_inlineCompose");
                 if (comp != null)
                 {
-                    if (comp.IsVisible && !ReferenceEquals(comp, Field<Views.ComposeWindow?>(main, "_inlineCompose"))) { Place(comp); await Idle(2500); Rec.Start(comp, "c58-ack"); }
+                    if (comp.IsVisible && !ReferenceEquals(comp, Field<Views.ComposeWindow?>(main, "_inlineCompose"))) { Place(comp); await Idle(4000); Rec.Start(comp, "c58-ack"); }
                     else { await Idle(2500); Rec.Start(main, "c58-ack"); }
                     Rec.Cursor = new Point(W * 0.5, H * 0.3);
                     await Move(new Point(W * 0.45, H * 0.5), 1000); await Task.Delay(2600);

@@ -63,7 +63,7 @@ public sealed class SemanticSearchWindow : Window
         top.Children.Add(_progress);
 
         var view = new GridView();
-        view.Columns.Add(new GridViewColumn { Header = L.T("Benzerlik"), DisplayMemberBinding = new Binding("ScoreText"), Width = 80 });
+        view.Columns.Add(new GridViewColumn { Header = L.T("Uygunluk"), DisplayMemberBinding = new Binding("ScoreText"), Width = 80 });
         view.Columns.Add(new GridViewColumn { Header = L.T("Tarih"), DisplayMemberBinding = new Binding("Date"), Width = 120 });
         view.Columns.Add(new GridViewColumn { Header = L.T("Kimden"), DisplayMemberBinding = new Binding("From"), Width = 160 });
         var subject = new GridViewColumn { Header = L.T("Konu ve içerik"), Width = 560 };
@@ -152,10 +152,13 @@ public sealed class SemanticSearchWindow : Window
         if (_index!.Count == 0) await UpdateIndexAsync();
         try
         {
-            Hits = await _index.SearchAsync(q, _cache);
+            var found = await _index.SearchAsync(q, _cache);
+            // relevance relative to the best hit; weak matches (under a third of the best) are left out
+            var best = found.Count > 0 ? Math.Max(1e-9, found[0].Score) : 1;
+            Hits = found.Where(h => h.Score >= best * 0.33).ToList();
             _results.ItemsSource = Hits.Select(h => new
             {
-                h.Mail, ScoreText = $"{h.Score * 100:0}%", Date = h.Mail.Date.LocalDateTime.ToString("g", L.Culture),
+                h.Mail, ScoreText = $"{h.Score / best * 100:0}%", Date = h.Mail.Date.LocalDateTime.ToString("g", L.Culture),
                 From = h.Mail.FromName.Length > 0 ? h.Mail.FromName : h.Mail.FromAddress, Subject = h.Mail.SubjectDisplay, h.Snippet
             }).ToList();
             _status.Text = Hits.Count == 0 ? L.T("Eşleşen mail yok.") : L.F("{0} sonuç, en yakın anlam üstte.", Hits.Count);
