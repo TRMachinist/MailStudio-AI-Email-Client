@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
+using MailStudio.Services;
 using MailStudio.Services.Nc;
 using MailStudio.Views.Calendar;
 using Microsoft.Win32;
