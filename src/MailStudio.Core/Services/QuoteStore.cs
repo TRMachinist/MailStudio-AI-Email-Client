@@ -20,14 +20,14 @@ public sealed class QuoteStore
     public List<QuoteItem> Quotes { get; private set; } = new();
     public event Action? Changed;
 
-    DateTime _stamp;
+    JsonFile.Stamp _stamp;
 
     /// <summary>Re-reads quotes.json when the MCP agent server changed it (status updates), so the app never overwrites them.</summary>
     public bool ReloadIfChanged()
     {
         try
         {
-            if (!File.Exists(_path) || File.GetLastWriteTimeUtc(_path) == _stamp) return false;
+            if (!File.Exists(_path) || JsonFile.Stamp.Of(_path) == _stamp) return false;
             Load();
             Changed?.Invoke();
             return true;
@@ -47,9 +47,10 @@ public sealed class QuoteStore
         {
             if (File.Exists(_path))
             {
+                var stamp = JsonFile.Stamp.Of(_path);
                 var json = JsonFile.ReadOrBackup(_path);
                 Quotes = JsonSerializer.Deserialize<List<QuoteItem>>(json, JsonOpts) ?? new();
-                _stamp = File.GetLastWriteTimeUtc(_path);
+                _stamp = stamp;
                 return;
             }
         }
@@ -66,7 +67,7 @@ public sealed class QuoteStore
                 Directory.CreateDirectory(dir);
             var json = JsonSerializer.Serialize(Quotes, JsonOpts);
             JsonFile.WriteAtomic(_path, json);
-            _stamp = File.GetLastWriteTimeUtc(_path);
+            _stamp = JsonFile.Stamp.OfText(json);
             Changed?.Invoke();
         }
         catch { }

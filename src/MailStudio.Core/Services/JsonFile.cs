@@ -28,4 +28,23 @@ public static class JsonFile
         File.WriteAllText(tmp, text, new UTF8Encoding(false));
         SafeFile.Move(tmp, path, true);
     }
+
+    /// <summary>Identity of a file's content (length + FNV-1a hash). Used instead of the write time, which can stay the
+    /// same for two quick writes by the app and the MCP agent (clock resolution) – a missed change would lose an edit.</summary>
+    public readonly record struct Stamp(long Length, ulong Hash)
+    {
+        public static Stamp OfBytes(byte[] b)
+        {
+            ulong h = 14695981039346656037;
+            foreach (var x in b) { h ^= x; h *= 1099511628211; }
+            return new Stamp(b.LongLength, h);
+        }
+        public static Stamp OfText(string text) => OfBytes(new UTF8Encoding(false).GetBytes(text));
+        /// <summary>Stamp of the file now (default when missing or unreadable).</summary>
+        public static Stamp Of(string path)
+        {
+            try { return File.Exists(path) ? OfBytes(File.ReadAllBytes(path)) : default; }
+            catch (IOException) { return default; }
+        }
+    }
 }

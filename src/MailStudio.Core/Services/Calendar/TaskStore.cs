@@ -45,7 +45,7 @@ public sealed class TaskStore
     List<TaskItem> _tasks = new();
     public event Action? Changed;
 
-    DateTime _stamp;
+    MailStudio.Services.JsonFile.Stamp _stamp;
 
     public TaskStore(string? path = null)
     {
@@ -57,7 +57,7 @@ public sealed class TaskStore
     {
         try
         {
-            if (File.Exists(_path)) { _tasks = JsonSerializer.Deserialize<List<TaskItem>>(File.ReadAllText(_path)) ?? new(); _stamp = File.GetLastWriteTimeUtc(_path); }
+            if (File.Exists(_path)) { var bytes = File.ReadAllBytes(_path); _tasks = JsonSerializer.Deserialize<List<TaskItem>>(bytes) ?? new(); _stamp = MailStudio.Services.JsonFile.Stamp.OfBytes(bytes); }
         }
         catch (JsonException)
         {
@@ -70,7 +70,7 @@ public sealed class TaskStore
     /// <summary>Picks up changes another process wrote before this one writes (no lost agent edits).</summary>
     void Sync()
     {
-        try { if (File.Exists(_path) && File.GetLastWriteTimeUtc(_path) != _stamp) lock (_lock) Load(); }
+        try { if (File.Exists(_path) && MailStudio.Services.JsonFile.Stamp.Of(_path) != _stamp) lock (_lock) Load(); }
         catch (IOException) { }
     }
 
@@ -79,7 +79,7 @@ public sealed class TaskStore
     {
         try
         {
-            if (!File.Exists(_path) || File.GetLastWriteTimeUtc(_path) == _stamp) return false;
+            if (!File.Exists(_path) || MailStudio.Services.JsonFile.Stamp.Of(_path) == _stamp) return false;
             lock (_lock) Load();
         }
         catch (IOException) { return false; }
@@ -155,7 +155,7 @@ public sealed class TaskStore
         var tmp = _path + ".tmp";
         File.WriteAllText(tmp, json, new UTF8Encoding(false));
         MailStudio.Services.SafeFile.Move(tmp, _path, true);
-        _stamp = File.GetLastWriteTimeUtc(_path);
+        _stamp = MailStudio.Services.JsonFile.Stamp.OfText(json);
         Changed?.Invoke();
     }
 }

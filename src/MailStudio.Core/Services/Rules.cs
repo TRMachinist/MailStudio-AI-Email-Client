@@ -49,7 +49,7 @@ namespace MailStudio.Services
     public class RuleStore
     {
         readonly string _path;
-        DateTime _stamp;
+        JsonFile.Stamp _stamp;
         static readonly JsonSerializerOptions JsonOpts = new()
         {
             WriteIndented = true,
@@ -71,8 +71,9 @@ namespace MailStudio.Services
             {
                 if (File.Exists(_path))
                 {
-                    Rules = JsonSerializer.Deserialize<List<MailRule>>(File.ReadAllText(_path), JsonOpts) ?? new();
-                    _stamp = File.GetLastWriteTimeUtc(_path);
+                    var bytes = File.ReadAllBytes(_path);
+                    Rules = JsonSerializer.Deserialize<List<MailRule>>(bytes, JsonOpts) ?? new();
+                    _stamp = JsonFile.Stamp.OfBytes(bytes);
                     return;
                 }
             }
@@ -90,7 +91,7 @@ namespace MailStudio.Services
         {
             try
             {
-                if (!File.Exists(_path) || File.GetLastWriteTimeUtc(_path) == _stamp) return false;
+                if (!File.Exists(_path) || JsonFile.Stamp.Of(_path) == _stamp) return false;
                 Load();
                 return true;
             }
@@ -101,9 +102,10 @@ namespace MailStudio.Services
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
             var tmp = _path + ".tmp";
-            File.WriteAllText(tmp, JsonSerializer.Serialize(Rules, JsonOpts), new System.Text.UTF8Encoding(false));
+            var json = JsonSerializer.Serialize(Rules, JsonOpts);
+            File.WriteAllText(tmp, json, new System.Text.UTF8Encoding(false));
             SafeFile.Move(tmp, _path, true);
-            _stamp = File.GetLastWriteTimeUtc(_path);
+            _stamp = JsonFile.Stamp.OfText(json);
         }
 
         /// <summary>Adds one rule written elsewhere (MCP) without losing rules saved meanwhile.</summary>
