@@ -54,7 +54,13 @@ async def main():
         man = []
         for sid, text in cfg['lines']:
             f = out / f'{sid}.mp3'
-            await edge_tts.Communicate(text, cfg['voice'], rate=cfg['rate']).save(str(f))
+            for attempt in range(4):
+                try:
+                    await edge_tts.Communicate(text, cfg['voice'], rate=cfg['rate']).save(str(f)); break
+                except edge_tts.exceptions.NoAudioReceived:
+                    print('retry', lang, sid); await asyncio.sleep(2 + attempt * 3)
+            else:
+                raise SystemExit(f'no audio for {lang} {sid}: {text}')
             man.append({'id': sid, 'text': text, 'duration': round(duration(f), 3)})
         (out / 'manifest.json').write_text(json.dumps(man, ensure_ascii=False, indent=1), encoding='utf-8')
         print(lang, round(sum(m['duration'] for m in man), 1), 's of speech')
