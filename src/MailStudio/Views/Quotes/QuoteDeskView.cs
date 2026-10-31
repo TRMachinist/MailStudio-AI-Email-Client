@@ -619,7 +619,7 @@ public sealed class QuoteDeskView : UserControl
                 var item = q.Clone();
                 item.UnitPrice = est.UnitPrice; item.Currency = est.Currency; item.CostBreakdown = est.ToText();
                 if (item.Quantity <= 0) item.Quantity = est.Quantity;
-                if (string.IsNullOrWhiteSpace(item.Material)) item.Material = est.Material.Name;
+                if (string.IsNullOrWhiteSpace(item.Material)) item.Material = est.Material.Display;
                 if (item.Status == QuoteStatus.New) item.Status = QuoteStatus.InProgress;
                 item.UpdatedAt = DateTimeOffset.Now;
                 _store.AddOrUpdate(item);

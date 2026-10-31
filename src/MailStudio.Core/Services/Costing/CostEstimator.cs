@@ -8,7 +8,9 @@ namespace MailStudio.Services.Costing;
 /// <summary>A machinable material: density (exact, nominal) and editable commercial / machining figures.</summary>
 public sealed record MaterialSpec(string Group, string Name, double DensityGcm3, double PricePerKg, double RoughCm3PerMin, double FinishCm2PerMin)
 {
-    public override string ToString() => $"{Name}  ·  {DensityGcm3.ToString("0.00", CultureInfo.CurrentCulture)} g/cm³";
+    /// <summary>Name in the UI language; <see cref="Name"/> stays the fixed key of the user's price overrides.</summary>
+    public string Display => L.T(Name);
+    public override string ToString() => $"{Display}  ·  {DensityGcm3.ToString("0.00", CultureInfo.CurrentCulture)} g/cm³";
 }
 
 /// <summary>Editable cost parameters (saved in cost-settings.json). Prices are examples – the user sets his own.</summary>
@@ -107,7 +109,7 @@ public sealed class CostEstimate
     public string ToText()
     {
         var sb = new StringBuilder();
-        sb.AppendLine(L.F("Maliyet tahmini – {0}, {1} adet", Material.Name, Quantity));
+        sb.AppendLine(L.F("Maliyet tahmini – {0}, {1} adet", Material.Display, Quantity));
         sb.AppendLine(StockX > 0
             ? L.F("Stok: {0:0.#} × {1:0.#} × {2:0.#} mm  ·  {3:0.###} kg (parça {4:0.###} kg)", StockX, StockY, StockZ, StockMassKg, PartMassKg)
             : L.F("Stok: {0:0.###} kg (parça {1:0.###} kg)", StockMassKg, PartMassKg));
@@ -132,14 +134,14 @@ public static class CostEstimator
         new(L.T("Alüminyum"), "Al 2024-T3 / T351", 2.78, 7.0, 55, 40), new(L.T("Alüminyum"), "Al 6061-T6", 2.70, 5.0, 70, 45),
         new(L.T("Alüminyum"), "Al 6082-T6", 2.70, 4.8, 70, 45), new(L.T("Alüminyum"), "Al 5083-H111", 2.66, 5.5, 60, 40),
         new(L.T("Titanyum"), "Ti-6Al-4V (Grade 5)", 4.43, 35, 6, 8), new(L.T("Titanyum"), "Ti Grade 2", 4.51, 28, 8, 10),
-        new(L.T("Çelik"), L.T("Yapı çeliği S235 / St37"), 7.85, 1.4, 18, 20), new(L.T("Çelik"), "C45 / 1045", 7.85, 1.8, 16, 18),
+        new(L.T("Çelik"), "Yapı çeliği S235 / St37", 7.85, 1.4, 18, 20), new(L.T("Çelik"), "C45 / 1045", 7.85, 1.8, 16, 18),
         new(L.T("Çelik"), "4140 / 42CrMo4", 7.85, 2.4, 14, 16), new(L.T("Çelik"), "4340", 7.85, 3.0, 12, 15),
-        new(L.T("Çelik"), L.T("Takım çeliği 1.2379 (D2)"), 7.70, 6.0, 8, 12), new(L.T("Çelik"), L.T("Takım çeliği 1.2344 (H13)"), 7.80, 6.5, 9, 12),
+        new(L.T("Çelik"), "Takım çeliği 1.2379 (D2)", 7.70, 6.0, 8, 12), new(L.T("Çelik"), "Takım çeliği 1.2344 (H13)", 7.80, 6.5, 9, 12),
         new(L.T("Paslanmaz"), "304 / 1.4301", 7.93, 4.5, 10, 14), new(L.T("Paslanmaz"), "316L / 1.4404", 7.98, 6.0, 9, 13),
         new(L.T("Paslanmaz"), "17-4PH / 1.4542", 7.80, 9.0, 8, 12), new(L.T("Paslanmaz"), "15-5PH", 7.80, 10, 8, 12), new(L.T("Paslanmaz"), "420 / 1.4021", 7.74, 4.0, 10, 14),
         new(L.T("Nikel"), "Inconel 718", 8.19, 45, 3, 5), new(L.T("Nikel"), "Inconel 625", 8.44, 50, 3, 5),
-        new(L.T("Bakır"), L.T("Pirinç CuZn39Pb3"), 8.47, 8.0, 45, 40), new(L.T("Bakır"), L.T("Bakır Cu-ETP"), 8.94, 11, 30, 30), new(L.T("Bakır"), L.T("Bronz CuSn8"), 8.80, 14, 25, 25),
-        new(L.T("Döküm"), L.T("Pik döküm GG25"), 7.20, 1.5, 20, 20), new(L.T("Döküm"), L.T("Sfero GGG40"), 7.10, 1.8, 18, 18),
+        new(L.T("Bakır"), "Pirinç CuZn39Pb3", 8.47, 8.0, 45, 40), new(L.T("Bakır"), "Bakır Cu-ETP", 8.94, 11, 30, 30), new(L.T("Bakır"), "Bronz CuSn8", 8.80, 14, 25, 25),
+        new(L.T("Döküm"), "Pik döküm GG25", 7.20, 1.5, 20, 20), new(L.T("Döküm"), "Sfero GGG40", 7.10, 1.8, 18, 18),
         new(L.T("Plastik"), "POM (Delrin)", 1.41, 6.0, 90, 60), new(L.T("Plastik"), "PA6 (Naylon)", 1.14, 5.0, 90, 60), new(L.T("Plastik"), "PEEK", 1.32, 90, 50, 40),
         new(L.T("Plastik"), "PTFE (Teflon)", 2.20, 20, 80, 60), new(L.T("Plastik"), "PE-HD", 0.95, 4.0, 100, 70),
     };
@@ -172,7 +174,7 @@ public static class CostEstimator
         var t = N(text);
         MaterialSpec? best = null; var bestLen = 0;
         foreach (var m in list)
-            foreach (var token in m.Name.Split(new[] { ' ', '/', '(', ')', '·' }, StringSplitOptions.RemoveEmptyEntries).Select(N).Where(x => x.Length >= 3))
+            foreach (var token in (m.Name + " " + m.Display).Split(new[] { ' ', '/', '(', ')', '·' }, StringSplitOptions.RemoveEmptyEntries).Select(N).Where(x => x.Length >= 3))
                 if (t.Contains(token) && token.Length > bestLen) { best = m; bestLen = token.Length; }
         if (best == null && (t.Contains("ti6al4v") || t.Contains("grade5"))) best = list.FirstOrDefault(m => m.Name.StartsWith("Ti-6Al-4V"));
         if (best == null && t.Contains("s235")) best = list.FirstOrDefault(m => m.Name.Contains("S235"));
@@ -217,7 +219,7 @@ public static class CostEstimator
         est.Lines.Add(new(L.T("Hammadde"), L.F("{0} kg × {1}/kg + %{2} fire", N(stockKg, "0.###"), Money(m.PricePerKg, s.Currency), N(s.MaterialWastePercent)), Math.Round(material, 2)));
         est.Lines.Add(new(L.T("Kaba işleme"), L.F("{0} cm³ talaş ÷ {1} cm³/dk = {2} dk", N(removedCm3, "0.#"), N(m.RoughCm3PerMin), N(rough, "0.#")), Math.Round(rough * perMin, 2)));
         est.Lines.Add(new(L.T("Finiş"), L.F("{0} cm² yüzey ÷ {1} cm²/dk = {2} dk", N(surfaceCm2, "0.#"), N(m.FinishCm2PerMin), N(finish, "0.#")), Math.Round(finish * perMin, 2)));
-        if (g.HoleCount > 0) est.Lines.Add(new(L.T("Delik"), L.F("{0} delik × {1} dk", g.HoleCount, N(s.MinutesPerHole)), Math.Round(drill * perMin, 2)));
+        if (g.HoleCount > 0) est.Lines.Add(new(L.T("Delme"), L.F("{0} delik × {1} dk", g.HoleCount, N(s.MinutesPerHole)), Math.Round(drill * perMin, 2)));
         est.Lines.Add(new(L.T("Bağlama / çapak / kontrol"), L.F("{0} dk", N(s.HandlingMinutes)), Math.Round(s.HandlingMinutes * perMin, 2)));
         est.Lines.Add(new(L.T("Hazırlık (adede bölünmüş)"), L.F("{0} dk ÷ {1} adet", N(s.SetupMinutes), quantity), Math.Round(setup, 2)));
         est.Assumptions.Add(L.F("Saat ücreti {0}/saat, kâr payı %{1}.", Money(s.HourlyRate, s.Currency), N(s.MarginPercent)));

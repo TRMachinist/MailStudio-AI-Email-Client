@@ -183,7 +183,7 @@ public sealed class VisualDiffWindow : Window
             var kindText = g.GetProperty("kind").GetString() switch { "added" => L.T("eklendi"), "removed" => L.T("kaldırıldı"), _ => L.T("değişti") };
             var color = g.GetProperty("kind").GetString() switch { "added" => Color.FromRgb(16, 150, 64), "removed" => Color.FromRgb(214, 40, 40), _ => Color.FromRgb(200, 120, 0) };
             n++;
-            _regions.Items.Add(new ListBoxItem { Tag = rect, Content = Row(color, L.F("Bölge {0}: {1}", n, kindText), $"{(int)rect.Width} × {(int)rect.Height} px") });
+            _regions.Items.Add(new ListBoxItem { Tag = rect, Content = Row(color, L.F("Bölge {0}: {1}", n, kindText), $"{(int)rect.Width} × {(int)rect.Height} px", Thumb(rect)) });
             var box = new Rectangle { Width = rect.Width + 12, Height = rect.Height + 12, Stroke = new SolidColorBrush(Color.FromArgb(170, 200, 120, 0)), StrokeThickness = 2, StrokeDashArray = new DoubleCollection { 4, 3 } };
             Canvas.SetLeft(box, rect.X - 6); Canvas.SetTop(box, rect.Y - 6); _marks.Children.Add(box);
             var label = new TextBlock { Text = n.ToString(), FontSize = 13, FontWeight = FontWeights.Bold, Foreground = Brushes.White, Background = new SolidColorBrush(Color.FromRgb(200, 120, 0)), Padding = new Thickness(4, 0, 4, 0) };
@@ -197,10 +197,25 @@ public sealed class VisualDiffWindow : Window
         "BSplineSurface" or "BezierSurface" => L.T("serbest yüzey"), _ => t ?? ""
     };
 
-    static FrameworkElement Row(Color c, string title, string detail)
+    /// <summary>Crop of the overlay around a region (so the list shows what changed, not only where).</summary>
+    ImageSource? Thumb(Rect r)
+    {
+        if (_image.Source is not BitmapSource b) return null;
+        var pad = 10;
+        var x = (int)Math.Max(0, r.X - pad); var y = (int)Math.Max(0, r.Y - pad);
+        var w = (int)Math.Min(b.PixelWidth - x, r.Width + 2 * pad); var h = (int)Math.Min(b.PixelHeight - y, r.Height + 2 * pad);
+        if (w <= 0 || h <= 0) return null;
+        try { var crop = new CroppedBitmap(b, new Int32Rect(x, y, w, h)); crop.Freeze(); return crop; }
+        catch (ArgumentException) { return null; }
+    }
+
+    static FrameworkElement Row(Color c, string title, string detail, ImageSource? thumb = null)
     {
         var sp = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 3, 0, 3) };
-        sp.Children.Add(new Rectangle { Width = 10, Height = 26, Fill = new SolidColorBrush(c), Margin = new Thickness(0, 0, 8, 0) });
+        sp.Children.Add(new Rectangle { Width = 6, Height = thumb != null ? 60 : 26, Fill = new SolidColorBrush(c), Margin = new Thickness(0, 0, 8, 0) });
+        if (thumb != null)
+            sp.Children.Add(new Border { Width = 96, Height = 60, Margin = new Thickness(0, 0, 8, 0), BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Color.FromRgb(220, 222, 226)), Background = Brushes.White,
+                Child = new Image { Source = thumb, Stretch = Stretch.Uniform, Margin = new Thickness(2) } });
         var t = new StackPanel();
         t.Children.Add(PimUi.Text(title, 12.5, bold: true));
         t.Children.Add(PimUi.Text(detail, 11.5, brush: "TextSecondaryBrush"));

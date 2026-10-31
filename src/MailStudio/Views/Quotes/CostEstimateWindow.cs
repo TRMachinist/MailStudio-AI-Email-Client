@@ -117,9 +117,9 @@ public sealed class CostEstimateWindow : Window
         root.Children.Add(_assumptions);
 
         var view = new GridView();
-        view.Columns.Add(new GridViewColumn { Header = L.T("Kalem"), DisplayMemberBinding = new Binding(nameof(CostLine.Label)), Width = 190 });
-        view.Columns.Add(new GridViewColumn { Header = L.T("Hesap"), DisplayMemberBinding = new Binding(nameof(CostLine.Detail)), Width = 340 });
-        view.Columns.Add(new GridViewColumn { Header = L.T("Tutar"), DisplayMemberBinding = new Binding("AmountText"), Width = 120 });
+        view.Columns.Add(new GridViewColumn { Header = L.T("Maliyet kalemi"), DisplayMemberBinding = new Binding(nameof(CostLine.Label)), Width = 230 });
+        view.Columns.Add(new GridViewColumn { Header = L.T("Hesaplama"), DisplayMemberBinding = new Binding(nameof(CostLine.Detail)), Width = 320 });
+        view.Columns.Add(new GridViewColumn { Header = L.T("Tutar"), DisplayMemberBinding = new Binding("AmountText"), Width = 110 });
         _lines.View = view;
         root.Children.Add(_lines);
 

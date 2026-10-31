@@ -19,6 +19,7 @@ public sealed class CostSettingsWindow : Window
     {
         public string Group { get; init; } = "";
         public string Name { get; init; } = "";
+        public string Display => L.T(Name);
         public double Density { get; init; }
         public double Price { get; set; }
         public double Rough { get; set; }
@@ -81,7 +82,7 @@ public sealed class CostSettingsWindow : Window
         _rows = CostEstimator.Materials(_s).Select(m => new MaterialRow { Group = m.Group, Name = m.Name, Density = m.DensityGcm3, Price = m.PricePerKg, Rough = m.RoughCm3PerMin, Finish = m.FinishCm2PerMin }).ToList();
         var grid = new DataGrid { ItemsSource = _rows, AutoGenerateColumns = false, CanUserAddRows = false, CanUserDeleteRows = false, HeadersVisibility = DataGridHeadersVisibility.Column, Margin = new Thickness(8) };
         grid.Columns.Add(new DataGridTextColumn { Header = L.T("Grup"), Binding = new Binding(nameof(MaterialRow.Group)), IsReadOnly = true });
-        grid.Columns.Add(new DataGridTextColumn { Header = L.T("Malzeme"), Binding = new Binding(nameof(MaterialRow.Name)), IsReadOnly = true, Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
+        grid.Columns.Add(new DataGridTextColumn { Header = L.T("Malzeme"), Binding = new Binding(nameof(MaterialRow.Display)), IsReadOnly = true, Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
         grid.Columns.Add(new DataGridTextColumn { Header = "g/cm³", Binding = new Binding(nameof(MaterialRow.Density)) { StringFormat = "0.00" }, IsReadOnly = true });
         grid.Columns.Add(new DataGridTextColumn { Header = L.T("Fiyat / kg"), Binding = new Binding(nameof(MaterialRow.Price)) });
         grid.Columns.Add(new DataGridTextColumn { Header = L.T("Kaba cm³/dk"), Binding = new Binding(nameof(MaterialRow.Rough)) });
