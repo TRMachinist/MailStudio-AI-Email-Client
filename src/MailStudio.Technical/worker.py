@@ -300,6 +300,10 @@ def dispatch(operation,args):
     if operation=='pdf_open':return pdf_open(args['path'])
     if operation=='pdf_page':return pdf_page(args)
     if operation=='pdf_ocr':return pdf_ocr(args)
+    if operation.startswith('balloon_'):
+        import balloon
+        result=balloon.dispatch(operation,args)
+        if result is not None:return result
     if operation=='visual_diff':
         import visual_diff
         return visual_diff.dispatch(operation,args)

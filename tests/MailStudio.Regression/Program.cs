@@ -4,6 +4,7 @@ using MailStudio.Models;
 using MailStudio.Services;
 using MailStudio.Services.Calendar;
 using MailStudio.Services.Costing;
+using MailStudio.Services.Inspection;
 using MailStudio.Regression;
 using MimeKit;
 using System.Text;
@@ -2434,6 +2435,39 @@ await Test("maliyet tahmini: STEP geometrisinden hammadde, süre, fiyat; malzeme
     Check(QuoteDocument.FileName(q) == "Q-2026-0008 bracket rev C.pdf", "PDF file name");
     thrown = false; try { QuoteDocument.BuildHtml(new QuoteItem(), s, DateTime.Today); } catch (InvalidOperationException) { thrown = true; }
     Check(thrown, "no price → no quotation document");
+}));
+
+await Test("balonlama ve AS9102: karakteristik okuma, numaralama, Form 1/3 çalışma kitabı ve OK/NOK formülü", () => Sync(() =>
+{
+    var json = JsonDocument.Parse("""
+    {"items":[
+     {"id":1,"page":0,"zone":"B6","type":"roughness","requirement":"Ra 1.6","nominal":1.6,"upper":1.6,"lower":0.0,"unit":"µm","quantity":1,"review":true,"source":"ocr","x":300,"y":70,"w":20,"h":6,"balloon":[310,60,6.9]},
+     {"id":2,"page":0,"zone":"D2","type":"diameter","requirement":"Ø110","nominal":110,"upper":0.3,"lower":0.3,"tolerance_source":"ISO 2768-m","unit":"mm","quantity":1,"review":false,"source":"text","x":90,"y":150,"w":20,"h":10},
+     {"id":3,"page":0,"zone":"E3","type":"diameter","requirement":"8x Ø20 THRU","nominal":20,"upper":null,"lower":null,"fit":"H7","unit":"mm","quantity":8,"review":false,"source":"text","x":80,"y":230,"w":110,"h":8}
+    ],"pages":[{"page":0,"width":483,"height":345,"source":"text"}]}
+    """).RootElement;
+    var items = Characteristic.FromExtract(json);
+    Check(items.Count == 3 && items[0].Review && items[0].Balloon is { Length: 3 } && items[2].Quantity == 8 && items[2].Fit == "H7", "worker result read");
+    Check(items[0].Min == 0 && items[0].Max == 1.6, $"roughness limits 0…1.6 ({items[0].Min}…{items[0].Max})");
+    Check(items[1].Min == 109.7 && items[1].Max == 110.3 && (items[1].ToleranceText.Contains("0.3") || items[1].ToleranceText.Contains("0,3")), "ISO 2768-m limits on Ø110");
+    Check(items[2].Min == null && items[2].Max == null, "no invented limits for a fit without a table value");
+
+    // the inspector deletes #1 and adds one by hand: numbers follow the reading order again
+    items.RemoveAt(0);
+    items.Add(new Characteristic { Type = "manual", Page = 0, X = 10, Y = 20, W = 5, H = 5, Requirement = "45°" });
+    Characteristic.Renumber(items);
+    Check(items.Single(i => i.Requirement == "45°").Id == 1 && items.Single(i => i.Requirement == "Ø110").Id == 2 && items.Max(i => i.Id) == 3, "renumbered in reading order");
+
+    var xlsx = Path.Combine(root, "fai.xlsx");
+    FaiReport.ExportAs9102(xlsx, new FaiHeader { PartNumber = "NW-1042", Revision = "C", ReportNumber = "FAI-1", Organization = "Demo" }, items);
+    using var wb = new ClosedXML.Excel.XLWorkbook(xlsx);
+    Check(wb.Worksheets.Contains("Form 1") && wb.Worksheets.Contains("Form 3"), "Form 1 and Form 3 sheets");
+    var f3 = wb.Worksheet("Form 3");
+    Check(f3.Cell(5, 1).GetValue<int>() == 1 && f3.Cell(6, 4).GetString() == "Ø110  (ISO 2768-m ±0.3)" && f3.Cell(6, 6).GetValue<double>() == 109.7 && f3.Cell(6, 7).GetValue<double>() == 110.3,
+        $"Form 3 row: requirement and limits ({f3.Cell(6, 4).GetString()})");
+    Check(f3.Cell(6, 11).FormulaA1.Contains("\"OK\"") && f3.Cell(6, 11).FormulaA1.Contains("J6>=F6"), "pass/fail formula on the measured value");
+    Check(f3.Cell(7, 14).GetString().Contains("H7"), "fit without limits is flagged in the notes");
+    Check(wb.Worksheet("Form 1").Cell(3, 2).GetString() == "NW-1042", "Form 1 part number");
 }));
 
 Console.WriteLine($"RESULT {passed} passed. Synthetic evidence: {root}");

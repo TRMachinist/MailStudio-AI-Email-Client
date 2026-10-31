@@ -183,7 +183,7 @@ public sealed class VisualDiffWindow : Window
             var kindText = g.GetProperty("kind").GetString() switch { "added" => L.T("eklendi"), "removed" => L.T("kaldırıldı"), _ => L.T("değişti") };
             var color = g.GetProperty("kind").GetString() switch { "added" => Color.FromRgb(16, 150, 64), "removed" => Color.FromRgb(214, 40, 40), _ => Color.FromRgb(200, 120, 0) };
             n++;
-            _regions.Items.Add(new ListBoxItem { Tag = rect, Content = Row(color, L.F("Bölge {0}: {1}", n, kindText), L.F("{0} × {1} px", (int)rect.Width, (int)rect.Height)) });
+            _regions.Items.Add(new ListBoxItem { Tag = rect, Content = Row(color, L.F("Bölge {0}: {1}", n, kindText), $"{(int)rect.Width} × {(int)rect.Height} px") });
             var box = new Rectangle { Width = rect.Width + 12, Height = rect.Height + 12, Stroke = new SolidColorBrush(Color.FromArgb(170, 200, 120, 0)), StrokeThickness = 2, StrokeDashArray = new DoubleCollection { 4, 3 } };
             Canvas.SetLeft(box, rect.X - 6); Canvas.SetTop(box, rect.Y - 6); _marks.Children.Add(box);
             var label = new TextBlock { Text = n.ToString(), FontSize = 13, FontWeight = FontWeights.Bold, Foreground = Brushes.White, Background = new SolidColorBrush(Color.FromRgb(200, 120, 0)), Padding = new Thickness(4, 0, 4, 0) };
@@ -193,7 +193,7 @@ public sealed class VisualDiffWindow : Window
 
     static string FaceType(string? t) => t switch
     {
-        "Plane" => L.T("düzlem"), "Cylinder" => L.T("silindir"), "Cone" => L.T("koni"), "Sphere" => L.T("küre"), "Torus" => L.T("torus"),
+        "Plane" => L.T("düzlem"), "Cylinder" => L.T("silindir"), "Cone" => L.T("koni"), "Sphere" => L.T("küre"), "Torus" => "torus",
         "BSplineSurface" or "BezierSurface" => L.T("serbest yüzey"), _ => t ?? ""
     };
 

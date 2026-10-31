@@ -131,6 +131,9 @@ public sealed partial class PdfAttachmentWindow : Window
         wrap.Children.Add(IconBtn("", L.T("Sayfa küçük resimlerini göster/gizle"), () => _thumbCol.Width = _thumbCol.Width.Value > 0 ? new GridLength(0) : new GridLength(150)));
         wrap.Children.Add(IconBtn("", L.T("Farklı kaydet… (Ctrl+S) — düzenlemeler yeni PDF'ye yazılır, ek dosyası değişmez"), async () => await SaveAsAsync()));
         wrap.Children.Add(IconBtn("⚖", L.T("Önceki revizyonla karşılaştır"), async () => await CompareRevisionAsync()));
+        var balloon = new Button { Content = L.T("Balonla / FAI"), ToolTip = L.T("Ölçüleri numaralı balonlarla işaretle, AS9102 Form 1/3 Excel ve balonlu PDF üret"), Padding = new Thickness(10, 3, 10, 3), Height = 30, Margin = new Thickness(2, 0, 2, 0) };
+        balloon.Click += (_, _) => OpenBalloons();
+        wrap.Children.Add(balloon);
         wrap.Children.Add(IconBtn("", _sourceDocument != null ? L.T("Belgeyi kendi programında (Word/Excel/PowerPoint) aç") : L.T("Varsayılan PDF programında aç"), () => { try { Process.Start(new ProcessStartInfo(_sourceDocument ?? _path) { UseShellExecute = true }); } catch (Exception ex) { _status.Text = ex.Message; } }));
         if (_sourceDocument != null)
         {
@@ -524,6 +527,14 @@ public sealed partial class PdfAttachmentWindow : Window
         else if (e.Key == Key.End && ctrl) { GoToPage(_pages - 1); e.Handled = true; }
     }
 
+    /// <summary>Opens the balloon / AS9102 window for this PDF (returns it for the self-test).</summary>
+    public Inspection.BalloonWindow OpenBalloons()
+    {
+        var w = new Inspection.BalloonWindow(_path, (op, args, ct) => _worker.CallAsync(op, args, ct)) { Owner = this };
+        w.Show();
+        return w;
+    }
+
     async Task CompareRevisionAsync()
     {
         var oldPath = await RevisionLookup.PickOlderAsync(this, _path);
@@ -534,7 +545,7 @@ public sealed partial class PdfAttachmentWindow : Window
         try
         {
             var report = await RevisionService.CompareAsync(oldPath, _path, () => _worker, _life.Token);
-            var win = new RevisionDiffWindow(report) { Owner = this };
+            var win = new RevisionDiffWindow(report, visualRunner: (args, ct) => _worker.CallAsync("visual_diff", args, ct)) { Owner = this };
             win.Show();
             _status.Text = L.F("Revizyon karşılaştırma tamamlandı: {0} fark bulundu.", report.TotalChanges);
         }

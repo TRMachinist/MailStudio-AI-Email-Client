@@ -8,7 +8,7 @@ datas, binaries, hiddenimports = [], [], []
 for package in ('OCP', 'rapidocr', 'onnxruntime', 'ezdxf', 'fontTools', 'pypdfium2'):
     d, b, h = collect_all(package)
     datas += d; binaries += b; hiddenimports += h
-hiddenimports += ['extract', 'visual_diff']  # imported lazily by worker.py
+hiddenimports += ['extract', 'visual_diff', 'balloon']  # imported lazily by worker.py
 
 a = Analysis(
     [os.path.join(SPECPATH, '..', '..', 'src', 'MailStudio.Technical', 'worker.py')],
