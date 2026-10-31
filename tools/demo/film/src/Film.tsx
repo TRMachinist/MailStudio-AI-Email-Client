@@ -4,11 +4,14 @@ import en from './timeline-en.json';
 import tr from './timeline-tr.json';
 import enNew18 from './timelinenew18-en.json';
 import trNew18 from './timelinenew18-tr.json';
-import {TEXT, TEXT18} from './text';
+import en19 from './timeline19-en.json';
+import tr19 from './timeline19-tr.json';
+import {TEXT, TEXT18, TEXT19} from './text';
 
-export type FilmSet = 'main' | 'v18';
+export type FilmSet = 'main' | 'v18' | 'v19';
 const SetCtx = React.createContext<FilmSet>('main');
-const useTexts = (lang: 'en' | 'tr') => (React.useContext(SetCtx) === 'v18' ? TEXT18 : TEXT)[lang] as any;
+const pickTexts = (set: FilmSet) => (set === 'v19' ? TEXT19 : set === 'v18' ? TEXT18 : TEXT);
+const useTexts = (lang: 'en' | 'tr') => pickTexts(React.useContext(SetCtx))[lang] as any;
 const isIntro = (id: string) => id.endsWith('01');
 const isOutro = (id: string) => id.endsWith('10');
 
@@ -220,8 +223,8 @@ export const Film: React.FC<{lang: 'en' | 'tr'; set?: FilmSet}> = ({lang, set = 
 );
 
 const FilmBody: React.FC<{lang: 'en' | 'tr'; set: FilmSet}> = ({lang, set}) => {
-  const tl = (set === 'v18' ? (lang === 'en' ? enNew18 : trNew18) : (lang === 'en' ? en : tr)) as unknown as TL;
-  const texts = (set === 'v18' ? TEXT18 : TEXT)[lang] as any;
+  const tl = (set === 'v19' ? (lang === 'en' ? en19 : tr19) : set === 'v18' ? (lang === 'en' ? enNew18 : trNew18) : (lang === 'en' ? en : tr)) as unknown as TL;
+  const texts = pickTexts(set)[lang] as any;
   const f = useCurrentFrame();
   const {width, V} = useL();
   const last = tl.scenes[tl.scenes.length - 1];

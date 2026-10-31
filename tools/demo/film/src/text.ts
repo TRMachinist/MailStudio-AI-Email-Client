@@ -123,3 +123,48 @@ export const TEXT18: Record<'en' | 'tr', any> = {
     },
   },
 };
+
+export const TEXT19: Record<'en' | 'tr', any> = {
+  en: {
+    badge: 'REAL APP · DEMO DATA',
+    intro: {title: 'MailStudio 1.9', sub: 'for TRMachinist', tag: 'The AI email client built for machine shops'},
+    m11: {chip: 'Mail + AI', title: 'Classic Outlook layout', sub: 'Summary and reply draft in one click', pills: ['Gmail', 'M365', 'IMAP', 'Ollama']},
+    m12: {chip: 'Viewers', title: 'Drawings open right inside', sub: 'No CAD, no Office, no unzip tool needed', pills: ['PDF', 'DXF', 'STEP', 'RAR']},
+    m13: {chip: 'Revisions', title: 'What changed, at a glance', sub: 'Change list + red/green overlay', pills: ['DXF', 'PDF', 'STEP']},
+    m14: {chip: 'New · RFQ intake', title: 'Requests land on the quote desk', sub: 'Acknowledgement opens as a draft — never sent by itself', pills: ['Auto intake', 'Draft only']},
+    m15: {chip: 'New · Cost', title: 'From STEP to a priced quote', sub: 'Material, machining time, margin → PDF', pills: ['Stock', 'Time', 'Quote PDF']},
+    m16: {chip: 'New · Part card', title: 'One part, everything about it', sub: 'Mails, revisions, quotes, NC programs', pills: ['Timeline', 'Revisions', 'Quotes']},
+    m17: {chip: 'New · NC preview', title: 'Toolpath and cycle time', sub: 'Compare two programs line by line', pills: ['Backplot', 'Cycle time', 'Compare']},
+    m18: {chip: 'New · PDF → Excel', title: 'Parts lists into Excel', sub: 'Numbers stay numbers, codes stay text', pills: ['BOM', 'Schedule', 'OCR']},
+    m19: {chip: 'Safer mail', title: 'Rules, undo send, follow-up', sub: 'Nothing slips, nothing goes out by mistake', pills: ['Rules', 'Undo', 'Follow-up']},
+    m20: {chip: 'New · Morning brief', title: 'Your day at a glance', sub: 'Calendar, tasks, deadlines, new requests', pills: ['Calendar', 'Tasks', 'Brief']},
+    m21: {chip: 'New · Search by meaning', title: 'Find mail by what it says', sub: 'Runs on this computer — nothing leaves it', pills: ['Built-in', 'Ollama']},
+    m22: {chip: 'Skills · Agents', title: 'AI that reads, never sends', sub: 'Claude, Codex, Gemini, Cursor via MCP', pills: ['Skills', 'MCP', 'No send']},
+    outro: {
+      line1: 'Free & open source', line2: 'Windows 10 / 11 · portable · no telemetry',
+      url: 'github.com/TRMachinist/MailStudio-AI-Email-Client', star: '⭐  Star it on GitHub',
+      tiles: ['Mail', 'AI', 'PDF · DXF · STEP', 'Revisions', 'Quotes', 'Cost', 'Part card', 'NC preview', 'Calendar', 'Search'],
+    },
+  },
+  tr: {
+    badge: 'GERÇEK UYGULAMA · DEMO VERİ',
+    intro: {title: 'MailStudio 1.9', sub: 'for TRMachinist', tag: 'İmalat atölyeleri için yapay zekâlı mail programı'},
+    m11: {chip: 'Mail + yapay zekâ', title: 'Klasik Outlook düzeni', sub: 'Tek tıkla özet ve cevap taslağı', pills: ['Gmail', 'M365', 'IMAP', 'Ollama']},
+    m12: {chip: 'Görüntüleyiciler', title: 'Resimler programın içinde açılır', sub: 'CAD, Office, arşiv programı gerekmez', pills: ['PDF', 'DXF', 'STEP', 'RAR']},
+    m13: {chip: 'Revizyonlar', title: 'Ne değişti, bir bakışta', sub: 'Değişiklik listesi + kırmızı/yeşil üst üste', pills: ['DXF', 'PDF', 'STEP']},
+    m14: {chip: 'Yeni · Talep karşılama', title: 'Talepler teklif masasına düşer', sub: 'Alındı yanıtı taslak açılır — kendiliğinden gitmez', pills: ['Otomatik', 'Sadece taslak']},
+    m15: {chip: 'Yeni · Maliyet', title: 'STEP modelden fiyatlı teklife', sub: 'Malzeme, işleme süresi, kâr → PDF', pills: ['Stok', 'Süre', 'Teklif PDF']},
+    m16: {chip: 'Yeni · Parça kartı', title: 'Bir parça, her şeyi', sub: 'Mailler, revizyonlar, teklifler, NC programları', pills: ['Zaman çizelgesi', 'Revizyon', 'Teklif']},
+    m17: {chip: 'Yeni · NC önizleme', title: 'Takım yolu ve çevrim süresi', sub: 'İki programı satır satır karşılaştırın', pills: ['Takım yolu', 'Süre', 'Karşılaştır']},
+    m18: {chip: 'Yeni · PDF → Excel', title: 'Parça listeleri Excel\'e', sub: 'Sayılar sayı, kodlar metin kalır', pills: ['Parça listesi', 'Termin', 'OCR']},
+    m19: {chip: 'Güvenli mail', title: 'Kural, geri al, cevap takibi', sub: 'Hiçbir şey kaçmaz, yanlışlıkla gitmez', pills: ['Kurallar', 'Geri al', 'Takip']},
+    m20: {chip: 'Yeni · Sabah özeti', title: 'Gününüz tek bakışta', sub: 'Takvim, görevler, son tarihler, yeni talepler', pills: ['Takvim', 'Görevler', 'Özet']},
+    m21: {chip: 'Yeni · Anlamla arama', title: 'Maili ne dediğiyle bulun', sub: 'Bu bilgisayarda çalışır — hiçbir şey dışarı çıkmaz', pills: ['Yerleşik', 'Ollama']},
+    m22: {chip: 'Skill · Ajanlar', title: 'Okuyan ama göndermeyen yapay zekâ', sub: 'Claude, Codex, Gemini, Cursor (MCP)', pills: ['Skill', 'MCP', 'Gönderim yok']},
+    outro: {
+      line1: 'Ücretsiz ve açık kaynak', line2: 'Windows 10 / 11 · kurulumsuz · telemetri yok',
+      url: 'github.com/TRMachinist/MailStudio-AI-Email-Client', star: '⭐  GitHub\'da yıldız verin',
+      tiles: ['Mail', 'Yapay zekâ', 'PDF · DXF · STEP', 'Revizyon', 'Teklif', 'Maliyet', 'Parça kartı', 'NC önizleme', 'Takvim', 'Arama'],
+    },
+  },
+};
