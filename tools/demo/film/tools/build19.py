@@ -33,7 +33,7 @@ PLAN = {
 }
 
 # Minimum seconds per scene so every clip is really visible (the voice starts the scene, pictures finish it)
-MIN_SECONDS = {'m11': 6, 'm12': 7.5, 'm13': 7.5, 'm14': 6, 'm15': 6.5, 'm16': 5, 'm17': 6.5, 'm18': 5.5, 'm19': 7, 'm20': 6, 'm21': 8, 'm22': 6}
+MIN_SECONDS = {'m11': 6, 'm12': 7.5, 'm13': 7.5, 'm14': 6, 'm15': 6.5, 'm16': 5, 'm17': 6.5, 'm18': 5.5, 'm19': 6.5, 'm20': 6, 'm21': 8, 'm22': 6}
 
 def parts(text):
     import re
@@ -55,7 +55,7 @@ def build_timeline(lang, voice_dir, plan_map, out_json, out_wav, is_new=False):
     for m in man:
         sid = m['id']; vd = m['duration']
         lead = 12 if sid == intro_id else 6
-        tail = 55 if sid == outro_id else 12
+        tail = 45 if sid == outro_id else 12
         dur = lead + math.ceil(vd * FPS) + tail
         dur = max(dur, int(MIN_SECONDS.get(sid, 0) * FPS))
         voice_rel = f'{voice_dir}/{lang}/{sid}.mp3'
