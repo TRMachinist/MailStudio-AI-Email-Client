@@ -85,7 +85,7 @@ public sealed class PartHistory
         h.Files.Sort((a, b) => a.Date.CompareTo(b.Date));
         foreach (var g in h.Files.Where(f => f.Revision.Length > 0).GroupBy(f => f.Revision.ToUpperInvariant()))
             h.Revisions.Add(new PartRevision(g.First().Revision, g.Min(f => f.Date), g.ToList()));
-        h.Revisions.Sort((a, b) => a.FirstSeen != b.FirstSeen ? a.FirstSeen.CompareTo(b.FirstSeen) : string.Compare(a.Revision, b.Revision, StringComparison.OrdinalIgnoreCase));
+        h.Revisions.Sort(CompareRevisions);
 
         var key = RevisionService.PartKey(part);
         if (quotes != null) h.Quotes.AddRange(quotes.Quotes.Where(q => RevisionService.PartKey(q.PartNumber) == key || rx.IsMatch(q.PartNumber)).OrderBy(q => q.CreatedAt));
@@ -94,6 +94,28 @@ public sealed class PartHistory
             .GroupBy(m => m.FromAddress.ToLowerInvariant()).OrderByDescending(g => g.Count())
             .Select(g => string.IsNullOrWhiteSpace(g.First().FromName) ? g.Key : g.First().FromName).Take(6));
         return h;
+    }
+
+    /// <summary>Revision order by the label when the labels are comparable (A &lt; B &lt; … &lt; AA, 01 &lt; 02, Wk43 &lt; Wk44),
+    /// otherwise by the date the revision was first seen. Mails often arrive out of order (an old package forwarded late).</summary>
+    public static int CompareRevisions(PartRevision a, PartRevision b)
+    {
+        static (int Kind, long Num, string Text) Key(string r)
+        {
+            var u = r.ToUpperInvariant();
+            if (long.TryParse(u, out var n)) return (0, n, "");
+            var wk = Regex.Match(u, @"^WK(\d+)$"); if (wk.Success) return (1, long.Parse(wk.Groups[1].Value), "");
+            if (Regex.IsMatch(u, "^[A-Z]{1,3}$")) return (2, u.Length, u);
+            return (3, 0, u);
+        }
+        var ka = Key(a.Revision); var kb = Key(b.Revision);
+        if (ka.Kind == kb.Kind && ka.Kind < 3)
+        {
+            var c = ka.Num.CompareTo(kb.Num);
+            if (c == 0) c = string.CompareOrdinal(ka.Text, kb.Text);
+            if (c != 0) return c;
+        }
+        return a.FirstSeen.CompareTo(b.FirstSeen);
     }
 
     static IEnumerable<MailHeader> SafeSearch(MailCache cache, string part, int limit)

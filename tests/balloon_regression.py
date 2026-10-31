@@ -21,6 +21,8 @@ check(c('TOLERANCES ISO 2768-mK')['type'] == 'general', 'general tolerance note'
 check(b._ocr_fix('0110.') == 'Ø110' and b._ocr_fix('8× 020 THRU') == '8x Ø20 THRU' and b._ocr_fix('0.5') == '0.5' and 'ISO 2768' in b._ocr_fix('ISO 2768-mK'), 'OCR Ø repair')
 check(b.iso2768(110, 'm') == 0.3 and b.iso2768(2, 'f') == 0.05 and b.iso2768(0.2, 'm') is None, 'ISO 2768-1 table')
 r = b.extract({'path': str(root / 'src/MailStudio/Demo/flange-DN100-revC.pdf')})
+import json as _json
+check(len(_json.dumps(r, allow_nan=False)) > 100, 'result is plain JSON (what the worker sends)')
 req = [i['requirement'] for i in r['items']]
 check(r['title'].get('part_number') == 'NW-1042', 'part number from the title block')
 check(r['ocr'] and all(i['review'] for i in r['items']), 'scanned demo drawing read with OCR and flagged for review')

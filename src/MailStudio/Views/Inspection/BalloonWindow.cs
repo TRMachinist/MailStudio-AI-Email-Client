@@ -270,6 +270,7 @@ public sealed class BalloonWindow : Window
     /// <summary>Adds a characteristic for a box in page points (top-left origin) on the current page.</summary>
     public Characteristic AddManual(Rect r)
     {
+        if (_pageW <= 0) throw new InvalidOperationException(L.T("Önce resmin yüklenmesini bekleyin."));
         var radius = Math.Max(5.0, Math.Min(_pageW, _pageH) / 70);
         var c = new Characteristic
         {
@@ -286,6 +287,7 @@ public sealed class BalloonWindow : Window
 
     string Zone(double x, double y)
     {
+        if (_pageW <= 0 || _pageH <= 0) return "";
         int cols = 8, rows = 6;
         if (_pageW < _pageH) (cols, rows) = (rows, cols);
         var col = Math.Min(cols, (int)(x / _pageW * cols) + 1); var row = Math.Min(rows - 1, (int)(y / _pageH * rows));

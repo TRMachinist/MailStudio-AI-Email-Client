@@ -138,7 +138,7 @@ def _runs_from_ocr(page):
     if result.txts is None: return []
     out = []
     for box, text, score in zip(result.boxes, result.txts, result.scores):
-        xs = [p[0] / scale for p in box]; ys = [p[1] / scale for p in box]
+        xs = [float(p[0]) / scale for p in box]; ys = [float(p[1]) / scale for p in box]   # numpy float32 is not JSON
         out.append({'text': _ocr_fix(text), 'x': min(xs), 'y': min(ys), 'w': max(xs) - min(xs), 'h': max(ys) - min(ys), 'score': float(score)})
     return out
 

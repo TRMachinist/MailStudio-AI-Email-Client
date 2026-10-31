@@ -320,10 +320,15 @@ def dispatch(operation,args):
         result=pdf_studio.dispatch(operation,args)
         if result is not None:return result
     raise ValueError('Bilinmeyen teknik işlem.')
+def _plain(o):
+    # numpy scalars / arrays from OCR and geometry code
+    if hasattr(o,'tolist'):return o.tolist()
+    if hasattr(o,'item'):return o.item()
+    raise TypeError(f'{type(o).__name__} is not JSON serializable')
 for line in sys.stdin:
     request=None
     try:
         request=json.loads(line);answer={'id':request['id'],'result':dispatch(request['operation'],request.get('args',{}))}
     except Exception as ex:
         traceback.print_exc(file=sys.stderr);answer={'id':request.get('id') if request else None,'error':str(ex)}
-    protocol.write(json.dumps(answer,ensure_ascii=False,allow_nan=False,separators=(',',':'))+'\n');protocol.flush()
+    protocol.write(json.dumps(answer,ensure_ascii=False,allow_nan=False,separators=(',',':'),default=_plain)+'\n');protocol.flush()
