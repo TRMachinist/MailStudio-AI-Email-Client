@@ -64,7 +64,7 @@ if (-not $SkipUiTests) {
         New-Item -ItemType Directory -Force $ui | Out-Null
         $env:MAILSTUDIO_LANG = $lang
         $env:MAILSTUDIO_DATA_DIR = Join-Path $ui 'data'
-        $env:MAILSTUDIO_TECHNICAL_EXE = Join-Path $Work 'technical-dist\MailStudio.Technical\MailStudio.Technical.exe'
+        if (-not $env:MAILSTUDIO_TECHNICAL_EXE) { $env:MAILSTUDIO_TECHNICAL_EXE = Join-Path $Work 'technical-dist\MailStudio.Technical\MailStudio.Technical.exe' }
         $env:MAILSTUDIO_TECHNICAL_FIXTURES = Join-Path $Work 'tech-fixtures'
         $env:MAILSTUDIO_PDF_STUDIO_SAMPLE = Join-Path $Work 'pdftest\sample.pdf'
         $env:MAILSTUDIO_PPTX_SAMPLE = Join-Path $Work 'viewtest\ornek.pptx'
@@ -91,7 +91,7 @@ foreach ($lang in $Languages) {
     New-Item -ItemType Directory -Force $dir, $data | Out-Null
     $env:MAILSTUDIO_DATA_DIR = $data
     $env:MAILSTUDIO_LANG = $lang
-    if (Test-Path (Join-Path $Work 'technical-dist\MailStudio.Technical\MailStudio.Technical.exe')) { $env:MAILSTUDIO_TECHNICAL_EXE = Join-Path $Work 'technical-dist\MailStudio.Technical\MailStudio.Technical.exe' }
+    if (-not $env:MAILSTUDIO_TECHNICAL_EXE -and (Test-Path (Join-Path $Work 'technical-dist\MailStudio.Technical\MailStudio.Technical.exe'))) { $env:MAILSTUDIO_TECHNICAL_EXE = Join-Path $Work 'technical-dist\MailStudio.Technical\MailStudio.Technical.exe' }
     $p = Start-Process $exe -ArgumentList '--demo', '--selftest', "`"$dir`"" -PassThru
     if (-not $p.WaitForExit(20 * 60 * 1000)) {
         S "[selftest-$lang] TIMEOUT after 20 min (process $($p.Id) stopped)"
