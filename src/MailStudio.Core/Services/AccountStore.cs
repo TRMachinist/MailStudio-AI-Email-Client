@@ -97,6 +97,8 @@ public class AppSettings
     /// <summary>Show the morning brief at the first start of the day (when there is something in it).</summary>
     public bool MorningBriefAuto { get; set; } = true;
     public DateTime? MorningBriefShown { get; set; }
+    /// <summary>Engine of the meaning search: "" = built-in, "ollama:&lt;model&gt;" = local Ollama embedding model.</summary>
+    public string SemanticModel { get; set; } = "";
     /// <summary>Is the AI panel open in the PDF window (default off: the page opens larger).</summary>
     public bool PdfSidePanel { get; set; }
     public List<MailStudio.Models.FormatRule> FormatRules { get; set; } = new();

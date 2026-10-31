@@ -245,6 +245,16 @@ public partial class MainWindow : ITaskHost, IQuoteHost, IPartCardHost
         new MorningBriefWindow(brief, OpenBriefItem) { Owner = this }.Show();
     }
 
+    // ------------------------------------------------------------------ meaning search
+    void OnSemanticSearch(object sender, RoutedEventArgs e) => OpenSemanticSearch(SearchBox.Text.Trim());
+
+    public SemanticSearchWindow OpenSemanticSearch(string query = "")
+    {
+        var w = new SemanticSearchWindow(_cache, m => ((ITaskHost)this).OpenMail(m), query) { Owner = this };
+        w.Show();
+        return w;
+    }
+
     // ------------------------------------------------------------------ part card
     void OnPartCard(object sender, RoutedEventArgs e)
     {

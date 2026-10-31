@@ -71,6 +71,7 @@ public partial class MainWindow
             ("part card: mails, revisions, files, quotes and NC programs of NW-1042", StepPartCard),
             ("NC preview: backplot, cycle time, tools, comparison with a changed program", StepNcPreview),
             ("morning brief: today's calendar, tasks, quotes and new mail by kind", StepMorningBrief),
+            ("meaning search: built-in engine, index, inflected query finds the delivery schedule mail", StepSemanticSearch),
             ("templates and quick steps: template insertion, manager dialog, macro execution", StepTemplatesAndQuickSteps),
             ("mail snooze: hide, filter, wake up unread with the real date", StepSnooze),
             ("unified inbox and search folders: all inboxes node, saved searches, criteria execution", StepUnifiedInboxAndSearchFolders),
@@ -889,6 +890,20 @@ public partial class MainWindow
         Shot(w, "morning-brief"); CheckTexts(w, "morning-brief"); CheckAirspace(w, "morning-brief");
         w.Close();
         Check(Application.Current.Windows.OfType<MorningBriefWindow>().All(x => !x.IsVisible), "morning brief: no automatic brief window during the self-test");
+    }
+
+    async Task StepSemanticSearch()
+    {
+        _settings.SemanticModel = "";   // the built-in engine: no Ollama needed in the test
+        var w = OpenSemanticSearch();
+        await Until(() => w.IsLoaded, 5000); await Wait(800);
+        await w.UpdateIndexAsync();
+        Check(w.Index != null && w.Index.Count >= 10, $"meaning search: index built ({w.Index?.Count} mails)");
+        w.SetQuery(L.IsEnglish ? "deliveries planned for the coming weeks" : "önümüzdeki haftaların teslimatları");
+        await w.SearchAsync(); await Wait(400);
+        Check(w.Hits.Count > 0 && w.Hits[0].Mail.Uid == 3, $"meaning search: the delivery schedule mail is first ({string.Join(" | ", w.Hits.Take(3).Select(h => $"{h.Mail.Uid} {h.Score:0.00}"))})");
+        Shot(w, "semantic-search"); CheckTexts(w, "semantic-search"); CheckAirspace(w, "semantic-search");
+        w.Close();
     }
 
     async Task StepTemplatesAndQuickSteps()

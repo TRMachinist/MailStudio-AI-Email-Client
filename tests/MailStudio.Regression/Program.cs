@@ -6,6 +6,7 @@ using MailStudio.Services.Calendar;
 using MailStudio.Services.Costing;
 using MailStudio.Services.Inspection;
 using MailStudio.Services.Nc;
+using MailStudio.Services.Semantic;
 using MailStudio.Regression;
 using MimeKit;
 using System.Text;
@@ -2614,6 +2615,39 @@ await Test("sabah özeti: takvim, geciken görev, teklif son tarihi ve bekleyen 
     var empty = MorningBrief.Build(day.AddDays(30), cache, cal, tasks, null, null);
     Check(empty["calendar"]!.Items.Count == 0 && empty.NewMails == 0, "a quiet day");
 }));
+
+await Test("anlamla arama: yerel vektörler, artımlı dizin, Türkçe ek ve yazım farkı, yalnızca yerel Ollama", async () =>
+{
+    var dir = Path.Combine(root, "semantic-test"); Directory.CreateDirectory(dir);
+    var cache = new MailCache(Path.Combine(dir, "mail.db")); cache.Init();
+    MailHeader M(uint uid, string subject, string body) => new() { AccountId = "a", Folder = "INBOX", Uid = uid, Subject = subject, Preview = body, FromName = "X", FromAddress = "x@y.example", Date = DateTimeOffset.Now.AddMinutes(-uid) };
+    cache.UpsertHeaders(new[]
+    {
+        M(1, "Flanş revizyonu", "Delik çapları büyütüldü, yeni resim ektedir."),
+        M(2, "Teslimat gecikmesi", "Malzeme tedarikçiden geç geldi, sevkiyat iki hafta kayacak."),
+        M(3, "Fiyat teklifi isteği", "120 adet braket için fiyat rica ederiz."),
+        M(4, "Lunch on Friday", "Shall we meet at noon?"),
+    });
+    cache.SaveBody("a", "INBOX", 2, new MailContent { Text = "Malzeme tedarikçiden geç geldi, sevkiyat iki hafta kayacak. Yeni termin 46. hafta." });
+    var index = new SemanticIndex(Path.Combine(dir, "semantic.db"), new LocalNgramEmbedder());
+    var first = await index.UpdateAsync(cache);
+    Check(first == 4 && index.Count == 4, $"all mails embedded ({first})");
+    Check(await index.UpdateAsync(cache) == 0, "nothing embedded again when nothing changed");
+
+    var hits = await index.SearchAsync("revizyonlar", cache);
+    Check(hits.Count > 0 && hits[0].Mail.Uid == 1, $"Turkish suffix: 'revizyonlar' finds 'revizyonu' ({string.Join(",", hits.Take(3).Select(h => $"{h.Mail.Uid}:{h.Score:0.00}"))})");
+    hits = await index.SearchAsync("sevkiat gecikti termin", cache);
+    Check(hits[0].Mail.Uid == 2 && hits[0].Snippet.Length > 0, "typo and body text: the delivery delay mail");
+    hits = await index.SearchAsync("fiyat teklif", cache);
+    Check(hits[0].Mail.Uid == 3, "quote request");
+
+    cache.UpsertHeaders(new[] { M(1, "Flanş revizyonu C", "Delik çapları Ø20 oldu.") });
+    Check(await index.UpdateAsync(cache) == 1, "a changed mail is embedded again");
+    Check(LocalNgramEmbedder.Normalize("İSTANBUL Işık ŞĞÜ") == "istanbul isik sgu", "Turkish letters folded");
+    var threw = false;
+    try { _ = new OllamaEmbedder("bge-m3", "http://192.168.1.10:11434"); } catch (InvalidOperationException) { threw = true; }
+    Check(threw && OllamaEmbedder.IsLoopback(new Uri("http://localhost:11434")) && OllamaEmbedder.IsEmbeddingModel("bge-m3:latest") && !OllamaEmbedder.IsEmbeddingModel("qwen3.5:4b"), "only a local Ollama is accepted");
+});
 
 Console.WriteLine($"RESULT {passed} passed. Synthetic evidence: {root}");
 
