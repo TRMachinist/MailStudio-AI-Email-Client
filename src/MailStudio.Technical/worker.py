@@ -304,6 +304,9 @@ def dispatch(operation,args):
         import balloon
         result=balloon.dispatch(operation,args)
         if result is not None:return result
+    if operation=='pdf_tables':
+        import pdf_tables
+        return pdf_tables.dispatch(operation,args)
     if operation=='visual_diff':
         import visual_diff
         return visual_diff.dispatch(operation,args)

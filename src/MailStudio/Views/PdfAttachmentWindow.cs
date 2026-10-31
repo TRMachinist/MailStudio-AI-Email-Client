@@ -134,6 +134,9 @@ public sealed partial class PdfAttachmentWindow : Window
         var balloon = new Button { Content = L.T("Balonla / FAI"), ToolTip = L.T("Ölçüleri numaralı balonlarla işaretle, AS9102 Form 1/3 Excel ve balonlu PDF üret"), Padding = new Thickness(10, 3, 10, 3), Height = 30, Margin = new Thickness(2, 0, 2, 0) };
         balloon.Click += (_, _) => OpenBalloons();
         wrap.Children.Add(balloon);
+        var tables = new Button { Content = L.T("Tablo → Excel"), ToolTip = L.T("PDF'teki tabloları (parça listesi, termin planı, fiyat listesi) Excel'e aktar"), Padding = new Thickness(10, 3, 10, 3), Height = 30, Margin = new Thickness(2, 0, 2, 0) };
+        tables.Click += (_, _) => OpenTables();
+        wrap.Children.Add(tables);
         wrap.Children.Add(IconBtn("", _sourceDocument != null ? L.T("Belgeyi kendi programında (Word/Excel/PowerPoint) aç") : L.T("Varsayılan PDF programında aç"), () => { try { Process.Start(new ProcessStartInfo(_sourceDocument ?? _path) { UseShellExecute = true }); } catch (Exception ex) { _status.Text = ex.Message; } }));
         if (_sourceDocument != null)
         {
@@ -531,6 +534,14 @@ public sealed partial class PdfAttachmentWindow : Window
     public Inspection.BalloonWindow OpenBalloons()
     {
         var w = new Inspection.BalloonWindow(_path, (op, args, ct) => _worker.CallAsync(op, args, ct)) { Owner = this };
+        w.Show();
+        return w;
+    }
+
+    /// <summary>Opens the PDF tables → Excel window (returns it for the self-test).</summary>
+    public PdfTablesWindow OpenTables()
+    {
+        var w = new PdfTablesWindow(_path, (op, args, ct) => _worker.CallAsync(op, args, ct)) { Owner = this };
         w.Show();
         return w;
     }

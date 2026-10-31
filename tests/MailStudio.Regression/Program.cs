@@ -2652,6 +2652,30 @@ await Test("anlamla arama: yerel vektörler, artımlı dizin, Türkçe ek ve yaz
     Check(threw && OllamaEmbedder.IsLoopback(new Uri("http://localhost:11434")) && OllamaEmbedder.IsEmbeddingModel("bge-m3:latest") && !OllamaEmbedder.IsEmbeddingModel("qwen3.5:4b"), "only a local Ollama is accepted");
 });
 
+await Test("PDF tablosu → Excel: sayı tanıma (1,5 / 1.250 / 1.234,50), kod ve sınıflar metin kalır, başlık, her tablo ayrı sayfa", () => Sync(() =>
+{
+    double v;
+    Check(PdfTableExport.TryNumber("16", out v) && v == 16 && PdfTableExport.TryNumber("1,5", out v) && v == 1.5 && PdfTableExport.TryNumber("1.250", out v) && v == 1.25, "plain numbers, one separator is a decimal");
+    Check(PdfTableExport.TryNumber("1.234,50", out v) && v == 1234.5 && PdfTableExport.TryNumber("1,234.50", out v) && v == 1234.5 && PdfTableExport.TryNumber("1.234.567", out v) && v == 1234567, "grouped thousands");
+    Check(!PdfTableExport.TryNumber("007", out _) && !PdfTableExport.TryNumber("NW-1042", out _) && !PdfTableExport.TryNumber("M16", out _) && !PdfTableExport.TryNumber("", out _), "codes stay text");
+    var json = JsonDocument.Parse("""
+    {"tables":[
+      {"page":0,"rows":[["Pos","Part No","Material","Qty"],["1","NW-1042","S235JR","2"],["2","ISO 4017","8.8","16"],["3","NW-2002","","1,5"]],"review":false,"ruled":true},
+      {"page":1,"rows":[["a","b"],["c","d"],["e","f"]],"review":true,"ruled":false}
+    ]}
+    """).RootElement;
+    var tables = PdfTable.FromWorker(json);
+    Check(tables.Count == 2 && tables[0].HasHeader && !tables[1].HasHeader && tables[1].Review, "header detected only above numbers");
+    var xlsx = Path.Combine(root, "tables.xlsx");
+    PdfTableExport.ToExcel(xlsx, tables, "parts.pdf");
+    using var wb = new ClosedXML.Excel.XLWorkbook(xlsx);
+    var ws = wb.Worksheet(1);
+    Check(wb.Worksheets.Count == 2 && ws.Cell(1, 1).GetString() == "Pos" && ws.Cell(1, 1).Style.Font.Bold, "one sheet per table, bold header");
+    Check(ws.Cell(3, 4).DataType == ClosedXML.Excel.XLDataType.Number && ws.Cell(4, 4).GetValue<double>() == 1.5 && ws.Cell(2, 1).DataType == ClosedXML.Excel.XLDataType.Number, "Qty and Pos are numbers (1,5 → 1.5)");
+    Check(ws.Cell(3, 3).DataType == ClosedXML.Excel.XLDataType.Text && ws.Cell(3, 3).GetString() == "8.8" && ws.Cell(2, 2).GetString() == "NW-1042", "material grade 8.8 and part numbers stay text");
+    Check(wb.Worksheet(2).Cell(5, 1).GetString().Contains("parts.pdf"), "source noted under the table");
+}));
+
 Console.WriteLine($"RESULT {passed} passed. Synthetic evidence: {root}");
 
 sealed class MockHttpHandler : HttpMessageHandler
