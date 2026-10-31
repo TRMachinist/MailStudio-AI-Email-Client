@@ -482,7 +482,31 @@ public partial class MainWindow : ITaskHost, IQuoteHost
         Status(L.T("Hatırlatma maili hazır; kontrol edip Gönder'e basın."));
     }
 
-    void IQuoteHost.ComposeQuoteReply(QuoteItem quote)
+    MailStudio.Services.TechnicalWorker IQuoteHost.Worker => SkillWorker();
+
+    Task IQuoteHost.RenderPdfAsync(string html, string pdfPath) => HtmlPdfPrinter.PrintAsync(html, pdfPath, _lifetime.Token);
+
+    /// <summary>The STEP model of a quote: an attachment of its source mail, otherwise a STEP whose name contains the part number
+    /// in the same contact's mails. Downloaded (or taken from the offline copy) to a local file.</summary>
+    async Task<string?> IQuoteHost.FindQuoteModelAsync(QuoteItem quote)
+    {
+        static bool IsStep(AttachmentInfo a) => Path.GetExtension(a.FileName).ToLowerInvariant() is ".step" or ".stp";
+        var candidates = new List<(MailHeader h, AttachmentInfo a)>();
+        if (quote.SourceMail?.Split('|') is { Length: >= 3 } p && uint.TryParse(p[2], out var uid) && _cache.GetHeader(p[0], p[1], uid) is { } src)
+            candidates.AddRange(_cache.GetAttachments(src.AccountId, src.Folder, src.Uid).Where(IsStep).Select(a => (src, a)));
+        if (candidates.Count == 0 && !string.IsNullOrWhiteSpace(quote.ContactEmail) && quote.PartNumber.Length >= 3)
+            foreach (var h in _cache.GetMailsForContact(quote.ContactEmail!, 50))
+                candidates.AddRange(_cache.GetAttachments(h.AccountId, h.Folder, h.Uid)
+                    .Where(a => IsStep(a) && a.FileName.Contains(quote.PartNumber, StringComparison.OrdinalIgnoreCase)).Select(a => (h, a)));
+        if (candidates.Count == 0) return null;
+        // the quoted revision first ("bracket-revC.stp" for rev C), else the first model
+        var pick = candidates.FirstOrDefault(c => quote.Revision.Length > 0 &&
+                       System.Text.RegularExpressions.Regex.IsMatch(c.a.FileName, $@"rev[\s._-]?{System.Text.RegularExpressions.Regex.Escape(quote.Revision)}(?![A-Za-z0-9])", System.Text.RegularExpressions.RegexOptions.IgnoreCase));
+        if (pick.a == null) pick = candidates[0];
+        return await DownloadAttachmentAsync(pick.h, pick.a);
+    }
+
+    void IQuoteHost.ComposeQuoteReply(QuoteItem quote, IEnumerable<string>? attachments)
     {
         if (_store.Accounts.Count == 0) { MessageBox.Show(this, L.T("Önce bir hesap ekleyin."), "MailStudio"); return; }
         var account = (_store.Accounts.FirstOrDefault(a => quote.SourceMail != null && quote.SourceMail.StartsWith(a.Id + "|")))
@@ -515,7 +539,9 @@ public partial class MainWindow : ITaskHost, IQuoteHost
             Body = body,
             InReplyTo = quote.SourceMessageId
         };
+        if (attachments != null) req.AttachmentPaths.AddRange(attachments.Where(File.Exists));
         OpenCompose(req, account.Id);
-        Status(L.T("Teklif yanıtı taslağı hazır; teklif dosyasını ekleyip gönderin."));
+        Status(req.AttachmentPaths.Count > 0 ? L.T("Teklif yanıtı hazır, teklif PDF'i ekli; kontrol edip Gönder'e basın.")
+                                             : L.T("Teklif yanıtı taslağı hazır; teklif dosyasını ekleyip gönderin."));
     }
 }

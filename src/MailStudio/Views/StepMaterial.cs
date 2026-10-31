@@ -41,6 +41,11 @@ public sealed partial class StepAttachmentWindow
         panel.Children.Add(new TextBlock { Text = L.T("Hammadde"), FontWeight = FontWeights.SemiBold, Margin = new Thickness(9, 4, 9, 0) });
         panel.Children.Add(_material);
         panel.Children.Add(_massInfo);
+        var cost = new Button { Content = L.T("Maliyet tahmini…"), Margin = new Thickness(9, 0, 9, 8), Height = 28, HorizontalAlignment = HorizontalAlignment.Left, Padding = new Thickness(10, 0, 10, 0),
+                                ToolTip = L.T("Hammadde, işleme süresi ve saat ücretinden kaba birim fiyat") };
+        cost.SetResourceReference(StyleProperty, "RibbonCmd");
+        cost.Click += async (_, _) => await ShowCostEstimateAsync();
+        panel.Children.Add(cost);
         var saved = AppSettings.Shared.LastMaterial;
         _material.SelectedItem = Materials.FirstOrDefault(m => m.Name == saved) ?? Materials[0];
         _material.SelectionChanged += (_, _) =>
@@ -74,6 +79,19 @@ public sealed partial class StepAttachmentWindow
         }
         else lines.Add(L.T("Stok: önizleme yok (Bounding Box / Stok sekmesinden kutu veya silindir oluşturun)"));
         _massInfo.Text = string.Join("\n", lines);
+    }
+
+    /// <summary>Cost estimate for this model (exact volume, surface and holes from the B-Rep; the stock built in the Stock tab if any).</summary>
+    async Task ShowCostEstimateAsync()
+    {
+        try
+        {
+            var json = await _worker.CallAsync("extract_step", new { path = _sourcePath, ocr = false }, _life.Token);
+            var geometry = MailStudio.Services.Costing.PartGeometry.FromExtract(json);
+            new MailStudio.Views.Quotes.CostEstimateWindow(System.IO.Path.GetFileName(_sourcePath), geometry, null, _stockVolumeMm3) { Owner = this }.ShowDialog();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { MessageBox.Show(this, L.T("Maliyet hesaplanamadı: ") + ex.Message, L.ProductName); }
     }
 
     bool _lookFlipped;

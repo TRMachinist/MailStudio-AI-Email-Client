@@ -8,6 +8,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using MailStudio.Models;
 using MailStudio.Services;
+using MailStudio.Services.Costing;
 using MailStudio.Views.Calendar;
 using Microsoft.Win32;
 
@@ -15,7 +16,14 @@ namespace MailStudio.Views.Quotes;
 
 public interface IQuoteHost : IPimHost
 {
-    void ComposeQuoteReply(QuoteItem quote);
+    /// <summary>Opens a reply to the quote's source mail; <paramref name="attachments"/> (e.g. the quotation PDF) are attached.</summary>
+    void ComposeQuoteReply(QuoteItem quote, IEnumerable<string>? attachments = null);
+    /// <summary>Local path of the STEP model attached to the quote's source mail (downloaded if needed), or null.</summary>
+    Task<string?> FindQuoteModelAsync(QuoteItem quote);
+    /// <summary>The local technical worker (STEP / DXF / PDF reader).</summary>
+    MailStudio.Services.TechnicalWorker Worker { get; }
+    /// <summary>Prints an HTML document to a PDF file.</summary>
+    Task RenderPdfAsync(string html, string pdfPath);
 }
 
 public enum QuoteFilter
@@ -73,6 +81,11 @@ public sealed class QuoteDeskView : UserControl
             PimUi.Cmd("", L.T("Gönderildi"), (_, _) => SetSelectedStatus(QuoteStatus.Sent), L.T("Durumu 'Gönderildi' yap")),
             PimUi.Cmd("", L.T("Kazanıldı"), (_, _) => SetSelectedStatus(QuoteStatus.Won), L.T("Durumu 'Kazanıldı' yap")),
             PimUi.Cmd("", L.T("Kaybedildi"), (_, _) => SetSelectedStatus(QuoteStatus.Lost), L.T("Durumu 'Kaybedildi' yap"))));
+
+        Ribbon.Children.Add(PimUi.Group(L.T("Fiyat"),
+            PimUi.Cmd("\uE8EF", L.T("Maliyet Hesapla"), async (_, _) => await OnEstimateCostAsync(), L.T("Kaynak maildeki STEP modelinden hammadde ve işleme maliyetini hesapla")),
+            PimUi.Cmd("\uEA90", L.T("Teklif PDF'i"), async (_, _) => await OnQuotePdfAsync(), L.T("Fiyatlı teklif belgesini PDF olarak oluştur ve cevaba ekle")),
+            PimUi.Cmd("\uE713", L.T("Ayarlar"), (_, _) => new CostSettingsWindow { Owner = Window.GetWindow(this) }.ShowDialog(), L.T("Firma bilgileri, saat ücreti, malzeme fiyatları"))));
 
         Ribbon.Children.Add(PimUi.Group(L.T("Dışa Aktar"),
             PimUi.Cmd("", L.T("Excel'e Aktar"), (_, _) => OnExportExcel(), L.T("Teklifleri Excel (.xlsx) dosyasına aktar")),
@@ -250,6 +263,15 @@ public sealed class QuoteDeskView : UserControl
         colQty.CellTemplate = new DataTemplate { VisualTree = qtyFactory };
         gv.Columns.Add(colQty);
 
+        // 4b. Price Column
+        var colPrice = new GridViewColumn { Header = L.T("Birim Fiyat"), Width = 100 };
+        var priceFactory = new FrameworkElementFactory(typeof(TextBlock));
+        priceFactory.SetBinding(TextBlock.TextProperty, new Binding("Item.PriceDisplay"));
+        priceFactory.SetValue(TextBlock.HorizontalAlignmentProperty, HorizontalAlignment.Right);
+        priceFactory.SetResourceReference(TextBlock.ForegroundProperty, "TextPrimaryBrush");
+        colPrice.CellTemplate = new DataTemplate { VisualTree = priceFactory };
+        gv.Columns.Add(colPrice);
+
         // 5. Material Column
         var colMat = new GridViewColumn { Header = L.T("Malzeme"), Width = 130 };
         var matFactory = new FrameworkElementFactory(typeof(TextBlock));
@@ -365,6 +387,7 @@ public sealed class QuoteDeskView : UserControl
                 var h when h == L.T("Parça No") => "PartNumber",
                 var h when h == L.T("Rev") => "Revision",
                 var h when h == L.T("Adet") => "Quantity",
+                var h when h == L.T("Birim Fiyat") => "UnitPrice",
                 var h when h == L.T("Malzeme") => "Material",
                 var h when h == L.T("Müşteri") => "Customer",
                 var h when h == L.T("İlgili Kişi") => "Contact",
@@ -569,6 +592,85 @@ public sealed class QuoteDeskView : UserControl
                 MessageBox.Show(Window.GetWindow(this), L.T("Dışa aktarma hatası: ") + ex.Message, L.T("Hata"));
             }
         }
+    }
+
+    /// <summary>Cost estimate from the STEP model of the source mail; "Apply" writes price, currency and breakdown into the quote.</summary>
+    async Task OnEstimateCostAsync()
+    {
+        var q = SelectedQuote;
+        var owner = Window.GetWindow(this);
+        if (q == null) { _host.Status(L.T("Önce listeden bir teklif seçin.")); return; }
+        try
+        {
+            _host.Status(L.T("STEP modeli aranıyor ve okunuyor…"));
+            var path = await _host.FindQuoteModelAsync(q);
+            if (path == null)
+            {
+                var d = new OpenFileDialog { Title = L.T("Parçanın STEP modelini seçin"), Filter = "STEP (*.step;*.stp)|*.step;*.stp" };
+                if (d.ShowDialog(owner) != true) { _host.Status(L.T("Kaynak mailde STEP modeli yok.")); return; }
+                path = d.FileName;
+            }
+            var json = await _host.Worker.CallAsync("extract_step", new { path, ocr = false });
+            var geometry = PartGeometry.FromExtract(json);
+            _host.Status("");
+            var w = new CostEstimateWindow($"{q.PartNumber} {(q.Revision.Length > 0 ? "rev " + q.Revision : "")} – {Path.GetFileName(path)}", geometry, q) { Owner = owner };
+            if (w.ShowDialog() == true && w.Applied is { } est)
+            {
+                var item = q.Clone();
+                item.UnitPrice = est.UnitPrice; item.Currency = est.Currency; item.CostBreakdown = est.ToText();
+                if (item.Quantity <= 0) item.Quantity = est.Quantity;
+                if (string.IsNullOrWhiteSpace(item.Material)) item.Material = est.Material.Name;
+                if (item.Status == QuoteStatus.New) item.Status = QuoteStatus.InProgress;
+                item.UpdatedAt = DateTimeOffset.Now;
+                _store.AddOrUpdate(item);
+                Refresh();
+                SelectQuote(item.Id);
+                _host.Status(L.F("Birim fiyat {0} teklife yazıldı.", est.Money(est.UnitPrice)));
+            }
+        }
+        catch (Exception ex) { _host.Status(""); MessageBox.Show(owner, L.T("Maliyet hesaplanamadı: ") + ex.Message, L.ProductName); }
+    }
+
+    /// <summary>Quotation PDF (company header, part, quantity, unit price, terms) → saved next to the other quote files and attached to a reply.</summary>
+    async Task OnQuotePdfAsync()
+    {
+        var q = SelectedQuote;
+        var owner = Window.GetWindow(this);
+        if (q == null) { _host.Status(L.T("Önce listeden bir teklif seçin.")); return; }
+        if (q.UnitPrice == null)
+        {
+            if (MessageBox.Show(owner, L.T("Bu teklifte birim fiyat yok. Şimdi STEP modelinden maliyet hesaplansın mı?"), L.ProductName, MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+                await OnEstimateCostAsync();
+            q = SelectedQuote;
+            if (q?.UnitPrice == null) return;
+        }
+        var settings = MailStudio.Services.Costing.CostEstimator.LoadSettings();
+        if (string.IsNullOrWhiteSpace(settings.Company.Name))
+        {
+            MessageBox.Show(owner, L.T("Teklif belgesinde görünecek firma bilgilerini girin."), L.ProductName);
+            if (new CostSettingsWindow { Owner = owner }.ShowDialog() != true) return;
+            settings = MailStudio.Services.Costing.CostEstimator.LoadSettings();
+        }
+        try
+        {
+            var item = q.Clone();
+            item.QuoteNumber ??= QuoteDocument.NextNumber(_store.Quotes, DateTime.Today);
+            var html = QuoteDocument.BuildHtml(item, settings, DateTime.Today);
+            var dir = Path.Combine(AppPaths.Root, "quotes");
+            Directory.CreateDirectory(dir);
+            var pdf = Path.Combine(dir, QuoteDocument.FileName(item));
+            _host.Status(L.T("Teklif PDF'i oluşturuluyor…"));
+            await _host.RenderPdfAsync(html, pdf);
+            item.UpdatedAt = DateTimeOffset.Now;
+            _store.AddOrUpdate(item);
+            Refresh(); SelectQuote(item.Id);
+            _host.Status(L.F("Teklif PDF'i hazır: {0}", Path.GetFileName(pdf)));
+            var answer = MessageBox.Show(owner, L.F("{0} oluşturuldu.\n\nMüşteriye cevap taslağına eklensin mi? (Hayır: PDF'i aç)", Path.GetFileName(pdf)),
+                L.ProductName, MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+            if (answer == MessageBoxResult.Yes) _host.ComposeQuoteReply(item, new[] { pdf });
+            else if (answer == MessageBoxResult.No) Process.Start(new ProcessStartInfo(pdf) { UseShellExecute = true });
+        }
+        catch (Exception ex) { _host.Status(""); MessageBox.Show(owner, L.T("Teklif PDF'i oluşturulamadı: ") + ex.Message, L.ProductName); }
     }
 
     void OnReplyQuote()

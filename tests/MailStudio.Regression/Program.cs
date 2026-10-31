@@ -3,6 +3,7 @@ using MailStudio;
 using MailStudio.Models;
 using MailStudio.Services;
 using MailStudio.Services.Calendar;
+using MailStudio.Services.Costing;
 using MailStudio.Regression;
 using MimeKit;
 using System.Text;
@@ -2367,6 +2368,72 @@ await Test("RAR arşiv desteği: SharpCompress demo RAR açma, en az 3 girdi lis
     var refused = false;
     try { ArchiveSecurity.ExtractAll(rarPath, all); } catch (IOException) { refused = true; }
     Check(refused, "ExtractAll never overwrites existing files");
+}));
+
+await Test("maliyet tahmini: STEP geometrisinden hammadde, süre, fiyat; malzeme eşleme; ayar dosyası; teklif belgesi", () => Sync(() =>
+{
+    // bracket rev C as the worker reports it (extract_step shape)
+    var json = JsonDocument.Parse("""{"overall_size_xyz_mm":[120,80,70],"total_volume_mm3":145100,"total_surface_mm2":42000,"bodies":[{"holes":[{"diameter_mm":6.8,"count":4},{"diameter_mm":9,"count":2},{"diameter_mm":25,"count":1}]}]}""").RootElement;
+    var g = PartGeometry.FromExtract(json);
+    Check(g.SizeX == 120 && g.VolumeMm3 == 145100 && g.SurfaceMm2 == 42000 && g.HoleCount == 7, "geometry read from the worker result");
+
+    var s = new CostSettings { HourlyRate = 60, SetupMinutes = 90, HandlingMinutes = 4, MinutesPerHole = 0.5, StockAllowanceMm = 3, MaterialWastePercent = 10, MarginPercent = 20, Currency = "EUR" };
+    var al = CostEstimator.DefaultMaterials.First(m => m.Name.StartsWith("Al 7075"));
+    var e = CostEstimator.Estimate(g, al, 120, s);
+    // stock 126 x 86 x 76 mm = 823,536 mm³ → 2.314 kg at 2.81 g/cm³
+    Check(Math.Abs(e.StockVolumeMm3 - 126 * 86 * 76) < 1e-6 && e.StockX == 126, "stock = bounding box + allowance on every side");
+    Check(Math.Abs(e.StockMassKg - 126 * 86 * 76 / 1e6 * 2.81) < 1e-9, "stock mass from density");
+    var material = e.StockMassKg * al.PricePerKg * 1.10;
+    var rough = (126 * 86 * 76 - 145100) / 1000.0 / al.RoughCm3PerMin;
+    var finish = 420 / al.FinishCm2PerMin;
+    var cycle = rough + finish + 7 * 0.5 + 4;
+    Check(Math.Abs(e.CycleMinutes - cycle) < 1e-9, $"cycle time = rough + finish + holes + handling ({e.CycleMinutes:0.00} min)");
+    var unit = material + cycle + 90.0 / 120;      // 60 €/h = 1 €/min
+    Check(Math.Abs(e.UnitCost - Math.Round(unit, 2)) < 0.011 && Math.Abs(e.UnitPrice - Math.Round(unit * 1.2, 2)) < 0.011, $"unit cost {e.UnitCost} / price {e.UnitPrice}");
+    Check(Math.Abs(e.TotalPrice - Math.Round(e.UnitPrice * 120, 2)) < 1e-9, "total = unit price x quantity");
+    Check(e.Lines.Sum(l => l.Amount) is var sum && Math.Abs(sum - e.UnitCost) < 0.06, "breakdown lines add up to the unit cost");
+    // more parts → set-up spread thinner → cheaper per part
+    Check(CostEstimator.Estimate(g, al, 1000, s).UnitPrice < CostEstimator.Estimate(g, al, 10, s).UnitPrice, "set-up is spread over the quantity");
+    // titanium is far more expensive than aluminium for the same part
+    var ti = CostEstimator.DefaultMaterials.First(m => m.Name.StartsWith("Ti-6Al-4V"));
+    Check(CostEstimator.Estimate(g, ti, 120, s).UnitPrice > 2 * e.UnitPrice, "titanium costs more than aluminium");
+    // exact stock from the STEP viewer (e.g. a cylinder) replaces the box
+    var custom = CostEstimator.Estimate(g, al, 120, s, stockVolumeMm3: 600000);
+    Check(custom.StockVolumeMm3 == 600000 && custom.StockX == 0, "custom stock volume is used");
+    // a part without a closed solid cannot be priced
+    var thrown = false; try { CostEstimator.Estimate(g with { VolumeMm3 = 0 }, al, 1, s); } catch (InvalidOperationException) { thrown = true; }
+    Check(thrown, "no volume → clear error, no guess");
+
+    // material text from mails / quotes
+    var list = CostEstimator.DefaultMaterials;
+    Check(CostEstimator.Match(list, "AlZnMgCu1.5 / 7075-T651")?.Name.StartsWith("Al 7075") == true, "7075 matched");
+    Check(CostEstimator.Match(list, "Ti6Al4V")?.Name.StartsWith("Ti-6Al-4V") == true, "Ti6Al4V matched");
+    Check(CostEstimator.Match(list, "S235JR, galvanized")?.Name.Contains("S235") == true, "S235JR matched");
+    Check(CostEstimator.Match(list, "316L")?.Name.StartsWith("316L") == true, "316L matched");
+    Check(CostEstimator.Match(list, "Holz") == null && CostEstimator.Match(list, "") == null, "unknown material → no match");
+
+    // settings: overrides survive a save/load round trip and change the material list
+    var path = Path.Combine(root, "cost-settings.json");
+    s.Materials["Al 7075-T6 / T7351"] = new MaterialOverride { PricePerKg = 12.5 };
+    s.Company.Name = "Demo Machining (example)";
+    CostEstimator.SaveSettings(s, path);
+    var back = CostEstimator.LoadSettings(path);
+    Check(back.Company.Name == "Demo Machining (example)" && CostEstimator.Materials(back).First(m => m.Name.StartsWith("Al 7075")).PricePerKg == 12.5, "settings round trip with price override");
+    File.WriteAllText(path, "{ broken");
+    Check(CostEstimator.LoadSettings(path).HourlyRate == new CostSettings().HourlyRate, "damaged settings file → defaults (backup kept)");
+    Check(Directory.GetFiles(root, "cost-settings.json.bozuk-*").Length == 1, "damaged settings file backed up");
+
+    // quotation document
+    var quotes = new List<QuoteItem> { new() { QuoteNumber = $"Q-{DateTime.Today.Year}-0007" }, new() { QuoteNumber = "Q-2001-0099" } };
+    Check(QuoteDocument.NextNumber(quotes, DateTime.Today) == $"Q-{DateTime.Today.Year}-0008", "next quote number per year");
+    var q = new QuoteItem { Customer = "Contoso <Aero>", PartNumber = "bracket", Revision = "C", Quantity = 120, Material = "Al 7075", UnitPrice = e.UnitPrice, Currency = "EUR", QuoteNumber = "Q-2026-0008" };
+    var html = QuoteDocument.BuildHtml(q, s, new DateTime(2026, 10, 31));
+    Check(html.Contains("Contoso &lt;Aero&gt;") && !html.Contains("<Aero>"), "customer text is HTML-encoded");
+    Check(html.Contains(CostEstimator.Money(e.UnitPrice, "EUR")) && html.Contains(CostEstimator.Money(Math.Round(e.UnitPrice * 120, 2), "EUR")), "unit price and total printed");
+    Check(!html.Contains("<script", StringComparison.OrdinalIgnoreCase) && !html.Contains("http://") && !html.Contains("https://"), "document has no scripts or remote resources");
+    Check(QuoteDocument.FileName(q) == "Q-2026-0008 bracket rev C.pdf", "PDF file name");
+    thrown = false; try { QuoteDocument.BuildHtml(new QuoteItem(), s, DateTime.Today); } catch (InvalidOperationException) { thrown = true; }
+    Check(thrown, "no price → no quotation document");
 }));
 
 Console.WriteLine($"RESULT {passed} passed. Synthetic evidence: {root}");

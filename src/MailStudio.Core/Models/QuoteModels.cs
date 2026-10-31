@@ -28,6 +28,13 @@ public class QuoteItem
     public string? SourceMail { get; set; }        // AccountId|Folder|Uid
     public string? SourceSubject { get; set; }
     public string? SourceMessageId { get; set; }
+    /// <summary>Offered price per part (set by the cost estimate or by hand).</summary>
+    public double? UnitPrice { get; set; }
+    public string? Currency { get; set; }
+    /// <summary>How the price was calculated (cost estimate breakdown), printed on request only.</summary>
+    public string? CostBreakdown { get; set; }
+    /// <summary>Running quotation number, e.g. "Q-2026-0007" (assigned when the first quotation PDF is made).</summary>
+    public string? QuoteNumber { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.Now;
 
@@ -62,6 +69,12 @@ public class QuoteItem
 
     [JsonIgnore]
     public string RequestedDeliveryDisplay => RequestedDelivery.HasValue ? RequestedDelivery.Value.ToString("d MMM yyyy", L.Culture) : "-";
+
+    [JsonIgnore]
+    public string PriceDisplay => UnitPrice is { } p ? MailStudio.Services.Costing.CostEstimator.Money(p, Currency ?? "EUR") : "-";
+
+    [JsonIgnore]
+    public string TotalDisplay => UnitPrice is { } p && Quantity > 0 ? MailStudio.Services.Costing.CostEstimator.Money(Math.Round(p * Quantity, 2), Currency ?? "EUR") : "-";
 
     public QuoteItem Clone() => (QuoteItem)MemberwiseClone();
 }

@@ -20,6 +20,8 @@ public sealed class QuoteEditDialog : Window
     readonly TextBox _material = new() { Height = 28 };
     readonly DatePicker _deadline = new() { Height = 28, Width = 150, HorizontalAlignment = HorizontalAlignment.Left };
     readonly DatePicker _requestedDelivery = new() { Height = 28, Width = 150, HorizontalAlignment = HorizontalAlignment.Left };
+    readonly TextBox _price = new() { Height = 28, Width = 120, HorizontalAlignment = HorizontalAlignment.Left };
+    readonly ComboBox _currency = new() { Height = 28, Width = 80, Margin = new Thickness(8, 0, 0, 0), ItemsSource = new[] { "EUR", "USD", "TRY", "GBP" } };
     readonly ComboBox _status = new() { Height = 28, Width = 150, HorizontalAlignment = HorizontalAlignment.Left };
     readonly TextBox _notes = new() { MinHeight = 60, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
 
@@ -31,7 +33,7 @@ public sealed class QuoteEditDialog : Window
         UiTranslator.SetSkip(this, true);
 
         Title = (isNew ? L.T("Yeni Teklif Talebi") : L.T("Teklifi Düzenle")) + " - " + L.ProductName;
-        Width = 620; Height = 560; MinWidth = 520; MinHeight = 480;
+        Width = 620; Height = 610; MinWidth = 520; MinHeight = 480;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         SetResourceReference(BackgroundProperty, "BgSurfacePrimaryBrush");
 
@@ -46,6 +48,8 @@ public sealed class QuoteEditDialog : Window
         _deadline.SelectedDate = _item.Deadline;
         _requestedDelivery.SelectedDate = _item.RequestedDelivery;
         _notes.Text = _item.Notes;
+        _price.Text = _item.UnitPrice is { } up ? up.ToString("0.00", CultureInfo.CurrentCulture) : "";
+        _currency.SelectedItem = _item.Currency ?? MailStudio.Services.Costing.CostEstimator.LoadSettings().Currency;
 
         foreach (QuoteStatus st in Enum.GetValues(typeof(QuoteStatus)))
         {
@@ -175,6 +179,9 @@ public sealed class QuoteEditDialog : Window
         AddRow(L.T("Malzeme") + ":", _material);
         AddRow(L.T("Son Teklif Tarihi:"), _deadline);
         AddRow(L.T("İstenen Teslim:"), _requestedDelivery);
+        var pricePanel = new StackPanel { Orientation = Orientation.Horizontal };
+        pricePanel.Children.Add(_price); pricePanel.Children.Add(_currency);
+        AddRow(L.T("Birim fiyat") + ":", pricePanel);
         AddRow(L.T("Durum") + ":", _status);
         AddRow(L.T("Notlar") + ":", _notes);
 
@@ -206,6 +213,11 @@ public sealed class QuoteEditDialog : Window
             _item.Status = st;
 
         _item.Notes = _notes.Text.Trim();
+        var pt = _price.Text.Trim();
+        if (pt.Length == 0) _item.UnitPrice = null;
+        else if (double.TryParse(pt, NumberStyles.Number, CultureInfo.CurrentCulture, out var price) && price >= 0) _item.UnitPrice = Math.Round(price, 2);
+        else { MessageBox.Show(this, L.T("Birim fiyat bir sayı olmalı."), L.ProductName); _price.Focus(); return; }
+        _item.Currency = _currency.SelectedItem as string ?? _item.Currency;
         _item.UpdatedAt = DateTimeOffset.Now;
 
         DialogResult = true;
