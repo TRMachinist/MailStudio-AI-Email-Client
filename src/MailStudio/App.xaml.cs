@@ -81,6 +81,7 @@ public partial class App : Application
         }
         base.OnStartup(e);
         if (demo) { var demoStore = new Services.AccountStore(); demoStore.Load(); var demoCache = new Services.MailCache(); demoCache.Init(); Services.DemoData.Seed(demoStore, demoCache); Services.DemoData.SeedPim(new Services.Calendar.CalendarStore(), new Services.Calendar.TaskStore()); Services.DemoData.SeedQuotes(new Services.QuoteStore()); Services.DemoData.SeedTemplates(new Services.TemplateStore()); Services.DemoData.SeedQuickSteps(new Services.QuickStepStore()); Services.DemoData.SeedSnooze(new Services.SnoozeStore()); Services.DemoData.SeedSearchFolders(new Services.SearchFolderStore()); }
+        if (demo && e.Args.Contains("--selftest")) SelfTesting = true;   // known before the window loads (no morning brief etc.)
         var window = new MainWindow(startInTray: e.Args.Contains("--background"));
         MainWindow = window;
         _instance.Listen(Dispatcher, window.ShowFromTray);

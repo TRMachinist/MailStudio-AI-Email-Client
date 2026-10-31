@@ -94,6 +94,9 @@ public class AppSettings
     /// <summary>CAD scene: Dark (dark studio) | Light (technical light) | Theme (same as the app theme)</summary>
     public string CadScene { get; set; } = "Theme";
     public string LastMaterial { get; set; } = "Al 7075-T6 / T7351";
+    /// <summary>Show the morning brief at the first start of the day (when there is something in it).</summary>
+    public bool MorningBriefAuto { get; set; } = true;
+    public DateTime? MorningBriefShown { get; set; }
     /// <summary>Is the AI panel open in the PDF window (default off: the page opens larger).</summary>
     public bool PdfSidePanel { get; set; }
     public List<MailStudio.Models.FormatRule> FormatRules { get; set; } = new();

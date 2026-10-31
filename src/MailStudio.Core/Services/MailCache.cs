@@ -543,6 +543,21 @@ public class MailCache
         catch (SqliteException ex) when (IsCorrupt(ex)) { OnCorrupt(); return new(); }
     }
 
+    /// <summary>Inbox mails of every account received since <paramref name="since"/>, newest first.</summary>
+    public List<MailHeader> GetInboxSince(DateTimeOffset since, int limit = 2000)
+    {
+        try
+        {
+            using var c = Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT * FROM messages WHERE UPPER(folder)='INBOX' AND date >= $d ORDER BY date DESC LIMIT $l";
+            cmd.Parameters.AddWithValue("$d", since.ToUnixTimeMilliseconds());
+            cmd.Parameters.AddWithValue("$l", limit);
+            return ReadHeaders(cmd);
+        }
+        catch (SqliteException ex) when (IsCorrupt(ex)) { OnCorrupt(); return new(); }
+    }
+
     /// <summary>Returns recent emails sent by or received from the specified contact address.</summary>
     public List<MailHeader> GetMailsForContact(string email, int limit = 20)
     {

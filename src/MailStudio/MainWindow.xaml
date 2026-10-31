@@ -89,6 +89,9 @@
                     <HeaderedContentControl Header="Yeni" Style="{StaticResource RibbonGroup}">
                         <Button Style="{StaticResource RibbonPrimaryCmd}" Tag="&#xE715;" Click="OnNewMail" Content="Yeni E-posta" ToolTip="Yeni e-posta (Ctrl+N)"/>
                     </HeaderedContentControl>
+                    <HeaderedContentControl Header="Gün" Style="{StaticResource RibbonGroup}">
+                        <Button Style="{StaticResource RibbonCmd}" Tag="&#xE706;" Click="OnMorningBrief" Content="Sabah Özeti" ToolTip="Bugünün randevuları, geciken işler, teklif son tarihleri ve yeni mailler"/>
+                    </HeaderedContentControl>
                     <HeaderedContentControl Header="Sil" Style="{StaticResource RibbonGroup}">
                         <StackPanel Orientation="Horizontal">
                             <Button Style="{StaticResource RibbonCmd}" Tag="&#xE74D;" Click="OnDelete" x:Name="BtnDelete" Content="Sil" ToolTip="Silinmiş Öğeler'e taşı (Delete)"/>

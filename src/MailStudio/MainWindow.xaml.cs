@@ -309,7 +309,7 @@ public partial class MainWindow : Window
             await Task.Delay(400); // let the main window render
             if (IsVisible && !_closed) OnAddAccount(this, new RoutedEventArgs());
         }
-        else _ = SyncAllAsync(silent: true);
+        else { _ = SyncAllAsync(silent: true); _ = AutoMorningBriefAsync(); }
     }
 
     async Task InitWebAsync()

@@ -210,6 +210,41 @@ public partial class MainWindow : ITaskHost, IQuoteHost, IPartCardHost
 
     // ===================================================================== mail → task / meeting
 
+    // ------------------------------------------------------------------ morning brief
+    void OnMorningBrief(object sender, RoutedEventArgs e) => ShowMorningBrief();
+
+    /// <summary>Builds the brief from local data and shows it; returns the window for the self-test.</summary>
+    public MorningBriefWindow ShowMorningBrief(DateTime? day = null, DateTimeOffset? since = null)
+    {
+        var brief = MorningBrief.Build(day ?? DateTime.Today, _cache, _calendar, _tasks, _quoteStore, FollowUpStore, since);
+        var w = new MorningBriefWindow(brief, OpenBriefItem) { Owner = this };
+        w.Show();
+        return w;
+    }
+
+    void OpenBriefItem(BriefItem item)
+    {
+        if (item.Mail != null) ((ITaskHost)this).OpenMail(item.Mail);
+        else if (item.Quote != null) ((IPartCardHost)this).OpenQuote(item.Quote);
+        else if (item.Task != null) { Activate(); SwitchModule(PimModule.Tasks); }
+        else if (item.Event != null) { Activate(); SwitchModule(PimModule.Calendar); _calendarView?.GoTo(item.Event.Start); }
+    }
+
+    /// <summary>Once a day, a few seconds after the start (after the first sync), when there is something to show.
+    /// Never during the self-test or on the demo mailbox alone.</summary>
+    async Task AutoMorningBriefAsync()
+    {
+        if (App.SelfTesting || !_settings.MorningBriefAuto || _settings.MorningBriefShown?.Date == DateTime.Today) return;
+        if (_store.Accounts.Count == 0 || _store.Accounts.All(a => a.Id == DemoData.AccountId)) return;
+        await Task.Delay(TimeSpan.FromSeconds(6));
+        if (_closed || !IsVisible || App.SelfTesting) return;
+        var brief = MorningBrief.Build(DateTime.Today, _cache, _calendar, _tasks, _quoteStore, FollowUpStore);
+        _settings.MorningBriefShown = DateTime.Today;
+        try { _settings.Save(); } catch { }
+        if (brief.IsEmpty) return;
+        new MorningBriefWindow(brief, OpenBriefItem) { Owner = this }.Show();
+    }
+
     // ------------------------------------------------------------------ part card
     void OnPartCard(object sender, RoutedEventArgs e)
     {

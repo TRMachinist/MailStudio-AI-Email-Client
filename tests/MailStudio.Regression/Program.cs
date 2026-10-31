@@ -2569,6 +2569,52 @@ await Test("NC önizleme: G0/G1/G2/G3 (I/J ve R), G91, delme döngüsü, takım 
     Check(cmp.Summary().Contains("-12"), "comparison summary has the new depth: " + cmp.Summary());
 }));
 
+await Test("sabah özeti: takvim, geciken görev, teklif son tarihi ve bekleyen teklif, yanıtsız mail, yeni mailler türlerine ayrılır", () => Sync(() =>
+{
+    var dir = Path.Combine(root, "brief-test"); Directory.CreateDirectory(dir);
+    var day = new DateTime(2026, 11, 4);   // Wednesday
+    Check(MorningBrief.DefaultSince(day) == new DateTimeOffset(new DateTime(2026, 11, 3, 17, 0, 0)) && MorningBrief.DefaultSince(new DateTime(2026, 11, 2)).DateTime == new DateTime(2026, 10, 30, 17, 0, 0), "new mail since the previous working day 17:00 (Monday → Friday)");
+    var cache = new MailCache(Path.Combine(dir, "mail.db")); cache.Init();
+    MailHeader M(uint uid, string subject, string preview, DateTime at, bool read = false, bool att = false) =>
+        new() { AccountId = "a", Folder = "INBOX", Uid = uid, Subject = subject, Preview = preview, FromName = "Anna", FromAddress = "anna@x.example", Date = new DateTimeOffset(at), IsRead = read, HasAttachments = att };
+    cache.UpsertHeaders(new[]
+    {
+        M(1, "RFQ NW-2000, 50 pcs", "Please quote 50 pcs of NW-2000 in 6061-T6.", day.AddHours(8), att: true),
+        M(2, "Updated drawing", "See attached.", day.AddHours(8.5), att: true),
+        M(3, "Order confirmation PO 4711", "Delivery week 46.", day.AddHours(9)),
+        M(4, "Lunch?", "Friday?", day.AddHours(9.5)),
+        M(5, "Old news", "Before the window", day.AddDays(-1).AddHours(10)),
+        M(6, "Newsletter", "Read already", day.AddHours(7), read: true),
+    });
+    cache.SaveAttachments("a", "INBOX", 1, new() { new() { FileName = "NW-2000.step", Part = "2" } });
+    cache.SaveAttachments("a", "INBOX", 2, new() { new() { FileName = "flange-revD.pdf", Part = "2" } });
+    var cal = new CalendarStore(Path.Combine(dir, "cal.json"));
+    cal.Save(new CalendarEvent { Title = "FAI review", Start = day.AddHours(10), End = day.AddHours(11) });
+    cal.Save(new CalendarEvent { Title = "Tomorrow", Start = day.AddDays(1).AddHours(10), End = day.AddDays(1).AddHours(11) });
+    var tasks = new TaskStore(Path.Combine(dir, "tasks.json"));
+    tasks.Save(new TaskItem { Title = "Send FAI report", DueDate = day.AddDays(-2) });
+    tasks.Save(new TaskItem { Title = "Call supplier", DueDate = day });
+    tasks.Save(new TaskItem { Title = "Next week", DueDate = day.AddDays(7) });
+    tasks.Save(new TaskItem { Title = "Done", DueDate = day.AddDays(-3), Completed = true });
+    var quotes = new QuoteStore(Path.Combine(dir, "quotes.json"));
+    quotes.AddOrUpdate(new QuoteItem { PartNumber = "NW-3000", Customer = "Contoso", Quantity = 10, Deadline = day, Status = QuoteStatus.InProgress });
+    var sent = new QuoteItem { PartNumber = "NW-1042", Customer = "Northwind", Quantity = 120, Status = QuoteStatus.Sent };
+    quotes.AddOrUpdate(sent); sent.UpdatedAt = new DateTimeOffset(day.AddDays(-8));
+    var follow = new FollowUpStore(Path.Combine(dir, "followups.json"));
+    follow.Add(new FollowUpItem { Subject = "Drawing questions", Recipients = "tom@y.example", SentDate = new DateTimeOffset(day.AddDays(-4)), DueDate = new DateTimeOffset(day.AddDays(-1)) });
+
+    var b = MorningBrief.Build(day, cache, cal, tasks, quotes, follow);
+    Check(b["calendar"]!.Items.Select(i => i.Title).SequenceEqual(new[] { "FAI review" }), "today's appointment only");
+    Check(b["tasks"]!.Items.Count == 2 && b["tasks"]!.Items[0].Title == "Send FAI report" && b["tasks"]!.Items[0].Urgent, "overdue task first, due today second");
+    Check(b["quotes"]!.Items.Count == 2 && b["quotes"]!.Items.Any(i => i.Quote?.PartNumber == "NW-3000" && i.Urgent) && b["quotes"]!.Items.Any(i => i.Quote?.PartNumber == "NW-1042"), "quote due today and quote waiting 8 days");
+    Check(b["followups"]!.Items.Single().Title == "Drawing questions", "unanswered sent mail");
+    Check(b.NewMails == 5 && b.UnreadMails == 4, $"mails in the window ({b.NewMails}/{b.UnreadMails})");
+    Check(b["rfq"]!.Items.Single().Mail!.Uid == 1 && b["revisions"]!.Items.Single().Mail!.Uid == 2 && b["orders"]!.Items.Single().Mail!.Uid == 3 && b["other"]!.Items.Single().Mail!.Uid == 4, "RFQ, revision, order and other unread sorted apart; read newsletter left out");
+    Check(b.ToText().Contains("FAI review") && b.ToText().Contains("! Send FAI report"), "text version");
+    var empty = MorningBrief.Build(day.AddDays(30), cache, cal, tasks, null, null);
+    Check(empty["calendar"]!.Items.Count == 0 && empty.NewMails == 0, "a quiet day");
+}));
+
 Console.WriteLine($"RESULT {passed} passed. Synthetic evidence: {root}");
 
 sealed class MockHttpHandler : HttpMessageHandler

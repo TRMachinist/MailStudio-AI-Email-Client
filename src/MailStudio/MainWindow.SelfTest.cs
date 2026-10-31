@@ -70,6 +70,7 @@ public partial class MainWindow
             ("ballooning and AS9102 FAI: characteristics, balloons, manual add, ballooned PDF, Form 1/3 workbook", StepBalloons),
             ("part card: mails, revisions, files, quotes and NC programs of NW-1042", StepPartCard),
             ("NC preview: backplot, cycle time, tools, comparison with a changed program", StepNcPreview),
+            ("morning brief: today's calendar, tasks, quotes and new mail by kind", StepMorningBrief),
             ("templates and quick steps: template insertion, manager dialog, macro execution", StepTemplatesAndQuickSteps),
             ("mail snooze: hide, filter, wake up unread with the real date", StepSnooze),
             ("unified inbox and search folders: all inboxes node, saved searches, criteria execution", StepUnifiedInboxAndSearchFolders),
@@ -874,6 +875,20 @@ public partial class MainWindow
         Check(c.Added == 2 && c.Removed == 2 && c.New.TotalMinutes > c.Old.TotalMinutes && c.New.MinZ == -16, $"nc compare: 2 lines changed, longer and deeper ({c.Summary()})");
         Shot(w2, "nc-compare"); CheckTexts(w2, "nc-compare");
         w2.Close(); w.Close();
+    }
+
+    async Task StepMorningBrief()
+    {
+        // the demo mails are a few days old: look back far enough to see them sorted
+        var w = ShowMorningBrief(DateTime.Today, DateTimeOffset.Now.AddDays(-40));
+        await Until(() => w.IsLoaded, 5000); await Wait(500);
+        var b = w.Brief;
+        Check(!b.IsEmpty && b.NewMails > 0, $"morning brief: {b.NewMails} mails, sections: {string.Join(", ", b.Sections.Where(x => x.Items.Count > 0).Select(x => $"{x.Key} {x.Items.Count}"))}");
+        Check(b["rfq"]!.Items.Any(i => i.Mail?.Subject.Contains("120") == true), "morning brief: the demo request for quote is listed as RFQ");
+        Check(b["revisions"]!.Items.Count > 0, "morning brief: revision mails listed");
+        Shot(w, "morning-brief"); CheckTexts(w, "morning-brief"); CheckAirspace(w, "morning-brief");
+        w.Close();
+        Check(Application.Current.Windows.OfType<MorningBriefWindow>().All(x => !x.IsVisible), "morning brief: no automatic brief window during the self-test");
     }
 
     async Task StepTemplatesAndQuickSteps()
