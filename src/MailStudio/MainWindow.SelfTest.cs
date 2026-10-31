@@ -65,6 +65,7 @@ public partial class MainWindow
             ("calendar: appointment form", StepEventForm),
             ("tasks: list, quick add, mail to task", StepTasks),
             ("quote desk: list, search, status, Excel export, RFQ detection, dialog, airspace", StepQuoteDesk),
+            ("cost estimate and quotation PDF: STEP geometry, estimate window, settings, PDF file", StepCostAndQuotePdf),
             ("templates and quick steps: template insertion, manager dialog, macro execution", StepTemplatesAndQuickSteps),
             ("mail snooze: hide, filter, wake up unread with the real date", StepSnooze),
             ("unified inbox and search folders: all inboxes node, saved searches, criteria execution", StepUnifiedInboxAndSearchFolders),
@@ -736,6 +737,47 @@ public partial class MainWindow
         editDlg.Close();
 
         SwitchModule(PimModule.Mail); await Wait(300);
+    }
+
+    async Task StepCostAndQuotePdf()
+    {
+        var all = _cache.GetHeaders(DemoData.AccountId, "INBOX", 200);
+        var mail = all.FirstOrDefault(h => _cache.GetAttachments(h.AccountId, h.Folder, h.Uid).Any(a => a.FileName == "bracket-revC.stp"));
+        if (mail == null) { Fail("cost", "demo STEP mail missing"); return; }
+        var path = await DownloadAttachmentAsync(mail, _cache.GetAttachments(mail.AccountId, mail.Folder, mail.Uid).First(a => a.FileName == "bracket-revC.stp"));
+        Check(path != null, "cost: demo STEP downloaded");
+        if (path == null) return;
+        var json = await SkillWorker().CallAsync("extract_step", new { path, ocr = false });
+        var g = MailStudio.Services.Costing.PartGeometry.FromExtract(json);
+        Check(g.VolumeMm3 > 0 && g.SizeX > 0, $"cost: geometry read from STEP ({g.SizeX:0.#}×{g.SizeY:0.#}×{g.SizeZ:0.#} mm, {g.VolumeMm3 / 1000:0.##} cm³, {g.HoleCount} holes)");
+
+        var q = _quoteStore.Quotes.First().Clone();
+        var w = new CostEstimateWindow("bracket rev C – bracket-revC.stp", g, q) { Owner = this };
+        w.Show(); await Wait(600);
+        var price = Tree(w).OfType<TextBlock>().FirstOrDefault(t => t.Text.StartsWith(L.F("Birim fiyat: {0}", "").TrimEnd()));
+        Check(price != null && price.Text.Any(char.IsDigit), $"cost window: unit price shown ({price?.Text})");
+        Shot(w, "cost-estimate"); CheckTexts(w, "cost-estimate"); CheckAirspace(w, "cost-estimate");
+        w.Close();
+
+        var sw = new CostSettingsWindow { Owner = this };
+        sw.Show(); await Wait(500);
+        Shot(sw, "cost-settings"); CheckTexts(sw, "cost-settings");
+        var tabs = Tree(sw).OfType<TabControl>().FirstOrDefault();
+        if (tabs != null) { tabs.SelectedIndex = 2; await Wait(400); Shot(sw, "cost-settings-materials"); }
+        sw.Close();
+
+        var settings = MailStudio.Services.Costing.CostEstimator.LoadSettings();
+        settings.Company = new MailStudio.Services.Costing.CompanyInfo { Name = "Demo Machining Ltd.", Address = "1 Demo Street\nDemo City", Email = "sales@example.com", Signature = "Demo Machining – Sales" };
+        var mat = MailStudio.Services.Costing.CostEstimator.Match(MailStudio.Services.Costing.CostEstimator.Materials(settings), q.Material) ?? MailStudio.Services.Costing.CostEstimator.Materials(settings)[0];
+        var est = MailStudio.Services.Costing.CostEstimator.Estimate(g, mat, Math.Max(1, q.Quantity), settings);
+        q.UnitPrice = est.UnitPrice; q.Currency = est.Currency; q.CostBreakdown = est.ToText();
+        q.QuoteNumber = MailStudio.Services.Costing.QuoteDocument.NextNumber(_quoteStore.Quotes, DateTime.Today);
+        var html = MailStudio.Services.Costing.QuoteDocument.BuildHtml(q, settings, DateTime.Today, includeBreakdown: true);
+        var pdf = Path.Combine(_stDir, MailStudio.Services.Costing.QuoteDocument.FileName(q));
+        await HtmlPdfPrinter.PrintAsync(html, pdf);
+        var head = File.Exists(pdf) ? File.ReadAllBytes(pdf).Take(5).ToArray() : Array.Empty<byte>();
+        Check(head.Length == 5 && Encoding.ASCII.GetString(head) == "%PDF-" && new FileInfo(pdf).Length > 5000, $"quote PDF written ({(File.Exists(pdf) ? new FileInfo(pdf).Length : 0)} bytes)");
+        File.WriteAllText(Path.Combine(_stDir, "quote.html"), html, new UTF8Encoding(false));
     }
 
     async Task StepTemplatesAndQuickSteps()

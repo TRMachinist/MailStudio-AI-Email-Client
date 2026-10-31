@@ -61,7 +61,7 @@ td{padding:8px;border-bottom:1px solid #eaeef2;vertical-align:top}td.r,th.r{text
         if (q.Contact.Length > 0) sb.Append("<br>" + E(q.Contact));
         if (!string.IsNullOrEmpty(q.ContactEmail)) sb.Append("<br>" + E(q.ContactEmail));
         sb.Append("</div><div class='box'>");
-        sb.Append($"<b>{E(L.T("Teklif"))}</b>{E(L.T("No"))}: {E(q.QuoteNumber)}<br>{E(L.T("Tarih"))}: {date.ToString("d", L.Culture)}");
+        sb.Append($"<b>{E(L.T("Teklif"))}</b>{E(L.T("Teklif No"))}: {E(q.QuoteNumber)}<br>{E(L.T("Tarih"))}: {date.ToString("d", L.Culture)}");
         sb.Append($"<br>{E(L.T("Geçerlilik"))}: {date.AddDays(s.QuoteValidityDays).ToString("d", L.Culture)}");
         if (!string.IsNullOrEmpty(q.SourceSubject)) sb.Append($"<br><span class='muted'>{E(L.T("Talebiniz"))}: {E(q.SourceSubject)}</span>");
         sb.Append("</div></div>");
