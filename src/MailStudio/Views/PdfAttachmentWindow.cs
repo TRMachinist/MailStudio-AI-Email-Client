@@ -131,9 +131,6 @@ public sealed partial class PdfAttachmentWindow : Window
         wrap.Children.Add(IconBtn("", L.T("Sayfa küçük resimlerini göster/gizle"), () => _thumbCol.Width = _thumbCol.Width.Value > 0 ? new GridLength(0) : new GridLength(150)));
         wrap.Children.Add(IconBtn("", L.T("Farklı kaydet… (Ctrl+S) — düzenlemeler yeni PDF'ye yazılır, ek dosyası değişmez"), async () => await SaveAsAsync()));
         wrap.Children.Add(IconBtn("⚖", L.T("Önceki revizyonla karşılaştır"), async () => await CompareRevisionAsync()));
-        var balloon = new Button { Content = L.T("Balonla / FAI"), ToolTip = L.T("Ölçüleri numaralı balonlarla işaretle, AS9102 Form 1/3 Excel ve balonlu PDF üret"), Padding = new Thickness(10, 3, 10, 3), Height = 30, Margin = new Thickness(2, 0, 2, 0) };
-        balloon.Click += (_, _) => OpenBalloons();
-        wrap.Children.Add(balloon);
         var tables = new Button { Content = L.T("Tablo → Excel"), ToolTip = L.T("PDF'teki tabloları (parça listesi, termin planı, fiyat listesi) Excel'e aktar"), Padding = new Thickness(10, 3, 10, 3), Height = 30, Margin = new Thickness(2, 0, 2, 0) };
         tables.Click += (_, _) => OpenTables();
         wrap.Children.Add(tables);
@@ -528,14 +525,6 @@ public sealed partial class PdfAttachmentWindow : Window
         else if (e.Key == Key.PageUp && !ctrl && _scroll.IsKeyboardFocusWithin == false) { GoToPage(_page - 1); e.Handled = true; }
         else if (e.Key == Key.Home && ctrl) { GoToPage(0); e.Handled = true; }
         else if (e.Key == Key.End && ctrl) { GoToPage(_pages - 1); e.Handled = true; }
-    }
-
-    /// <summary>Opens the balloon / AS9102 window for this PDF (returns it for the self-test).</summary>
-    public Inspection.BalloonWindow OpenBalloons()
-    {
-        var w = new Inspection.BalloonWindow(_path, (op, args, ct) => _worker.CallAsync(op, args, ct)) { Owner = this };
-        w.Show();
-        return w;
     }
 
     /// <summary>Opens the PDF tables → Excel window (returns it for the self-test).</summary>

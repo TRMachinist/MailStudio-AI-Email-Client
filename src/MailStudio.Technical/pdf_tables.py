@@ -32,15 +32,19 @@ def _words_text(page):
     return [{'text': w['t'], 'x1': w['l'], 'x2': w['r'], 'y1': height - w['tp'], 'y2': height - w['b']} for w in words], False
 
 
+_ocr = None
+
+
 def _words_ocr(page):
-    import balloon, numpy as np
+    global _ocr
+    import numpy as np
     from rapidocr import RapidOCR
-    if balloon._ocr is None:
-        balloon._ocr = RapidOCR(params={'Global.log_level': 'error', 'EngineConfig.onnxruntime.intra_op_num_threads': 2,
+    if _ocr is None:
+        _ocr = RapidOCR(params={'Global.log_level': 'error', 'EngineConfig.onnxruntime.intra_op_num_threads': 2,
                                         'EngineConfig.onnxruntime.inter_op_num_threads': 1})
     scale = min(3.0, 2600 / max(page.get_size()))
     bmp = page.render(scale=scale); pil = bmp.to_pil()
-    try: res = balloon._ocr(np.asarray(pil))
+    try: res = _ocr(np.asarray(pil))
     finally: pil.close(); bmp.close()
     out = []
     if res.txts is None: return out, True

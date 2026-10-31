@@ -67,7 +67,6 @@ public partial class MainWindow
             ("tasks: list, quick add, mail to task", StepTasks),
             ("quote desk: list, search, status, Excel export, RFQ detection, dialog, airspace", StepQuoteDesk),
             ("cost estimate and quotation PDF: STEP geometry, estimate window, settings, PDF file", StepCostAndQuotePdf),
-            ("ballooning and AS9102 FAI: characteristics, balloons, manual add, ballooned PDF, Form 1/3 workbook", StepBalloons),
             ("part card: mails, revisions, files, quotes and NC programs of NW-1042", StepPartCard),
             ("NC preview: backplot, cycle time, tools, comparison with a changed program", StepNcPreview),
             ("morning brief: today's calendar, tasks, quotes and new mail by kind", StepMorningBrief),
@@ -803,36 +802,6 @@ public partial class MainWindow
         var head = File.Exists(pdf) ? File.ReadAllBytes(pdf).Take(5).ToArray() : Array.Empty<byte>();
         Check(head.Length == 5 && Encoding.ASCII.GetString(head) == "%PDF-" && new FileInfo(pdf).Length > 5000, $"quote PDF written ({(File.Exists(pdf) ? new FileInfo(pdf).Length : 0)} bytes)");
         File.WriteAllText(Path.Combine(_stDir, "quote.html"), html, new UTF8Encoding(false));
-    }
-
-    async Task StepBalloons()
-    {
-        var all = _cache.GetHeaders(DemoData.AccountId, "INBOX", 200);
-        var mail = all.FirstOrDefault(h => _cache.GetAttachments(h.AccountId, h.Folder, h.Uid).Any(a => a.FileName == "flange-DN100-revC.pdf"));
-        if (mail == null) { Fail("balloons", "demo drawing missing"); return; }
-        var pdf = await DownloadAttachmentAsync(mail, _cache.GetAttachments(mail.AccountId, mail.Folder, mail.Uid).First(a => a.FileName == "flange-DN100-revC.pdf"));
-        Check(pdf != null, "balloons: demo drawing downloaded");
-        if (pdf == null) return;
-        var w = new MailStudio.Views.Inspection.BalloonWindow(pdf, (op, args, ct) => SkillWorker().CallAsync(op, args, ct)) { Owner = this };
-        w.Show();
-        await Task.WhenAny(w.Ready, Task.Delay(90000)); await Wait(800);
-        var reqs = w.Items.Select(i => i.Requirement).ToList();
-        Check(w.Items.Count >= 6 && reqs.Contains("Ø110") && reqs.Contains("Ra 1.6") && reqs.Any(r => r.StartsWith("8x Ø20")), $"balloons: characteristics found ({string.Join(" | ", reqs)})");
-        Check(w.Items.All(i => i.Review), "balloons: OCR values flagged for checking");
-        Check(w.Items.Select(i => i.Id).SequenceEqual(Enumerable.Range(1, w.Items.Count)) && w.Items.All(i => i.Balloon is { Length: 3 }), "balloons: numbered 1..n and placed");
-        Shot(w, "balloons"); CheckTexts(w, "balloons"); CheckAirspace(w, "balloons");
-        var before = w.Items.Count;
-        var added = w.AddManual(new Rect(20, 20, 30, 12)); await Wait(400);
-        Check(w.Items.Count == before + 1 && added.Id == 1, $"balloons: manual characteristic added and numbered in reading order (#{added.Id})");
-        Shot(w, "balloons-manual");
-        var outPdf = await w.SavePdfAsync(Path.Combine(_stDir, "flange-ballooned.pdf"));
-        Check(outPdf != null && File.Exists(outPdf) && Encoding.ASCII.GetString(File.ReadAllBytes(outPdf).Take(5).ToArray()) == "%PDF-", "balloons: ballooned PDF written");
-        var xlsx = w.SaveExcel(Path.Combine(_stDir, "flange-AS9102.xlsx"));
-        if (xlsx != null)
-            using (var wb = new ClosedXML.Excel.XLWorkbook(xlsx))
-                Check(wb.Worksheet("Form 3").RowsUsed().Count() >= w.Items.Count + 1 && wb.Worksheet("Form 1").Cell(3, 2).GetString() == "NW-1042", "balloons: AS9102 workbook with Form 1 and every characteristic");
-        else Fail("balloons", "AS9102 workbook not written");
-        w.Close();
     }
 
     async Task StepPartCard()
