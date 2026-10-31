@@ -143,7 +143,7 @@ export const TEXT19: Record<'en' | 'tr', any> = {
     outro: {
       line1: 'Free & open source', line2: 'Windows 10 / 11 · portable · no telemetry',
       url: 'github.com/TRMachinist/MailStudio-AI-Email-Client', star: '⭐  Star it on GitHub',
-      tiles: ['Mail', 'AI', 'PDF · DXF · STEP', 'Revisions', 'Quotes', 'Cost', 'Part card', 'NC preview', 'Calendar', 'Search'],
+      tiles: ['Mail', 'AI', 'PDF · DXF · STEP', 'Revisions', 'Quotes', 'Cost', 'Part card', 'NC preview', 'PDF → Excel', 'Calendar', 'PST', 'Search'],
     },
   },
   tr: {
@@ -164,7 +164,7 @@ export const TEXT19: Record<'en' | 'tr', any> = {
     outro: {
       line1: 'Ücretsiz ve açık kaynak', line2: 'Windows 10 / 11 · kurulumsuz · telemetri yok',
       url: 'github.com/TRMachinist/MailStudio-AI-Email-Client', star: '⭐  GitHub\'da yıldız verin',
-      tiles: ['Mail', 'Yapay zekâ', 'PDF · DXF · STEP', 'Revizyon', 'Teklif', 'Maliyet', 'Parça kartı', 'NC önizleme', 'Takvim', 'Arama'],
+      tiles: ['Mail', 'Yapay zekâ', 'PDF · DXF · STEP', 'Revizyon', 'Teklif', 'Maliyet', 'Parça kartı', 'NC önizleme', 'PDF → Excel', 'Takvim', 'PST', 'Arama'],
     },
   },
 };
