@@ -2506,8 +2506,8 @@ await Test("parça kartı: parça numarası mail, ek adı ve gövdeden bulunur; 
     Check(PartHistory.PartsIn(M(9, "Revision update – NW-1042 rev C", 0), new[] { new AttachmentInfo { FileName = "flange-DN100-revC.pdf" } }).First() == "NW-1042", "part number taken from the subject first");
     Check(PartHistory.Build("ZZ-999", cache, quotes).Mails.Count == 0, "unknown part: empty card");
     var late = new PartRevision("B", t0.AddDays(5), new List<PartFile>()); var early = new PartRevision("C", t0, new List<PartFile>());
-    Check(PartHistory.CompareRevisions(late, early) < 0 && PartHistory.CompareRevisions(new PartRevision("10", t0, new()), new PartRevision("9", t0.AddDays(1), new())) > 0
-          && PartHistory.CompareRevisions(new PartRevision("Z", t0, new()), new PartRevision("AA", t0.AddDays(-1), new())) < 0, "revisions ordered by label (B before C even when C came first; 9 < 10; Z < AA)");
+    Check(PartHistory.CompareRevisions(late, early) < 0 && PartHistory.CompareRevisions(new PartRevision("10", t0, new List<PartFile>()), new PartRevision("9", t0.AddDays(1), new List<PartFile>())) > 0
+          && PartHistory.CompareRevisions(new PartRevision("Z", t0, new List<PartFile>()), new PartRevision("AA", t0.AddDays(-1), new List<PartFile>())) < 0, "revisions ordered by label (B before C even when C came first; 9 < 10; Z < AA)");
 }));
 
 await Test("NC önizleme: G0/G1/G2/G3 (I/J ve R), G91, delme döngüsü, takım değişimi, süre tahmini ve program karşılaştırma", () => Sync(() =>
