@@ -2470,6 +2470,41 @@ await Test("balonlama ve AS9102: karakteristik okuma, numaralama, Form 1/3 çal�
     Check(wb.Worksheet("Form 1").Cell(3, 2).GetString() == "NW-1042", "Form 1 part number");
 }));
 
+await Test("parça kartı: parça numarası mail, ek adı ve gövdeden bulunur; revizyonlar, teklifler, NC programları", () => Sync(() =>
+{
+    var dir = Path.Combine(root, "part-card-test"); Directory.CreateDirectory(dir);
+    var cache = new MailCache(Path.Combine(dir, "mail.db")); cache.Init();
+    var t0 = DateTimeOffset.Now.AddDays(-30);
+    MailHeader M(uint uid, string subject, int day, bool att = true, string from = "anna@northwind.example") =>
+        new() { AccountId = "a", Folder = "INBOX", Uid = uid, Subject = subject, FromAddress = from, FromName = "Anna Keller", Date = t0.AddDays(day), HasAttachments = att };
+    cache.UpsertHeaders(new[]
+    {
+        M(1, "RFQ NW-1042 rev B flange", 0), M(2, "Revision update – NW-1042 rev C", 10), M(3, "OP20 program", 12),
+        M(4, "Lunch on Friday", 13, att: false), M(5, "Order NW-10421", 14), M(6, "Re: schedule", 15, att: false),
+    });
+    cache.SaveAttachments("a", "INBOX", 1, new() { new() { FileName = "flange-DN100-revB.pdf", Part = "2" }, new() { FileName = "flange-DN100-revB.dxf", Part = "3" } });
+    cache.SaveAttachments("a", "INBOX", 2, new() { new() { FileName = "flange-DN100-revC.pdf", Part = "2" }, new() { FileName = "flange-DN100-revC.dxf", Part = "3" } });
+    cache.SaveAttachments("a", "INBOX", 3, new() { new() { FileName = "NW_1042_OP20.nc", Part = "2" } });
+    cache.SaveAttachments("a", "INBOX", 5, new() { new() { FileName = "NW-10421.pdf", Part = "2" } });
+    cache.SaveBody("a", "INBOX", 6, new MailContent { Text = "Can you ship nw 1042 next week?", Html = "" });
+
+    var quotes = new QuoteStore(Path.Combine(dir, "quotes.json"));
+    quotes.AddOrUpdate(new QuoteItem { PartNumber = "NW-1042", Revision = "C", Quantity = 120, Customer = "Northwind", UnitPrice = 55.5, Currency = "EUR" });
+    quotes.AddOrUpdate(new QuoteItem { PartNumber = "XY-77", Quantity = 1, Customer = "Other" });
+
+    var h = PartHistory.Build("NW-1042", cache, quotes);
+    var uids = h.Mails.Select(m => m.Uid).OrderBy(u => u).ToList();
+    Check(uids.SequenceEqual(new uint[] { 1, 2, 3, 6 }), $"mails by subject, attachment name and body text; not NW-10421 ({string.Join(",", uids)})");
+    Check(h.Revisions.Select(r => r.Revision).SequenceEqual(new[] { "B", "C" }) && h.LatestRevision == "C", "revisions in order, latest C");
+    Check(h.Revisions[1].Files.Count == 2 && h.Revisions[1].Files.All(f => f.FileName.Contains("revC")), "files grouped by revision");
+    Check(h.NcPrograms.Single().FileName == "NW_1042_OP20.nc", "NC program found by file name");
+    Check(h.Quotes.Count == 1 && h.Quotes[0].Customer == "Northwind", "quote of the part only");
+    Check(h.Customers.SequenceEqual(new[] { "Anna Keller" }), "customer");
+    Check(PartHistory.Pattern("NW-1042").IsMatch("nw_1042") && !PartHistory.Pattern("NW-1042").IsMatch("NW-10421") && !PartHistory.Pattern("NW-1042").IsMatch("XNW-1042"), "part number pattern");
+    Check(PartHistory.PartsIn(M(9, "Revision update – NW-1042 rev C", 0), new[] { new AttachmentInfo { FileName = "flange-DN100-revC.pdf" } }).First() == "NW-1042", "part number taken from the subject first");
+    Check(PartHistory.Build("ZZ-999", cache, quotes).Mails.Count == 0, "unknown part: empty card");
+}));
+
 Console.WriteLine($"RESULT {passed} passed. Synthetic evidence: {root}");
 
 sealed class MockHttpHandler : HttpMessageHandler

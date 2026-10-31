@@ -1011,6 +1011,7 @@ sealed class DummyQuoteHost : IQuoteHost
     public Task<string?> FindQuoteModelAsync(QuoteItem quote) => Task.FromResult<string?>(null);
     public MailStudio.Services.TechnicalWorker Worker { get; } = new();
     public Task RenderPdfAsync(string html, string pdfPath) => Task.CompletedTask;
+    public void OpenPartCard(string partNumber) { }
 }
 
 

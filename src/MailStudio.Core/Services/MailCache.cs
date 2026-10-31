@@ -526,6 +526,23 @@ public class MailCache
         Exec(c, "DELETE FROM folder_state WHERE account=$a", ("$a", account));
     }
 
+    /// <summary>Mails whose subject, preview, attachment names or text match a LIKE pattern (e.g. "%NW%1042%"), newest first.
+    /// Complements the full-text index, which splits part numbers like "NW-1042" and never sees attachment names.</summary>
+    public List<MailHeader> FindLike(string likePattern, int limit = 500)
+    {
+        if (string.IsNullOrWhiteSpace(likePattern)) return new();
+        try
+        {
+            using var c = Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT * FROM messages WHERE subject LIKE $p OR preview LIKE $p OR att_json LIKE $p OR body_text LIKE $p ORDER BY date DESC LIMIT $l";
+            cmd.Parameters.AddWithValue("$p", likePattern);
+            cmd.Parameters.AddWithValue("$l", limit);
+            return ReadHeaders(cmd);
+        }
+        catch (SqliteException ex) when (IsCorrupt(ex)) { OnCorrupt(); return new(); }
+    }
+
     /// <summary>Returns recent emails sent by or received from the specified contact address.</summary>
     public List<MailHeader> GetMailsForContact(string email, int limit = 20)
     {

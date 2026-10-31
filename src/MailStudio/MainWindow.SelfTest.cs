@@ -67,6 +67,7 @@ public partial class MainWindow
             ("quote desk: list, search, status, Excel export, RFQ detection, dialog, airspace", StepQuoteDesk),
             ("cost estimate and quotation PDF: STEP geometry, estimate window, settings, PDF file", StepCostAndQuotePdf),
             ("ballooning and AS9102 FAI: characteristics, balloons, manual add, ballooned PDF, Form 1/3 workbook", StepBalloons),
+            ("part card: mails, revisions, files, quotes and NC programs of NW-1042", StepPartCard),
             ("templates and quick steps: template insertion, manager dialog, macro execution", StepTemplatesAndQuickSteps),
             ("mail snooze: hide, filter, wake up unread with the real date", StepSnooze),
             ("unified inbox and search folders: all inboxes node, saved searches, criteria execution", StepUnifiedInboxAndSearchFolders),
@@ -825,6 +826,23 @@ public partial class MainWindow
             using (var wb = new ClosedXML.Excel.XLWorkbook(xlsx))
                 Check(wb.Worksheet("Form 3").RowsUsed().Count() >= w.Items.Count + 1 && wb.Worksheet("Form 1").Cell(3, 2).GetString() == "NW-1042", "balloons: AS9102 workbook with Form 1 and every characteristic");
         else Fail("balloons", "AS9102 workbook not written");
+        w.Close();
+    }
+
+    async Task StepPartCard()
+    {
+        var w = OpenPartCard("NW-1042");
+        await Until(() => w.IsLoaded, 5000); await Wait(600);
+        var h = w.History;
+        Check(h != null && h.Mails.Count >= 3, $"part card: mails about NW-1042 ({h?.Mails.Count})");
+        Check(h != null && h.Revisions.Any(r => r.Revision == "B") && h.Revisions.Any(r => r.Revision == "C") && h.LatestRevision == "C", $"part card: revisions B and C, latest C ({string.Join(",", h?.Revisions.Select(r => r.Revision) ?? Array.Empty<string>())})");
+        Check(h != null && h.Quotes.Count >= 1, $"part card: quote of the part ({h?.Quotes.Count})");
+        Shot(w, "part-card"); CheckTexts(w, "part-card"); CheckAirspace(w, "part-card");
+        var tabs = Tree(w).OfType<TabControl>().First();
+        for (var i = 1; i < tabs.Items.Count; i++) { tabs.SelectedIndex = i; await Wait(350); Shot(w, $"part-card-tab{i}"); CheckTexts(w, $"part-card tab {i}"); }
+        w.Load("ZZ-999"); await Wait(300);
+        Check(w.History?.Mails.Count == 0, "part card: unknown part shows the empty message");
+        Shot(w, "part-card-empty");
         w.Close();
     }
 

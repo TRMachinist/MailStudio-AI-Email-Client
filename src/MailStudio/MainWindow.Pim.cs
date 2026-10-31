@@ -15,7 +15,7 @@ namespace MailStudio;
 public enum PimModule { Mail, Calendar, People, Tasks, Quotes }
 
 /// <summary>Calendar, tasks and reminders inside the main window (Outlook's module bar).</summary>
-public partial class MainWindow : ITaskHost, IQuoteHost
+public partial class MainWindow : ITaskHost, IQuoteHost, IPartCardHost
 {
     readonly CalendarStore _calendar = new();
     readonly TaskStore _tasks = new();
@@ -209,6 +209,45 @@ public partial class MainWindow : ITaskHost, IQuoteHost
     void ClosePim() { _reminderTimer.Stop(); _reminderWindow?.ForceClose(); }
 
     // ===================================================================== mail → task / meeting
+
+    // ------------------------------------------------------------------ part card
+    void OnPartCard(object sender, RoutedEventArgs e)
+    {
+        var m = MessageList.SelectedItems.OfType<MailHeader>().FirstOrDefault() ?? _current;
+        if (m == null) { Status(L.T("Önce listeden bir ileti seçin.")); return; }
+        var parts = PartHistory.PartsIn(m, m.HasAttachments ? _cache.GetAttachments(m.AccountId, m.Folder, m.Uid) : new List<AttachmentInfo>());
+        if (parts.Count == 0) Status(L.T("Bu mailde parça numarası bulunamadı; parça kartında numarayı yazabilirsiniz."));
+        OpenPartCard(parts.FirstOrDefault() ?? "");
+    }
+
+    /// <summary>Opens the part card window; returns it for the self-test.</summary>
+    public PartCardWindow OpenPartCard(string partNumber)
+    {
+        var w = new PartCardWindow(partNumber, _cache, _quoteStore, _tasks, this) { Owner = this };
+        w.Show();
+        return w;
+    }
+
+    void IQuoteHost.OpenPartCard(string partNumber) => OpenPartCard(partNumber);
+    void IPartCardHost.OpenMail(MailHeader mail) => ((ITaskHost)this).OpenMail(mail);
+    Task IPartCardHost.OpenAttachmentAsync(MailHeader mail, AttachmentInfo attachment) => OpenAttachmentAsync(mail, attachment);
+
+    async Task IPartCardHost.CompareFilesAsync(PartFile older, PartFile newer)
+    {
+        var o = await DownloadAttachmentAsync(older.Mail, older.Attachment);
+        var n = await DownloadAttachmentAsync(newer.Mail, newer.Attachment);
+        if (o == null || n == null) { Status(L.T("Revizyon dosyaları indirilemedi.")); return; }
+        await ShowRevisionDiffAsync(o, n, newer.Mail);
+    }
+
+    void IPartCardHost.OpenQuote(QuoteItem quote)
+    {
+        Activate();
+        SwitchModule(PimModule.Quotes);
+        _quoteDeskView?.SelectQuote(quote.Id);
+    }
+
+    Task IPartCardHost.PreviewNcAsync(PartFile file) => OpenAttachmentAsync(file.Mail, file.Attachment);
 
     void OnMailToTask(object sender, RoutedEventArgs e)
     {

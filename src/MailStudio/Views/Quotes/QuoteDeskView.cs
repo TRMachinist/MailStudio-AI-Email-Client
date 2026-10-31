@@ -24,6 +24,8 @@ public interface IQuoteHost : IPimHost
     MailStudio.Services.TechnicalWorker Worker { get; }
     /// <summary>Prints an HTML document to a PDF file.</summary>
     Task RenderPdfAsync(string html, string pdfPath);
+    /// <summary>Opens the part card (all mails, revisions, quotes, NC programs) of a part number.</summary>
+    void OpenPartCard(string partNumber);
 }
 
 public enum QuoteFilter
@@ -93,7 +95,8 @@ public sealed class QuoteDeskView : UserControl
 
         Ribbon.Children.Add(PimUi.Group(L.T("İletişim"),
             PimUi.Cmd("", L.T("Teklif Yanıtı"), (_, _) => OnReplyQuote(), L.T("Müşteriye teklif e-postası taslağı aç")),
-            PimUi.Cmd("", L.T("Maili Aç"), (_, _) => OnOpenSourceMail(), L.T("Teklifin kaynak e-postasını aç"))));
+            PimUi.Cmd("", L.T("Maili Aç"), (_, _) => OnOpenSourceMail(), L.T("Teklifin kaynak e-postasını aç")),
+            PimUi.Cmd("\uE8A5", L.T("Parça Kartı"), (_, _) => { if (SelectedQuote is { } q && q.PartNumber.Length > 0) _host.OpenPartCard(q.PartNumber); else _host.Status(L.T("Önce listeden bir teklif seçin.")); }, L.T("Bu parçanın tüm mailleri, revizyonları, teklifleri ve NC programları"))));
 
         // 2. Side Panel
         var side = new StackPanel();

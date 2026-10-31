@@ -382,6 +382,7 @@
                             </MenuItem>
                             <MenuItem Header="Taşı…" Icon="&#xE8DE;" Click="OnMoveMenu"/>
                             <MenuItem Header="Görev olarak ekle" Icon="&#xE762;" InputGestureText="Ctrl+Shift+K" Click="OnMailToTask"/>
+                            <MenuItem Header="Parça kartı" Icon="&#xE8A5;" Click="OnPartCard"/>
                             <MenuItem Header="Toplantı ayarla" Icon="&#xE787;" Click="OnMailToMeeting"/>
                             <MenuItem Header="Bunun gibi mailler için kural oluştur…" Icon="&#xE71E;" Click="OnCreateRuleFromMail"/>
                             <MenuItem Header="Bu göndereni her zaman Bültenler klasörüne taşı" Icon="&#xE8DE;" Click="OnAlwaysMoveToNewslettersClick"/>
