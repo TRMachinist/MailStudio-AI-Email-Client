@@ -87,7 +87,7 @@ public sealed class BalloonWindow : Window
         Btn("▶", async (_, _) => await ShowPageAsync(_page + 1), tip: L.T("Sonraki sayfa"));
         Btn(L.T("Sığdır"), (_, _) => Fit());
         Btn("+", (_, _) => SetZoom(_zoom.ScaleX * 1.25)); Btn("−", (_, _) => SetZoom(_zoom.ScaleX / 1.25));
-        _addMode.SetResourceReference(StyleProperty, "RibbonCmd");
+        _addMode.SetResourceReference(StyleProperty, "MsSegmentToggleButtonStyle");
         _addMode.ToolTip = L.T("Sayfada bir alanı sürükleyerek karakteristik ekleyin");
         _addMode.Checked += (_, _) => { DrawOverlay(); _status.Text = L.T("Eklemek istediğiniz ölçünün çevresine sayfada bir kutu sürükleyin (Esc: bitir)."); };
         _addMode.Unchecked += (_, _) => DrawOverlay();

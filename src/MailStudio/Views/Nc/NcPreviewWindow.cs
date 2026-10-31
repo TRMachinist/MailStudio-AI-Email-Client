@@ -44,7 +44,7 @@ public sealed class NcPreviewWindow : Window
         ToggleButton ViewBtn(string text, NcProjection p)
         {
             var b = new ToggleButton { Content = text, Height = 28, Padding = new Thickness(10, 0, 10, 0), Margin = new Thickness(0, 0, 4, 0), IsChecked = p == NcProjection.Iso };
-            b.SetResourceReference(StyleProperty, "RibbonCmd");
+            b.SetResourceReference(StyleProperty, "MsSegmentToggleButtonStyle");
             b.Click += (_, _) => { _view.Projection = p; foreach (var o in bar.Children.OfType<ToggleButton>().Where(x => x.Tag as string == "view")) o.IsChecked = o == b; };
             b.Tag = "view"; return Add(b);
         }
