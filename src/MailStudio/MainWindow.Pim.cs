@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -243,6 +244,47 @@ public partial class MainWindow : ITaskHost, IQuoteHost, IPartCardHost
         try { _settings.Save(); } catch { }
         if (brief.IsEmpty) return;
         new MorningBriefWindow(brief, OpenBriefItem) { Owner = this }.Show();
+    }
+
+    // ------------------------------------------------------------------ request-for-quote intake
+    /// <summary>Puts new requests for quote on the quote desk (no window, no mail sent); returns the new entries.</summary>
+    public List<QuoteItem> RfqIntakeFor(IEnumerable<MailHeader> mails)
+    {
+        List<QuoteItem> created;
+        try { created = RfqIntake.Process(mails, _cache, _quoteStore, _store.Accounts.Select(a => a.Email)); }
+        catch (Exception ex) { Status(L.T("Teklif talebi alınamadı: ") + ex.Message); return new(); }
+        if (created.Count == 0) return created;
+        _quoteDeskView?.Refresh();
+        Status(created.Count == 1
+            ? L.F("Yeni teklif talebi Teklif Masası'na eklendi: {0} ({1}). \"Alındı yanıtı\" ile cevap taslağını açabilirsiniz.", created[0].PartNumber.Length > 0 ? created[0].PartNumber : created[0].SourceSubject ?? "", created[0].Customer)
+            : L.F("{0} yeni teklif talebi Teklif Masası'na eklendi.", created.Count));
+        return created;
+    }
+
+    void IQuoteHost.ComposeQuoteAck(QuoteItem quote) => ComposeQuoteAck(quote);
+
+    /// <summary>Opens the "we received your request" reply as a draft in a compose window (the user sends it).</summary>
+    public void ComposeQuoteAck(QuoteItem quote)
+    {
+        if (_store.Accounts.Count == 0) { MessageBox.Show(this, L.T("Önce bir hesap ekleyin."), "MailStudio"); return; }
+        var account = _store.Accounts.FirstOrDefault(a => quote.SourceMail != null && quote.SourceMail.StartsWith(a.Id + "|")) ?? _store.Accounts[0];
+        MailHeader? src = null; MailContent? content = null; var files = new List<string>();
+        if (quote.SourceMail?.Split('|') is { Length: >= 3 } p && uint.TryParse(p[^1], out var uid))
+        {
+            var folder = string.Join("|", p[1..^1]);
+            src = _cache.GetHeader(p[0], folder, uid);
+            content = _cache.GetBody(p[0], folder, uid);
+            files = _cache.GetAttachments(p[0], folder, uid).Select(a => a.FileName).ToList();
+        }
+        var english = RfqIntake.LooksEnglish(quote.SourceSubject ?? "", content?.Text ?? src?.Preview ?? "");
+        var company = Services.Costing.CostEstimator.LoadSettings().Company;
+        var body = RfqIntake.AckText(quote, files, company, english, DateTime.Today);
+        if (content != null && !string.IsNullOrWhiteSpace(content.Text)) body += "\n\n--- " + (english ? "Original message" : L.T("Önceki İleti")) + " ---\n" + content.Text;
+        var subj = quote.SourceSubject is { Length: > 0 } s0 ? (Regex.IsMatch(s0, @"^(re|ynt|aw)\s*:", RegexOptions.IgnoreCase) ? s0 : "Re: " + s0) : L.F("Teklif: {0} ({1})", quote.PartNumber, quote.Customer);
+        OpenCompose(new ComposeRequest { To = quote.ContactEmail ?? src?.FromAddress ?? "", Subject = subj, Body = body, InReplyTo = quote.SourceMessageId }, account.Id);
+        var copy = quote.Clone(); copy.AckDraftedAt = DateTimeOffset.Now; if (copy.Status == QuoteStatus.New) copy.Status = QuoteStatus.InProgress;
+        _quoteStore.AddOrUpdate(copy); _quoteDeskView?.Refresh();
+        Status(L.T("\"Talebinizi aldık\" yanıtı taslak olarak açıldı; kontrol edip Gönder'e basın."));
     }
 
     // ------------------------------------------------------------------ meaning search

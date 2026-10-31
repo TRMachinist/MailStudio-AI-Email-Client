@@ -76,6 +76,8 @@ public sealed class CostSettingsWindow : Window
         var validity = addCalc(L.T("Teklif geçerliliği (gün)"), _s.QuoteValidityDays.ToString(CultureInfo.CurrentCulture), false);
         var payment = addCalc(L.T("Ödeme şartları"), _s.PaymentTerms, true);
         var delivery = addCalc(L.T("Teslim şartları"), _s.DeliveryTerms, true);
+        var autoRfq = new CheckBox { Content = L.T("Gelen teklif taleplerini otomatik olarak Teklif Masası'na ekle"), IsChecked = AppSettings.Shared.RfqAutoIntake, Margin = new Thickness(0, 6, 0, 0) };
+        ((StackPanel)((ScrollViewer)calc).Content).Children.Add(autoRfq);
         tabs.Items.Add(new TabItem { Header = L.T("Hesap"), Content = calc });
 
         // --- materials
@@ -123,6 +125,8 @@ public sealed class CostSettingsWindow : Window
                         FinishCm2PerMin = row.Finish != def.FinishCm2PerMin ? row.Finish : null
                     };
             }
+            AppSettings.Shared.RfqAutoIntake = autoRfq.IsChecked == true;
+            try { AppSettings.Shared.Save(); } catch { }
             try { CostEstimator.SaveSettings(_s); DialogResult = true; }
             catch (Exception ex) { MessageBox.Show(this, ex.Message, L.ProductName); }
         };

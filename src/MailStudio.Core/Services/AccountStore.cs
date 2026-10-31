@@ -99,6 +99,8 @@ public class AppSettings
     public DateTime? MorningBriefShown { get; set; }
     /// <summary>Engine of the meaning search: "" = built-in, "ollama:&lt;model&gt;" = local Ollama embedding model.</summary>
     public string SemanticModel { get; set; } = "";
+    /// <summary>New inbox mails that read as a request for quote are added to the quote desk on arrival.</summary>
+    public bool RfqAutoIntake { get; set; } = true;
     /// <summary>Is the AI panel open in the PDF window (default off: the page opens larger).</summary>
     public bool PdfSidePanel { get; set; }
     public List<MailStudio.Models.FormatRule> FormatRules { get; set; } = new();

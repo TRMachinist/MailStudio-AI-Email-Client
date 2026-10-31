@@ -73,6 +73,7 @@ public partial class MainWindow
             ("morning brief: today's calendar, tasks, quotes and new mail by kind", StepMorningBrief),
             ("meaning search: built-in engine, index, inflected query finds the delivery schedule mail", StepSemanticSearch),
             ("PDF table to Excel: demo parts list, preview, workbook", StepPdfTables),
+            ("request-for-quote intake: demo request goes to the quote desk once, acknowledgement opens as a draft only", StepRfqIntake),
             ("templates and quick steps: template insertion, manager dialog, macro execution", StepTemplatesAndQuickSteps),
             ("mail snooze: hide, filter, wake up unread with the real date", StepSnooze),
             ("unified inbox and search folders: all inboxes node, saved searches, criteria execution", StepUnifiedInboxAndSearchFolders),
@@ -926,6 +927,24 @@ public partial class MainWindow
                 Check(wb.Worksheet(1).Cell(2, 5).DataType == ClosedXML.Excel.XLDataType.Number && wb.Worksheet(1).Cell(2, 2).GetString() == "NW-1042", "pdf tables: workbook with numeric Qty and text part numbers");
         else Fail("pdf tables", "workbook not written");
         w.Close();
+    }
+
+    async Task StepRfqIntake()
+    {
+        var inbox = _cache.GetHeaders(DemoData.AccountId, "INBOX", 200);
+        var created = RfqIntakeFor(inbox);
+        var q = created.FirstOrDefault(x => x.Quantity == 120);
+        Check(q != null && q.AutoCreated && q.PartNumber == "NW-1042", $"rfq intake: the 120 pcs request is on the quote desk ({string.Join(", ", created.Select(x => $"{x.PartNumber}×{x.Quantity}"))})");
+        Check(RfqIntakeFor(inbox).Count == 0, "rfq intake: running again adds nothing");
+        if (q == null) return;
+        var before = Application.Current.Windows.OfType<ComposeWindow>().ToHashSet();
+        var queued = _outbox.Items.Count;
+        ComposeQuoteAck(q); await Wait(1200);
+        var compose = Application.Current.Windows.OfType<ComposeWindow>().FirstOrDefault(w => !before.Contains(w));
+        Check(compose != null, "rfq intake: acknowledgement opens in a compose window (not sent)");
+        Check(_quoteStore.Get(q.Id)?.AckDraftedAt != null && _quoteStore.Get(q.Id)?.Status == QuoteStatus.InProgress, "rfq intake: quote marked in progress, draft time noted");
+        Check(_outbox.Items.Count == queued, "rfq intake: nothing queued for sending");
+        if (compose != null) { Shot(compose, "rfq-ack-draft"); ForceClose(compose); }
     }
 
     async Task StepTemplatesAndQuickSteps()

@@ -2676,6 +2676,33 @@ await Test("PDF tablosu → Excel: sayı tanıma (1,5 / 1.250 / 1.234,50), kod v
     Check(wb.Worksheet(2).Cell(5, 1).GetString().Contains("parts.pdf"), "source noted under the table");
 }));
 
+await Test("teklif talebi karşılama: gelen talep otomatik Teklif Masası'na, iki kez eklenmez, kendi mailimiz atlanır, alındı yanıtı TR/EN", () => Sync(() =>
+{
+    var dir = Path.Combine(root, "rfq-intake-test"); Directory.CreateDirectory(dir);
+    var cache = new MailCache(Path.Combine(dir, "mail.db")); cache.Init();
+    var fri = new DateTime(2026, 11, 6, 9, 0, 0);   // Friday
+    MailHeader M(uint uid, string subject, string preview, string from) => new() { AccountId = "a", Folder = "INBOX", Uid = uid, MessageId = $"m{uid}@x", Subject = subject, Preview = preview, FromName = "Anna Keller", FromAddress = from, Date = new DateTimeOffset(fri), HasAttachments = uid == 1 };
+    var mails = new[]
+    {
+        M(1, "RFQ NW-2000 rev B, 50 pcs", "Please quote 50 pcs of NW-2000 rev B in 6061-T6. Drawing and STEP attached.", "anna@northwind.example"),
+        M(2, "Lunch on Friday", "Shall we meet at noon?", "anna@northwind.example"),
+        M(3, "Teklif NW-3000 100 adet", "NW-3000 için 100 adet fiyat teklifi rica ederiz.", "me@ourshop.example"),
+    };
+    cache.UpsertHeaders(mails);
+    cache.SaveAttachments("a", "INBOX", 1, new() { new() { FileName = "NW-2000-revB.pdf", Part = "2" }, new() { FileName = "NW-2000-revB.step", Part = "3" } });
+    var quotes = new QuoteStore(Path.Combine(dir, "quotes.json"));
+    var created = RfqIntake.Process(mails, cache, quotes, new[] { "me@ourshop.example" });
+    Check(created.Count == 1 && created[0].PartNumber == "NW-2000" && created[0].Quantity == 50 && created[0].AutoCreated && created[0].SourceMail == "a|INBOX|1", $"the request is on the desk ({created.Count}, {created.FirstOrDefault()?.PartNumber} × {created.FirstOrDefault()?.Quantity})");
+    Check(created[0].Deadline == new DateTime(2026, 11, 10) && RfqIntake.PromiseDate(fri.Date, 2) == new DateTime(2026, 11, 10), "promise: two working days (Friday → Tuesday)");
+    Check(RfqIntake.Process(mails, cache, quotes).Count == 0 && quotes.Quotes.Count == 1, "running again adds nothing; our own mail is skipped");
+    var company = new MailStudio.Services.Costing.CompanyInfo { Name = "Demo Machining", Signature = "Best regards,\nSales · Demo Machining" };
+    var en = RfqIntake.AckText(created[0], new[] { "NW-2000-revB.pdf", "NW-2000-revB.step" }, company, english: true, today: fri.Date);
+    Check(en.StartsWith("Dear Anna,") && en.Contains("NW-2000 rev B (50 pcs)") && en.Contains("NW-2000-revB.step") && en.Contains("Tuesday, 10 November 2026") && en.Contains("Sales · Demo Machining"), "English acknowledgement: part, quantity, files, promise date, signature");
+    var tr = RfqIntake.AckText(created[0], Array.Empty<string>(), new MailStudio.Services.Costing.CompanyInfo(), english: false, today: fri.Date);
+    Check(tr.StartsWith("Sayın Anna Keller,") && tr.Contains("50 adet") && tr.Contains("10 Kasım 2026") && tr.Contains("Saygılarımızla"), "Turkish acknowledgement");
+    Check(RfqIntake.LooksEnglish(mails[0].Subject, mails[0].Preview) && !RfqIntake.LooksEnglish(mails[2].Subject, mails[2].Preview), "language of the request");
+}));
+
 Console.WriteLine($"RESULT {passed} passed. Synthetic evidence: {root}");
 
 sealed class MockHttpHandler : HttpMessageHandler

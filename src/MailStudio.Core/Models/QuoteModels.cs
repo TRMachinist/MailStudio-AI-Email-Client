@@ -35,6 +35,10 @@ public class QuoteItem
     public string? CostBreakdown { get; set; }
     /// <summary>Running quotation number, e.g. "Q-2026-0007" (assigned when the first quotation PDF is made).</summary>
     public string? QuoteNumber { get; set; }
+    /// <summary>Added by the automatic request-for-quote intake (not typed in by the user).</summary>
+    public bool AutoCreated { get; set; }
+    /// <summary>When the "we received your request" reply draft was opened (never sent automatically).</summary>
+    public DateTimeOffset? AckDraftedAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.Now;
 

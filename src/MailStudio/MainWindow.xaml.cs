@@ -650,6 +650,7 @@ public partial class MainWindow : Window
                     }
                     // Mail rules run on every new Inbox message (independent of desktop alerts)
                     if (newMail.Count > 0) _ = RunRulesOnFreshAsync(acc, newMail);
+                    if (newMail.Count > 0 && _settings.RfqAutoIntake) RfqIntakeFor(newMail);
                 }
                 if (added > 0)
                 {

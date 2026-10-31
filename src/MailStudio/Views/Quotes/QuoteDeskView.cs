@@ -26,6 +26,8 @@ public interface IQuoteHost : IPimHost
     Task RenderPdfAsync(string html, string pdfPath);
     /// <summary>Opens the part card (all mails, revisions, quotes, NC programs) of a part number.</summary>
     void OpenPartCard(string partNumber);
+    /// <summary>Opens the "we received your request" reply draft for the quote's source mail (never sends).</summary>
+    void ComposeQuoteAck(QuoteItem quote);
 }
 
 public enum QuoteFilter
@@ -96,6 +98,7 @@ public sealed class QuoteDeskView : UserControl
         Ribbon.Children.Add(PimUi.Group(L.T("İletişim"),
             PimUi.Cmd("", L.T("Teklif Yanıtı"), (_, _) => OnReplyQuote(), L.T("Müşteriye teklif e-postası taslağı aç")),
             PimUi.Cmd("", L.T("Maili Aç"), (_, _) => OnOpenSourceMail(), L.T("Teklifin kaynak e-postasını aç")),
+            PimUi.Cmd("\uE8BD", L.T("Alındı Yanıtı"), (_, _) => { if (SelectedQuote is { } q) _host.ComposeQuoteAck(q); else _host.Status(L.T("Önce listeden bir teklif seçin.")); }, L.T("\"Talebinizi aldık, teklif şu tarihte gelecek\" cevabını taslak olarak aç (otomatik gönderilmez)")),
             PimUi.Cmd("\uE8A5", L.T("Parça Kartı"), (_, _) => { if (SelectedQuote is { } q && q.PartNumber.Length > 0) _host.OpenPartCard(q.PartNumber); else _host.Status(L.T("Önce listeden bir teklif seçin.")); }, L.T("Bu parçanın tüm mailleri, revizyonları, teklifleri ve NC programları"))));
 
         // 2. Side Panel
