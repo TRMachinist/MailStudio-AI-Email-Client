@@ -805,4 +805,300 @@ public static class ShowcaseVideo
         catch (Exception ex) { Log.Add("FAIL 18 " + ex); }
         Finish();
     }
+    /// <summary>
+    /// `--showcase-19 &lt;folder&gt;`: the 1.9 scenes (RAR, morning brief, cost estimate and quotation PDF, visual revision
+    /// difference, part card, NC toolpath, search by meaning, PDF table to Excel, request-for-quote acknowledgement).
+    /// Every scene really does what it shows on the demo mailbox.
+    /// </summary>
+    public static async Task Run19Async(MainWindow main, string outDir)
+    {
+        _out = outDir; Directory.CreateDirectory(_out);
+        try
+        {
+            Place(main); await Task.Delay(2500);
+            var list = (ListBox)main.FindName("MessageList");
+            await Until(() => list.Items.Count >= 8);
+            var cache = Field<MailCache>(main, "_cache");
+            var all = cache.GetHeaders(DemoData.AccountId, "INBOX", 200);
+            MailHeader With(string file) => all.First(h => cache.GetAttachments(h.AccountId, h.Folder, h.Uid).Any(a => a.FileName == file));
+            AttachmentInfo Att(MailHeader h, string file) => cache.GetAttachments(h.AccountId, h.Folder, h.Uid).First(a => a.FileName == file);
+            async Task<string> Download(MailHeader h, string file) => (await (Task<string?>)Call(main, "DownloadAttachmentAsync", h, Att(h, file))!)!;
+            ListBoxItem? Row(MailHeader m) => list.ItemContainerGenerator.ContainerFromItem(list.Items.OfType<MailHeader>().FirstOrDefault(x => x.Uid == m.Uid)) as ListBoxItem;
+            async Task Select(MailHeader m, int pause = 900)
+            {
+                if (Row(m) is { } row) await Move(Center(main, row, 0.45, 0.5), 600);
+                var fx = ClickFx(); await Task.Delay(90);
+                list.SelectedItem = list.Items.OfType<MailHeader>().FirstOrDefault(x => x.Uid == m.Uid); await fx; await Idle(pause);
+            }
+            TechnicalWorker Worker() => (TechnicalWorker)Call(main, "SkillWorker")!;
+            // demo company for the quotation
+            var cs = Costing.CostEstimator.LoadSettings();
+            if (cs.Company.Name.Length == 0)
+            {
+                cs.Company = new Costing.CompanyInfo { Name = "Northwind Machining (demo)", Address = "1 Demo Street\nDemo City", Email = "sales@northwind-machining.example", Phone = "+00 000 000 00 00",
+                    Signature = L.IsEnglish ? "Best regards,\nSales · Northwind Machining (demo)" : "Saygılarımızla,\nSatış · Northwind Machining (demo)" };
+                Costing.CostEstimator.SaveSettings(cs);
+            }
+
+            // ---- c50: RAR archive opens like a ZIP
+            try
+            {
+                var rarMail = With("NW-1042-drawings.rar");
+                Rec.Start(main, "c50-mail");
+                Rec.Cursor = new Point(W * 0.3, H * 0.45);
+                await Select(rarMail, 1000);
+                var chip = FindEl<ButtonBase>(main, b => b.Tag is AttachmentInfo a && a.FileName == "NW-1042-drawings.rar");
+                if (chip != null) { await Move(chip, 700); var fx = ClickFx(); await Task.Delay(300); await fx; }
+                Rec.Stop();
+                var before = Application.Current.Windows.OfType<Window>().ToHashSet();
+                _ = (Task)Call(main, "OpenAttachmentAsync", rarMail, Att(rarMail, "NW-1042-drawings.rar"))!;
+                var viewer = await WaitNew<Window>(before, null, 30);
+                Place(viewer); await Idle(1800);
+                Rec.Start(viewer, "c50-rar");
+                Rec.Cursor = new Point(W * 0.3, H * 0.3);
+                var rows = Visuals(viewer).OfType<ListViewItem>().Where(i => i.IsVisible).Take(4).ToList();
+                foreach (var r in rows) { await Move(Center(viewer, r, 0.25, 0.5), 450); await Task.Delay(350); }
+                await Task.Delay(1200);
+                Rec.Stop(); viewer.Close(); await Idle(600);
+            }
+            catch (Exception ex) { Log.Add("FAIL rar: " + ex); }
+
+            // ---- c51: morning brief
+            try
+            {
+                var w = main.ShowMorningBrief(DateTime.Today, DateTimeOffset.Now.AddDays(-7));
+                w.Width = 1100; w.Height = H; w.Left = 20; w.Top = 20; await Idle(1200);
+                Rec.Start(w, "c51-brief");
+                Rec.Cursor = new Point(w.ActualWidth * 0.5, w.ActualHeight * 0.2);
+                var sv = FindEl<ScrollViewer>(w, _ => true);
+                await Move(new Point(w.ActualWidth * 0.35, w.ActualHeight * 0.32), 800); await Task.Delay(900);
+                if (sv != null) for (var y = 0; y < 14; y++) { sv.ScrollToVerticalOffset(y * 28); await Task.Delay(110); }
+                await Move(new Point(w.ActualWidth * 0.4, w.ActualHeight * 0.55), 800); await Task.Delay(1400);
+                Rec.Stop(); w.Close(); await Idle(500);
+            }
+            catch (Exception ex) { Log.Add("FAIL brief: " + ex); }
+
+            // ---- c52: cost estimate from the STEP model, then the quotation PDF
+            try
+            {
+                var stepMail = With("bracket-revC.stp");
+                var path = await Download(stepMail, "bracket-revC.stp");
+                var g = Costing.PartGeometry.FromExtract(await Worker().CallAsync("extract_step", new { path, ocr = false }));
+                var quotes = Field<QuoteStore>(main, "_quoteStore");
+                var q = quotes.Quotes.First().Clone(); q.Quantity = 50;
+                var w = new Views.Quotes.CostEstimateWindow("bracket rev C – bracket-revC.stp", g, q) { Owner = main };
+                w.Show(); w.Left = 20; w.Top = 20; w.Width = 900; w.Height = 760; await Idle(1200);
+                Rec.Start(w, "c52-cost");
+                Rec.Cursor = new Point(w.ActualWidth * 0.6, w.ActualHeight * 0.2);
+                var combo = FindEl<ComboBox>(w, c => c.Items.Count > 10);
+                if (combo != null)
+                {
+                    await Move(combo, 700); await Task.Delay(300);
+                    var alu = combo.Items.OfType<Costing.MaterialSpec>().FirstOrDefault(m => m.Name.StartsWith("Al 6061"));
+                    if (alu != null) { var fx = ClickFx(); combo.SelectedItem = alu; await fx; }
+                    await Task.Delay(900);
+                }
+                var qty = FindEl<TextBox>(w, t => t.Text == "50");
+                if (qty != null)
+                {
+                    await Move(qty, 600); qty.Text = "";
+                    foreach (var ch in "200") { qty.Text += ch; await Task.Delay(220); }
+                    await Task.Delay(900);
+                }
+                var unit = FindEl<TextBlock>(w, t => t.FontSize >= 20);
+                if (unit != null) await Move(Center(w, unit, 0.4, 0.5), 700);
+                await Task.Delay(1400);
+                var apply = Btn(w, L.T("Teklife uygula"));
+                if (apply != null) { await Move(apply, 700); await Task.Delay(500); }
+                var est = Field<Costing.CostEstimate?>(w, "_estimate");
+                Rec.Stop(); w.Close(); await Idle(400);
+                if (est != null)
+                {
+                    q.UnitPrice = est.UnitPrice; q.Currency = est.Currency; q.Quantity = est.Quantity; q.Material = est.Material.Display;
+                    q.QuoteNumber = Costing.QuoteDocument.NextNumber(quotes.Quotes, DateTime.Today);
+                    var pdf = Path.Combine(_out, Costing.QuoteDocument.FileName(q));
+                    await HtmlPdfPrinter.PrintAsync(Costing.QuoteDocument.BuildHtml(q, Costing.CostEstimator.LoadSettings(), DateTime.Today), pdf);
+                    var before = Application.Current.Windows.OfType<Window>().ToHashSet();
+                    var pv = new Views.PdfAttachmentWindow(pdf, Views.FileViewers.DefaultAi()) { Owner = main };
+                    pv.Show(); Place(pv); await Idle(3000);
+                    Rec.Start(pv, "c52-quotepdf");
+                    Rec.Cursor = new Point(W * 0.5, H * 0.35);
+                    await Move(new Point(W * 0.55, H * 0.55), 1200); await Task.Delay(2200);
+                    Rec.Stop(); pv.Close(); await Idle(500);
+                }
+            }
+            catch (Exception ex) { Log.Add("FAIL cost: " + ex); }
+
+            // ---- c53: visual revision difference (DXF overlay, then STEP faces)
+            try
+            {
+                var oMail = With("flange-DN100-revB.dxf"); var nMail = With("flange-DN100-revC.dxf");
+                var o = await Download(oMail, "flange-DN100-revB.dxf"); var n = await Download(nMail, "flange-DN100-revC.dxf");
+                var vw = new Views.VisualDiffWindow(o, n, (args, ct) => Worker().CallAsync("visual_diff", args, ct), "flange-DN100 (B → C)") { Owner = main };
+                vw.Show(); Place(vw); await vw.Ready; await Idle(1000);
+                Rec.Start(vw, "c53-visual");
+                Rec.Cursor = new Point(W * 0.4, H * 0.5);
+                await Move(new Point(W * 0.3, H * 0.4), 900); await Task.Delay(900);
+                var lb = FindEl<ListBox>(vw, l => l.Items.Count > 0);
+                if (lb != null && lb.ItemContainerGenerator.ContainerFromIndex(1) is ListBoxItem item)
+                {
+                    await Move(Center(vw, item, 0.5, 0.5), 800); var fx = ClickFx(); lb.SelectedIndex = 1; await fx; await Task.Delay(1800);
+                }
+                await Click(Btn(vw, L.T("Sığdır")), 800); await Task.Delay(900);
+                Rec.Stop(); vw.Close(); await Idle(500);
+
+                var sMail = With("bracket-revC.stp");
+                var so = await Download(sMail, "bracket-revB.stp"); var sn = await Download(sMail, "bracket-revC.stp");
+                var sw = new Views.VisualDiffWindow(so, sn, (args, ct) => Worker().CallAsync("visual_diff", args, ct), "bracket (B → C)") { Owner = main };
+                sw.Show(); Place(sw); await sw.Ready; await Idle(1000);
+                Rec.Start(sw, "c53-step");
+                Rec.Cursor = new Point(W * 0.85, H * 0.25);
+                await Move(new Point(W * 0.27, H * 0.62), 1100); await Task.Delay(2200);
+                Rec.Stop(); sw.Close(); await Idle(500);
+            }
+            catch (Exception ex) { Log.Add("FAIL visual: " + ex); }
+
+            // ---- c54: part card
+            try
+            {
+                var pc = main.OpenPartCard("NW-1042");
+                Place(pc); await Idle(1200);
+                Rec.Start(pc, "c54-partcard");
+                Rec.Cursor = new Point(W * 0.4, H * 0.12);
+                await Move(new Point(W * 0.3, H * 0.15), 700); await Task.Delay(800);
+                var tabs = FindEl<TabControl>(pc, _ => true)!;
+                foreach (var idx in new[] { 1, 3, 0 })
+                {
+                    if (tabs.ItemContainerGenerator.ContainerFromIndex(idx) is TabItem ti)
+                    {
+                        await Move(Center(pc, ti), 600); var fx = ClickFx(); tabs.SelectedIndex = idx; await fx; await Task.Delay(1400);
+                    }
+                }
+                Rec.Stop(); pc.Close(); await Idle(500);
+            }
+            catch (Exception ex) { Log.Add("FAIL partcard: " + ex); }
+
+            // ---- c55: NC toolpath: views, simulation, comparison
+            try
+            {
+                var ncMail = With("OP20.nc");
+                var nc = await Download(ncMail, "OP20.nc");
+                var w = new Views.Nc.NcPreviewWindow(nc) { Owner = main };
+                w.Show(); Place(w); await Idle(1200);
+                Rec.Start(w, "c55-nc");
+                Rec.Cursor = new Point(W * 0.55, H * 0.5);
+                var slider = FindEl<Slider>(w, _ => true);
+                if (slider != null)
+                {
+                    await Move(Center(w, slider, 0.0, 0.5), 700);
+                    for (var i = 0; i <= 40; i++) { slider.Value = slider.Maximum * i / 40; Rec.Cursor = Center(w, slider, i / 40.0, 0.5); await Task.Delay(70); }
+                }
+                var top = FindEl<ToggleButton>(w, b => TextOf(b) == L.T("Üst (XY)"));
+                if (top != null) { await Move(top, 600); var fx = ClickFx(); top.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent, top)); await fx; await Task.Delay(1500); }
+                var iso = FindEl<ToggleButton>(w, b => TextOf(b) == L.T("İzometrik"));
+                if (iso != null) { await Move(iso, 500); var fx = ClickFx(); iso.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent, iso)); await fx; await Task.Delay(900); }
+                Rec.Stop(); w.Close(); await Idle(400);
+
+                var changed = Path.Combine(_out, "OP20-revD.nc");
+                File.WriteAllText(changed, File.ReadAllText(nc).Replace("F1500.", "F1000.").Replace("Z-14.", "Z-16."));
+                var w2 = new Views.Nc.NcPreviewWindow(changed) { Owner = main };
+                w2.Show(); Place(w2); await Idle(600);
+                w2.CompareWith(nc); await Idle(1000);
+                Rec.Start(w2, "c55-nccompare");
+                Rec.Cursor = new Point(W * 0.15, H * 0.3);
+                await Move(new Point(W * 0.14, H * 0.42), 800); await Task.Delay(1000);
+                await Move(new Point(W * 0.88, H * 0.18), 900); await Task.Delay(1800);
+                Rec.Stop(); w2.Close(); await Idle(400);
+            }
+            catch (Exception ex) { Log.Add("FAIL nc: " + ex); }
+
+            // ---- c56: search by meaning
+            try
+            {
+                AppSettings.Shared.SemanticModel = "";
+                var w = main.OpenSemanticSearch();
+                Place(w); await Idle(1000);
+                await w.UpdateIndexAsync();
+                Rec.Start(w, "c56-semantic");
+                var box = FindEl<TextBox>(w, t => t.ActualWidth > 300)!;
+                Rec.Cursor = new Point(W * 0.5, H * 0.3);
+                await Move(Center(w, box, 0.2, 0.5), 700);
+                var query = L.IsEnglish ? "deliveries planned for the coming weeks" : "önümüzdeki haftaların teslimatları";
+                foreach (var ch in query) { box.Text += ch; await Task.Delay(55); }
+                await Task.Delay(400);
+                var go = Btn(w, L.T("Ara"));
+                if (go != null) { await Move(go, 500); var fx = ClickFx(); await w.SearchAsync(); await fx; }
+                await Move(new Point(W * 0.45, H * 0.36), 800); await Task.Delay(2200);
+                Rec.Stop(); w.Close(); await Idle(400);
+            }
+            catch (Exception ex) { Log.Add("FAIL semantic: " + ex); }
+
+            // ---- c57: PDF table → Excel
+            try
+            {
+                var bomMail = With("NW-1042-parts-list.pdf");
+                var pdf = await Download(bomMail, "NW-1042-parts-list.pdf");
+                var w = new Views.PdfTablesWindow(pdf, (op, args, ct) => Worker().CallAsync(op, args, ct)) { Owner = main };
+                w.Show(); Place(w); await w.Ready; await Idle(1000);
+                Rec.Start(w, "c57-tables");
+                Rec.Cursor = new Point(W * 0.1, H * 0.12);
+                await Move(new Point(W * 0.12, H * 0.08), 600); await Task.Delay(600);
+                await Move(new Point(W * 0.55, H * 0.3), 900); await Task.Delay(1400);
+                var exp = Btn(w, L.T("Excel'e aktar…"));
+                if (exp != null) { await Move(exp, 800); var fx = ClickFx(); await fx; }
+                var xlsx = w.Export(Path.Combine(_out, "parts-list.xlsx"));
+                await Task.Delay(1200);
+                Rec.Stop(); w.Close(); await Idle(400);
+                if (xlsx != null)
+                {
+                    var before = Application.Current.Windows.OfType<Window>().ToHashSet();
+                    var xv = Views.FileViewers.Create(xlsx, Views.FileViewers.DefaultAi());
+                    if (xv != null)
+                    {
+                        xv.Show(); Place(xv); await Idle(3000);
+                        Rec.Start(xv, "c57-excel");
+                        Rec.Cursor = new Point(W * 0.3, H * 0.3);
+                        await Move(new Point(W * 0.35, H * 0.4), 900); await Task.Delay(1800);
+                        Rec.Stop(); xv.Close(); await Idle(400);
+                    }
+                }
+            }
+            catch (Exception ex) { Log.Add("FAIL tables: " + ex); }
+
+            // ---- c58: request-for-quote intake and the acknowledgement draft
+            try
+            {
+                var created = main.RfqIntakeFor(all);
+                main.SwitchModule(PimModule.Quotes); await Idle(1200);
+                var desk = Field<Views.Quotes.QuoteDeskView?>(main, "_quoteDeskView")!;
+                var q = created.FirstOrDefault() ?? Field<QuoteStore>(main, "_quoteStore").Quotes.First(x => x.AutoCreated);
+                desk.SelectQuote(q.Id); await Idle(600);
+                Rec.Start(main, "c58-rfq");
+                Rec.Cursor = new Point(W * 0.5, H * 0.6);
+                var lv = Field<ListView>(desk, "_list");
+                if (lv.SelectedItem != null && lv.ItemContainerGenerator.ContainerFromItem(lv.SelectedItem) is ListViewItem row) { await Move(Center(main, row, 0.3, 0.5), 800); await Task.Delay(900); }
+                var ack = Btn(main, L.T("Alındı Yanıtı"));
+                var before = Application.Current.Windows.OfType<Window>().ToHashSet();
+                await Click(ack, 800);
+                await Task.Delay(700);
+                Rec.Stop();
+                var comp = Application.Current.Windows.OfType<Views.ComposeWindow>().FirstOrDefault(x => !before.Contains(x) && x.IsVisible)
+                           ?? Field<Views.ComposeWindow?>(main, "_inlineCompose");
+                if (comp != null)
+                {
+                    if (comp.IsVisible && !ReferenceEquals(comp, Field<Views.ComposeWindow?>(main, "_inlineCompose"))) { Place(comp); await Idle(2500); Rec.Start(comp, "c58-ack"); }
+                    else { await Idle(2500); Rec.Start(main, "c58-ack"); }
+                    Rec.Cursor = new Point(W * 0.5, H * 0.3);
+                    await Move(new Point(W * 0.45, H * 0.5), 1000); await Task.Delay(2600);
+                    Rec.Stop(); ForceClose(comp);
+                }
+                main.SwitchModule(PimModule.Mail);
+            }
+            catch (Exception ex) { Log.Add("FAIL rfq: " + ex); }
+
+            Log.Add("OK 19");
+        }
+        catch (Exception ex) { Log.Add("FAIL 19 " + ex); }
+        Finish();
+    }
 }
