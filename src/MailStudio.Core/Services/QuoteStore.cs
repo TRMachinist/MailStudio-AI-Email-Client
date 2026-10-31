@@ -150,7 +150,11 @@ public sealed class QuoteStore
         }
 
         // 2. Part number and revision
-        // First check attachment filenames for CAD parts (e.g. "NW-1042-revC.stp", "bracket-revB.stp", "flange-DN100.pdf")
+        // A part code in the subject ("RFQ – NW-2000 bracket") wins over a descriptive file name ("bracket-revC.stp")
+        var (codeSub, codeRev) = RevisionService.ParsePartAndRevision(cleanSubject);
+        if (codeSub.Any(char.IsDigit) && codeSub.Any(char.IsLetter)) { item.PartNumber = codeSub; item.Revision = codeRev; }
+        // Otherwise attachment file names of CAD parts (e.g. "NW-1042-revC.stp", "bracket-revB.stp", "flange-DN100.pdf")
+        if (string.IsNullOrEmpty(item.PartNumber))
         foreach (var att in attList.Where(a => Path.GetExtension(a).ToLowerInvariant() is ".stp" or ".step" or ".dxf" or ".dwg" or ".pdf" or ".igs" or ".iges" or ".x_t" or ".sldprt"))
         {
             var (part, rev) = RevisionService.ParsePartAndRevision("", att);

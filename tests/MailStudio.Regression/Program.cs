@@ -2667,6 +2667,8 @@ await Test("teklif talebi karşılama: gelen talep otomatik Teklif Masası'na, i
     Check(en.StartsWith("Dear Anna,") && en.Contains("NW-2000 rev B (50 pcs)") && en.Contains("NW-2000-revB.step") && en.Contains("Tuesday, 10 November 2026") && en.Contains("Sales · Demo Machining"), "English acknowledgement: part, quantity, files, promise date, signature");
     var tr = RfqIntake.AckText(created[0], Array.Empty<string>(), new MailStudio.Services.Costing.CompanyInfo(), english: false, today: fri.Date);
     Check(tr.StartsWith("Sayın Anna Keller,") && tr.Contains("50 adet") && tr.Contains("10 Kasım 2026") && tr.Contains("Saygılarımızla"), "Turkish acknowledgement");
+    var (_, coded) = QuoteStore.DetectRfq("Request for quotation – NW-2000 bracket, 80 pcs", "Please quote 80 pcs of the bracket NW-2000 rev C.", "a <a@b.example>", new[] { "bracket-revC.stp" });
+    Check(coded.PartNumber == "NW-2000" && coded.Quantity == 80, $"part code in the subject wins over a descriptive file name ({coded.PartNumber})");
     Check(RfqIntake.LooksEnglish(mails[0].Subject, mails[0].Preview) && !RfqIntake.LooksEnglish(mails[2].Subject, mails[2].Preview), "language of the request");
 }));
 
