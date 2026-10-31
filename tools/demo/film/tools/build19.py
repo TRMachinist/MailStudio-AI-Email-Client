@@ -32,6 +32,9 @@ PLAN = {
  'm22': [('c21-skill@3.2', 1, cam((0, .5, .5, 1), (1, .86, .55, 1.45))), ('c24-agents', 1, cam((0, .5, .5, 1), (1, .3, .9, 1.4)))],
 }
 
+# Minimum seconds per scene so every clip is really visible (the voice starts the scene, pictures finish it)
+MIN_SECONDS = {'m11': 6, 'm12': 8, 'm13': 7.5, 'm14': 6, 'm15': 6.5, 'm16': 5, 'm17': 6.5, 'm18': 5.5, 'm19': 7, 'm20': 6, 'm21': 5, 'm22': 6}
+
 def parts(text):
     import re
     bits = [b.strip() for b in re.split(r'(?<=[.;!?])\s+', text) if b.strip()]
@@ -54,6 +57,7 @@ def build_timeline(lang, voice_dir, plan_map, out_json, out_wav, is_new=False):
         lead = 12 if sid == intro_id else 6
         tail = 55 if sid == outro_id else 12
         dur = lead + math.ceil(vd * FPS) + tail
+        dur = max(dur, int(MIN_SECONDS.get(sid, 0) * FPS))
         voice_rel = f'{voice_dir}/{lang}/{sid}.mp3'
         sc = dict(id=sid, **{'from': t}, dur=dur, voiceFrom=t + lead, voiceFrames=math.ceil(vd * FPS) - 6, parts=parts(m['text']), segs=[], cam=[], voice=voice_rel)
         if sid == intro_id:
