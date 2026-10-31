@@ -138,7 +138,7 @@ export const TEXT19: Record<'en' | 'tr', any> = {
     m18: {chip: 'New · PDF → Excel', title: 'Parts lists into Excel', sub: 'Numbers stay numbers, codes stay text', pills: ['BOM', 'Schedule', 'OCR']},
     m19: {chip: 'Safer mail', title: 'Rules, undo send, follow-up', sub: 'Nothing slips, nothing goes out by mistake', pills: ['Rules', 'Undo', 'Follow-up']},
     m20: {chip: 'New · Morning brief', title: 'Your day at a glance', sub: 'Calendar, tasks, deadlines, new requests', pills: ['Calendar', 'Tasks', 'Brief']},
-    m21: {chip: 'New · Search by meaning', title: 'Find mail by what it says', sub: 'Runs on this computer — nothing leaves it', pills: ['Built-in', 'Ollama']},
+    m21: {chip: 'New · Archive + meaning search', title: 'Old archives, found by meaning', sub: 'Outlook PST import · runs on this computer', pills: ['PST', 'Built-in', 'Ollama']},
     m22: {chip: 'Skills · Agents', title: 'AI that reads, never sends', sub: 'Claude, Codex, Gemini, Cursor via MCP', pills: ['Skills', 'MCP', 'No send']},
     outro: {
       line1: 'Free & open source', line2: 'Windows 10 / 11 · portable · no telemetry',
@@ -159,7 +159,7 @@ export const TEXT19: Record<'en' | 'tr', any> = {
     m18: {chip: 'Yeni · PDF → Excel', title: 'Parça listeleri Excel\'e', sub: 'Sayılar sayı, kodlar metin kalır', pills: ['Parça listesi', 'Termin', 'OCR']},
     m19: {chip: 'Güvenli mail', title: 'Kural, geri al, cevap takibi', sub: 'Hiçbir şey kaçmaz, yanlışlıkla gitmez', pills: ['Kurallar', 'Geri al', 'Takip']},
     m20: {chip: 'Yeni · Sabah özeti', title: 'Gününüz tek bakışta', sub: 'Takvim, görevler, son tarihler, yeni talepler', pills: ['Takvim', 'Görevler', 'Özet']},
-    m21: {chip: 'Yeni · Anlamla arama', title: 'Maili ne dediğiyle bulun', sub: 'Bu bilgisayarda çalışır — hiçbir şey dışarı çıkmaz', pills: ['Yerleşik', 'Ollama']},
+    m21: {chip: 'Yeni · Arşiv + anlamla arama', title: 'Eski arşivler, anlamıyla bulunur', sub: 'Outlook PST içe aktarma · bu bilgisayarda çalışır', pills: ['PST', 'Yerleşik', 'Ollama']},
     m22: {chip: 'Skill · Ajanlar', title: 'Okuyan ama göndermeyen yapay zekâ', sub: 'Claude, Codex, Gemini, Cursor (MCP)', pills: ['Skill', 'MCP', 'Gönderim yok']},
     outro: {
       line1: 'Ücretsiz ve açık kaynak', line2: 'Windows 10 / 11 · kurulumsuz · telemetri yok',

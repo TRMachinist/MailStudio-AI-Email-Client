@@ -1096,9 +1096,77 @@ public static class ShowcaseVideo
             }
             catch (Exception ex) { Log.Add("FAIL rfq: " + ex); }
 
+            // ---- c59: Outlook archive import (a demo archive source: no real .pst of the user is read)
+            try
+            {
+                main.SwitchModule(PimModule.Mail); await Idle(800);
+                Rec.Start(main, "c59-pst");
+                Rec.Cursor = new Point(W * 0.5, H * 0.4);
+                var tab = FindEl<RadioButton>(main, r => r.Tag as string == "folder");
+                if (tab != null) { await Move(tab, 700); var fx = ClickFx(); tab.IsChecked = true; await fx; await Task.Delay(700); }
+                var imp = Btn(main, "PST");
+                if (imp != null) { await Move(imp, 700); var fx = ClickFx(); await fx; await Task.Delay(500); }
+                var arch = Path.Combine(_out, L.IsEnglish ? "archive-2019.pst" : "arsiv-2019.pst");
+                var result = await main.ImportArchiveAsync(new DemoArchive(), arch);
+                await Idle(1400);
+                if (result != null)
+                {
+                    var roots = Field<System.Collections.ObjectModel.ObservableCollection<FolderNode>>(main, "_roots");
+                    var root = roots.FirstOrDefault(r => r.AccountId == result.Account.Id);
+                    var inbox = root?.Children.FirstOrDefault(c => c.FullName.Contains("Inbox", StringComparison.OrdinalIgnoreCase) || c.FullName.Contains("Gelen", StringComparison.OrdinalIgnoreCase)) ?? root?.Children.FirstOrDefault();
+                    if (inbox != null) { await Move(new Point(W * 0.08, H * 0.62), 800); Call(main, "SelectFolder", inbox); await Idle(1500); }
+                    var first = list.Items.OfType<MailHeader>().FirstOrDefault(x => x.HasAttachments) ?? list.Items.OfType<MailHeader>().FirstOrDefault();
+                    if (first != null) await Select(first, 2200);
+                }
+                var home = FindEl<RadioButton>(main, r => r.Tag as string == "home");
+                if (home != null) home.IsChecked = true;
+                await Task.Delay(600);
+                Rec.Stop();
+            }
+            catch (Exception ex) { Log.Add("FAIL pst: " + ex); }
+
             Log.Add("OK 19");
         }
         catch (Exception ex) { Log.Add("FAIL 19 " + ex); }
         Finish();
     }
+}
+
+/// <summary>A small archive for the film (old demo mails); stands in for an Outlook .pst so no real archive is read.</summary>
+sealed class DemoArchive : MailStudio.Services.Archive.IMailArchiveSource
+{
+    public IEnumerable<MailStudio.Services.Archive.ArchiveFolder> Folders()
+    {
+        var en = L.IsEnglish;
+        MailStudio.Services.Archive.ArchiveMessage M(string subj, string from, string addr, int y, int mo, int d, string text, string? file = null) =>
+            new(subj, from, addr, "demo@mailstudio.example", "", new DateTime(y, mo, d, 10, 30, 0, DateTimeKind.Utc), true, null, text, $"<demo-{y}{mo:00}{d:00}-{subj.GetHashCode():x}@archive.example>",
+                file == null ? Array.Empty<MailStudio.Services.Archive.ArchiveAttachment>() :
+                new[] { new MailStudio.Services.Archive.ArchiveAttachment(file, 64, s => { var b = System.Text.Encoding.UTF8.GetBytes("Pos;Part;Qty\n1;NW-0815;40\n2;NW-0816;40\n"); s.Write(b, 0, b.Length); }) });
+        var inbox = new List<MailStudio.Services.Archive.ArchiveMessage>
+        {
+            M(en ? "Order NW-0815 – 40 pcs flange, delivery week 12" : "Sipariş NW-0815 – 40 adet flanş, teslim 12. hafta", "Anna Keller", "anna.keller@northwind-machining.example", 2019, 3, 4,
+              en ? "Hello, please find our order for 40 flanges attached." : "Merhaba, 40 adet flanş siparişimiz ektedir.", "order-NW-0815.csv"),
+            M(en ? "Drawing question – NW-0816 thread depth" : "Resim sorusu – NW-0816 diş derinliği", "Planning", "planning@northwind-machining.example", 2019, 2, 21,
+              en ? "Is the M12 thread depth 18 mm or 20 mm?" : "M12 diş derinliği 18 mm mi 20 mm mi?"),
+            M(en ? "Price list 2019" : "2019 fiyat listesi", "Lisa Wong", "lisa.wong@fabrikam-tools.example", 2019, 1, 14,
+              en ? "Our tool price list for 2019 is attached." : "2019 takım fiyat listemiz ektedir.", en ? "price-list-2019.csv" : "fiyat-listesi-2019.csv"),
+            M(en ? "Inspection report – NW-0815 first article" : "Muayene raporu – NW-0815 ilk numune", "Quality Lab", "quality@northwind-machining.example", 2019, 4, 2,
+              en ? "First article accepted, see the notes." : "İlk numune kabul edildi, notlara bakın."),
+            M(en ? "Holiday schedule" : "Tatil takvimi", "Tom Becker", "t.becker@contoso-aero.example", 2018, 12, 18,
+              en ? "Our plant is closed between the holidays." : "Tesisimiz bayram arasında kapalıdır."),
+        };
+        var sent = new List<MailStudio.Services.Archive.ArchiveMessage>
+        {
+            M(en ? "Re: Order NW-0815 – confirmation" : "Ynt: Sipariş NW-0815 – onay", "Demo User", "demo@mailstudio.example", 2019, 3, 5,
+              en ? "Thank you, delivery confirmed for week 12." : "Teşekkürler, 12. hafta teslim onaylandı."),
+            M(en ? "Re: Drawing question – NW-0816" : "Ynt: Resim sorusu – NW-0816", "Demo User", "demo@mailstudio.example", 2019, 2, 22,
+              en ? "18 mm full thread, as in rev B." : "Rev B'deki gibi 18 mm tam diş."),
+        };
+        return new[]
+        {
+            new MailStudio.Services.Archive.ArchiveFolder("/" + (en ? "Inbox" : "Gelen Kutusu"), en ? "Inbox" : "Gelen Kutusu", inbox.Count, () => inbox),
+            new MailStudio.Services.Archive.ArchiveFolder("/" + (en ? "Sent Items" : "Gönderilmiş Öğeler"), en ? "Sent Items" : "Gönderilmiş Öğeler", sent.Count, () => sent),
+        };
+    }
+    public void Dispose() { }
 }
