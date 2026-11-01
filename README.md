@@ -63,6 +63,10 @@ never send mail on its own.
 - **Quote desk**: requests for quotation from mail with part, revision, quantity, material and dates filled in; statuses, reminders, Excel export
 - **Rules, templates and quick steps**, **undo send / send later**, **snooze**, **all inboxes and search folders**, newsletter **unsubscribe** (always with your confirmation), missing-attachment warning
 
+<a href="https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.9.0/MailStudio_1.9_EN_1920x1080.mp4"><img src="docs/media/new19-video.jpg" alt="90-second video: every feature of 1.9 in order" width="100%"></a>
+
+**▶ [MailStudio 1.9 – every feature in 90 s](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.9.0/MailStudio_1.9_EN_1920x1080.mp4)** · [vertical](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.9.0/MailStudio_1.9_EN_1080x1920.mp4) · [Türkçe](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.9.0/MailStudio_1.9_TR_1920x1080.mp4)
+
 <a href="https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.8.0/MailStudio_1.8_EN_1920x1080.mp4"><img src="docs/media/new18-video.jpg" alt="70-second video: what is new in 1.8" width="100%"></a>
 
 **▶ [What is new in 1.8 (70 s)](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.8.0/MailStudio_1.8_EN_1920x1080.mp4)** · [vertical](https://github.com/TRMachinist/MailStudio-AI-Email-Client/releases/download/v1.8.0/MailStudio_1.8_EN_1080x1920.mp4)
